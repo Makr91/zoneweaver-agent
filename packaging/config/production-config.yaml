@@ -1,4 +1,4 @@
-version: 0.2.3
+version: 0.3.0
 server:
   http_port: 5000
   https_port: 5001

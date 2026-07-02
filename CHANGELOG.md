@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/Makr91/zoneweaver-api/compare/v0.2.3...v0.3.0) (2026-07-02)
+
+
+### Features
+
+* dual-mode phase 0 — public /status identity endpoint, unconditional /api/status alias, flag-gated UI shim, packaging-time artifact bake ([c4c5244](https://github.com/Makr91/zoneweaver-api/commit/c4c52443106263936da6cfc56dee1303c42f7656))
+
 ## [0.2.3](https://github.com/Makr91/zoneweaver-api/compare/v0.2.2...v0.2.3) (2026-07-02)
 
 

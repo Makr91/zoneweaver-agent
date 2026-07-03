@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.2...v0.3.3) (2026-07-03)
+
+
+### Bug Fixes
+
+* Updating frontend to help implement new WS TIcketing system ([e780795](https://github.com/Makr91/zoneweaver-agent/commit/e780795c4a23f9924ffed4ce4e023c3f835bd009))
+
 ## [0.3.2](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.1...v0.3.2) (2026-07-03)
 
 

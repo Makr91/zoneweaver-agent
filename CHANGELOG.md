@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1](https://github.com/Makr91/zoneweaver-api/compare/v0.3.0...v0.3.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* bump bundled Hyperweaver UI to 0.10.1 ([1c32776](https://github.com/Makr91/zoneweaver-api/commit/1c327762518c5b24f7441f3b6d99e6438a0bf8e9))
+* collect IP addresses and routing table during network config cycle ([8078bd8](https://github.com/Makr91/zoneweaver-api/commit/8078bd8fa0668feb31cc3af9e8dc65598ce3d861))
+* releasing latest UI ([2aff7df](https://github.com/Makr91/zoneweaver-api/commit/2aff7df9dc04f96ae59bf35008c45511e8f7cb6f))
+
 ## [0.3.0](https://github.com/Makr91/zoneweaver-api/compare/v0.2.3...v0.3.0) (2026-07-02)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.5](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.4...v0.3.5) (2026-07-03)
+
+
+### Bug Fixes
+
+* updating ui and deps ([fdc6c0f](https://github.com/Makr91/zoneweaver-agent/commit/fdc6c0fe13f673fc26ce59050d02a6f49ccb4104))
+
 ## [0.3.4](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.3...v0.3.4) (2026-07-03)
 
 

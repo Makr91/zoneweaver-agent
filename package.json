@@ -1,7 +1,7 @@
 {
   "name": "zoneweaver-api",
   "version": "0.3.0",
-  "hyperweaverUiVersion": "0.10.1",
+  "hyperweaverUiVersion": "0.10.2",
   "description": "NodeJS based API for Management of Bhyve on OmniOS",
   "main": "index.js",
   "type": "module",

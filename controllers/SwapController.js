@@ -16,6 +16,16 @@ import { log } from '../lib/Logger.js';
 const execProm = util.promisify(exec);
 
 /**
+ * Derive the pool a swap area lives on from its zvol path.
+ * The clean swap_areas schema stores no pool_assignment column — the pool is
+ * always derivable from the swapfile path (null for non-zvol swap).
+ * @param {string} swapfile - Swap device path (e.g. /dev/zvol/dsk/rpool/swap)
+ * @returns {string|null} Pool name or null
+ */
+const poolFromSwapfile = swapfile =>
+  swapfile?.match(/\/dev\/zvol\/dsk\/(?<pool>[^/]+)/)?.groups.pool || null;
+
+/**
  * Helper function to parse ZFS size strings (e.g., "1.2T", "500G", "2.5M")
  * @param {string} sizeString - Size string from ZFS commands
  * @returns {number} Size in bytes
@@ -70,13 +80,7 @@ const parseZfsSize = sizeString => {
  *         name: pool
  *         schema:
  *           type: string
- *         description: Filter by pool assignment
- *       - in: query
- *         name: active_only
- *         schema:
- *           type: boolean
- *           default: true
- *         description: Show only active swap areas
+ *         description: Filter by pool (derived from the zvol path)
  *     responses:
  *       200:
  *         description: Swap areas data
@@ -97,16 +101,15 @@ const parseZfsSize = sizeString => {
  *         description: Failed to get swap areas
  */
 export const listSwapAreas = async (req, res) => {
-  const { limit = 100, offset = 0, pool, active_only = true, host } = req.query;
+  const { limit = 100, offset = 0, pool, host } = req.query;
   const hostname = host || os.hostname();
 
   try {
+    // The table only holds CURRENT swap areas (vanished ones are deleted by the
+    // collector), so every row is "active" — no is_active column exists.
     const whereClause = { host: hostname };
     if (pool) {
-      whereClause.pool_assignment = pool;
-    }
-    if (active_only === 'true' || active_only === true) {
-      whereClause.is_active = true;
+      whereClause.swapfile = { [Op.like]: `/dev/zvol/dsk/${pool}/%` };
     }
 
     const { count, rows } = await SwapArea.findAndCountAll({
@@ -115,7 +118,7 @@ export const listSwapAreas = async (req, res) => {
       offset: parseInt(offset),
       order: [
         ['scan_timestamp', 'DESC'],
-        ['path', 'ASC'],
+        ['swapfile', 'ASC'],
       ],
     });
 
@@ -133,7 +136,7 @@ export const listSwapAreas = async (req, res) => {
       error: error.message,
       stack: error.stack,
       host: hostname,
-      filters: { pool, active_only },
+      filters: { pool },
     });
     return res.status(500).json({
       error: 'Failed to list swap areas',
@@ -203,15 +206,14 @@ export const getSwapSummary = async (req, res) => {
   const hostname = host || os.hostname();
 
   try {
-    // Get current swap areas
+    // Get current swap areas (the table only ever holds the current configuration)
     const swapAreas = await SwapArea.findAll({
       where: {
         host: hostname,
-        is_active: true,
       },
       order: [
         ['scan_timestamp', 'DESC'],
-        ['path', 'ASC'],
+        ['swapfile', 'ASC'],
       ],
     });
 
@@ -227,11 +229,11 @@ export const getSwapSummary = async (req, res) => {
     const freeSwapBytes = totalSwapBytes - usedSwapBytes;
     const overallUtilization = totalSwapBytes > 0 ? (usedSwapBytes / totalSwapBytes) * 100 : 0;
 
-    // Pool distribution analysis
+    // Pool distribution analysis (pool derived from the zvol path)
     const poolDistribution = {};
     const rpoolAreas = [];
     swapAreas.forEach(area => {
-      const pool = area.pool_assignment || 'unknown';
+      const pool = poolFromSwapfile(area.swapfile) || 'unknown';
       if (!poolDistribution[pool]) {
         poolDistribution[pool] = {
           count: 0,
@@ -243,7 +245,7 @@ export const getSwapSummary = async (req, res) => {
       poolDistribution[pool].count++;
       poolDistribution[pool].totalSizeGB += Number(area.size_bytes) / 1024 ** 3;
       poolDistribution[pool].usedSizeGB += Number(area.used_bytes) / 1024 ** 3;
-      poolDistribution[pool].areas.push(area.path);
+      poolDistribution[pool].areas.push(area.swapfile);
 
       if (pool === 'rpool') {
         rpoolAreas.push(area);
@@ -259,7 +261,7 @@ export const getSwapSummary = async (req, res) => {
         type: 'warning',
         category: 'best_practice',
         message: `Found ${rpoolAreas.length} swap areas on rpool. Consider consolidating to one small swap area on rpool and moving larger swap to arrays.`,
-        affected_areas: rpoolAreas.map(area => area.path),
+        affected_areas: rpoolAreas.map(area => area.swapfile),
       });
     }
 
@@ -280,8 +282,8 @@ export const getSwapSummary = async (req, res) => {
         recommendations.push({
           type: 'suggestion',
           category: 'optimization',
-          message: `Swap area ${area.path} is ${sizeGB.toFixed(1)}GB on rpool. Consider moving large swap to an array.`,
-          affected_areas: [area.path],
+          message: `Swap area ${area.swapfile} is ${sizeGB.toFixed(1)}GB on rpool. Consider moving large swap to an array.`,
+          affected_areas: [area.swapfile],
         });
       }
     });
@@ -293,9 +295,11 @@ export const getSwapSummary = async (req, res) => {
       freeSwapGB: (freeSwapBytes / 1024 ** 3).toFixed(2),
       overallUtilization: parseFloat(overallUtilization.toFixed(2)),
       swapAreaCount: swapAreas.length,
+      // Response keys keep the external names (path/pool) — only the storage
+      // schema is swapfile-based
       swapAreas: swapAreas.map(area => ({
-        path: area.path,
-        pool: area.pool_assignment,
+        path: area.swapfile,
+        pool: poolFromSwapfile(area.swapfile),
         sizeGB: (Number(area.size_bytes) / 1024 ** 3).toFixed(2),
         usedGB: (Number(area.used_bytes) / 1024 ** 3).toFixed(2),
         utilization: parseFloat(area.utilization_pct),
@@ -564,16 +568,13 @@ export const removeSwapArea = async (req, res) => {
       });
     }
 
-    // Update database to mark as inactive
-    await SwapArea.update(
-      { is_active: false },
-      {
-        where: {
-          host: os.hostname(),
-          path,
-        },
-      }
-    );
+    // Drop the row — the table only holds current swap areas
+    await SwapArea.destroy({
+      where: {
+        host: os.hostname(),
+        swapfile: path,
+      },
+    });
 
     return res.json({
       success: true,

@@ -457,7 +457,7 @@ router.get('/version', verifyApiKey, getVersion); // Get application version inf
 router.get('/app/updates/check', verifyApiKey, checkForAppUpdates); // Check for application updates
 
 // Get configuration for conditional routing
-const statsConfig = config.get('stats') || { public_access: true };
+const statsConfig = config.get('stats') || { public_access: false };
 const uiConfig = config.get('ui') || {};
 
 // UI shim (Direct mode): serve the published Hyperweaver UI artifact when enabled

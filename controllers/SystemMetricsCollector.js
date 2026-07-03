@@ -309,17 +309,27 @@ class SystemMetricsCollector {
       let perCoreData = [];
 
       if (this.lastCPUTimes) {
+        // Clamp to [0,100] and round to 2 decimals: kstat snapshot jitter can make
+        // per-bucket deltas fractionally negative, and raw ratios serialize as
+        // exponent-notation numbers — clamped, rounded values keep the stored
+        // JSON sane and compact.
+        const pct = (part, whole) =>
+          Math.min(100, Math.max(0, Math.round((part / whole) * 10000) / 100));
+
         perCoreData = currentCPUTimes.map((core, i) => {
           const lastCore = this.lastCPUTimes[i];
+          // irq is deliberately EXCLUDED: illumos cpu_nsec_intr overlaps the
+          // user/kernel/idle partition, so counting it inflates the denominator
+          // ~3× and every core reads a flat ~70% (user+sys+idle alone account
+          // for exactly wall clock — verified on box 1162)
           const totalDiff =
             core.times.user -
             lastCore.times.user +
             (core.times.nice - lastCore.times.nice) +
             (core.times.sys - lastCore.times.sys) +
-            (core.times.idle - lastCore.times.idle) +
-            (core.times.irq - lastCore.times.irq);
+            (core.times.idle - lastCore.times.idle);
 
-          if (totalDiff === 0) {
+          if (totalDiff <= 0) {
             return {
               cpu_id: `cpu${i}`,
               user_pct: 0,
@@ -336,11 +346,11 @@ class SystemMetricsCollector {
 
           return {
             cpu_id: `cpu${i}`,
-            user_pct: (userDiff / totalDiff) * 100,
-            system_pct: (sysDiff / totalDiff) * 100,
-            idle_pct: (idleDiff / totalDiff) * 100,
+            user_pct: pct(userDiff, totalDiff),
+            system_pct: pct(sysDiff, totalDiff),
+            idle_pct: pct(idleDiff, totalDiff),
             iowait_pct: 0, // Not available in os.cpus()
-            utilization_pct: ((totalDiff - idleDiff) / totalDiff) * 100,
+            utilization_pct: pct(totalDiff - idleDiff, totalDiff),
           };
         });
       }
@@ -533,23 +543,18 @@ class SystemMetricsCollector {
         const usedBytes = sizeBytes - freeBytes;
         const utilizationPct = sizeBytes > 0 ? (usedBytes / sizeBytes) * 100 : 0;
 
-        // Extract pool assignment from path
-        const poolMatch = swapfilePath.match(/\/dev\/zvol\/dsk\/(?<pool>[^/]+)/);
-        const poolAssignment = poolMatch ? poolMatch.groups.pool : null;
-
-        // Use clean SwapAreaModel field names (after cleanup migration)
+        // Clean SwapAreaModel fields ONLY — there is no is_active/pool_assignment
+        // column: presence in the table = active, pool derives from the zvol path
         swapAreas.push({
-          swapfile: swapfilePath, // SwapAreaModel expects 'swapfile'
-          dev: deviceInfo, // SwapAreaModel expects 'dev'
-          swaplo, // SwapAreaModel expects 'swaplo'
-          blocks, // SwapAreaModel expects 'blocks'
-          free: freeBlocks, // SwapAreaModel expects 'free'
+          swapfile: swapfilePath,
+          dev: deviceInfo,
+          swaplo,
+          blocks,
+          free: freeBlocks,
           size_bytes: sizeBytes,
           free_bytes: freeBytes,
           used_bytes: usedBytes,
           utilization_pct: utilizationPct,
-          pool_assignment: poolAssignment,
-          is_active: true,
           scan_timestamp: new Date(),
         });
       }
@@ -597,19 +602,15 @@ class SystemMetricsCollector {
 
       await Promise.all(upsertPromises);
 
-      // Mark any swap areas that are no longer active as inactive
-      // (devices that existed before but are not in current scan)
+      // Drop rows for swap areas that vanished since the last scan — the table
+      // only ever holds the CURRENT swap configuration (no is_active soft flag)
       if (currentSwapDevices.size > 0) {
-        await SwapArea.update(
-          { is_active: false },
-          {
-            where: {
-              host: this.hostname,
-              swapfile: { [Op.notIn]: [...currentSwapDevices] },
-              is_active: true,
-            },
-          }
-        );
+        await SwapArea.destroy({
+          where: {
+            host: this.hostname,
+            swapfile: { [Op.notIn]: [...currentSwapDevices] },
+          },
+        });
       }
 
       log.monitoring.debug('Swap area collection completed', {

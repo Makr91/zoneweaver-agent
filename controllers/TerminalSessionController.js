@@ -228,12 +228,13 @@ setInterval(cleanupInactiveSessions, 10 * 60 * 1000);
  *                   properties:
  *                     id:
  *                       type: string
- *                       description: Terminal cookie (same as sent)
- *                       example: "terminal_host1_5001_browser123_1234567890"
- *                     websocket_url:
+ *                       format: uuid
+ *                       description: Session UUID — use it for the `/term/{id}` WebSocket and `terminal/sessions/{id}/stop`
+ *                       example: "b3f1c2d4-5678-4abc-9def-0123456789ab"
+ *                     terminal_cookie:
  *                       type: string
- *                       description: WebSocket endpoint for terminal connection
- *                       example: "/term/uuid-session-id"
+ *                       description: Echo of the cookie sent
+ *                       example: "terminal_host1_5001_browser123_1234567890"
  *                     reused:
  *                       type: boolean
  *                       description: True if existing session was reused
@@ -287,8 +288,8 @@ export const startTerminalSession = async (req, res) => {
         return res.json({
           success: true,
           data: {
-            id: existingSession.terminal_cookie,
-            websocket_url: `/term/${existingSession.id}`,
+            id: existingSession.id,
+            terminal_cookie: existingSession.terminal_cookie,
             reused: true,
             created_at: existingSession.created_at,
             buffer: existingSession.session_buffer || '',
@@ -346,8 +347,8 @@ export const startTerminalSession = async (req, res) => {
     return res.json({
       success: true,
       data: {
-        id: session.terminal_cookie,
-        websocket_url: `/term/${session.id}`,
+        id: session.id,
+        terminal_cookie: session.terminal_cookie,
         reused: false,
         created_at: session.created_at,
         buffer: '',

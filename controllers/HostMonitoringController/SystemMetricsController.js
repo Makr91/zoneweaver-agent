@@ -7,7 +7,6 @@
 
 import CPUStats from '../../models/CPUStatsModel.js';
 import MemoryStats from '../../models/MemoryStatsModel.js';
-import yj from 'yieldable-json';
 import {
   buildSystemMetricsWhereClause,
   CPU_STATS_ATTRIBUTES,
@@ -88,24 +87,23 @@ export const getCPUStats = async (req, res) => {
         order: [['scan_timestamp', 'DESC']],
       });
 
-      // Parse per-core data if requested and available
+      // Respond with a PLAIN object: the row was fetched with an explicit
+      // attributes list, and Sequelize's toJSON honors that list — anything
+      // stuffed into dataValues (per_core_parsed) would be silently dropped.
+      // Plain JSON.parse, NOT yieldable-json: yj's incremental parser rejects
+      // exponent-notation numbers the collector math can emit, and this payload
+      // is a few KB — nothing worth yielding over.
+      const latest = latestRecord ? latestRecord.get({ plain: true }) : null;
       if ((include_cores === 'true' || include_cores === true) && latestRecord?.per_core_data) {
         try {
-          latestRecord.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
-            yj.parseAsync(latestRecord.per_core_data, (err, result) => {
-              if (err) {
-                reject(err);
-              } else {
-                resolve(result);
-              }
-            });
-          });
+          latest.per_core_parsed = JSON.parse(latestRecord.per_core_data);
         } catch {
-          latestRecord.dataValues.per_core_parsed = null;
+          latest.per_core_parsed = null;
         }
+        delete latest.per_core_data; // heavy raw JSON the UI never reads
       }
 
-      const results = latestRecord ? [latestRecord] : [];
+      const results = latest ? [latest] : [];
 
       return res.json(
         addQueryTiming(
@@ -113,7 +111,7 @@ export const getCPUStats = async (req, res) => {
             cpu: results,
             totalCount: results.length,
             returnedCount: results.length,
-            latest: latestRecord,
+            latest,
             sampling: buildSamplingMetadata({
               applied: true,
               strategy: 'latest-system-wide',
@@ -136,29 +134,24 @@ export const getCPUStats = async (req, res) => {
       return res.json(createEmptyResponse(startTime, 'javascript-time-sampling'));
     }
 
-    const sampledResults = sampleByTime(allData, requestedLimit);
+    let sampledResults = sampleByTime(allData, requestedLimit);
 
-    // Parse per-core data if requested
+    // Parse per-core data if requested — attached to PLAIN objects (toJSON honors
+    // the explicit attributes list and would drop keys stuffed into dataValues).
+    // Plain JSON.parse, NOT yieldable-json (see the latest branch above).
     if (include_cores === 'true' || include_cores === true) {
-      const parsePromises = sampledResults
-        .filter(row => row.per_core_data)
-        .map(async row => {
+      sampledResults = sampledResults.map(row => {
+        const plain = row.get({ plain: true });
+        if (row.per_core_data) {
           try {
-            row.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
-              yj.parseAsync(row.per_core_data, (err, result) => {
-                if (err) {
-                  reject(err);
-                } else {
-                  resolve(result);
-                }
-              });
-            });
+            plain.per_core_parsed = JSON.parse(row.per_core_data);
           } catch {
-            row.dataValues.per_core_parsed = null;
+            plain.per_core_parsed = null;
           }
-        });
-
-      await Promise.all(parsePromises);
+          delete plain.per_core_data; // heavy raw JSON the UI never reads
+        }
+        return plain;
+      });
     }
 
     const timeSpan = calculateTimeSpan(sampledResults);

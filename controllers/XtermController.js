@@ -60,7 +60,27 @@ const setupTerminalConnection = async (ws, sessionId, session, ptyProcess) => {
 
   // Pipe data from WebSocket to PTY and update activity
   ws.on('message', async command => {
-    ptyProcess.write(command.toString());
+    const text = command.toString();
+
+    // NUL-prefixed control message from the UI (PTY resize). Anything that doesn't
+    // parse falls through to the shell, so typed/pasted input is never swallowed.
+    if (text.charCodeAt(0) === 0) {
+      try {
+        const ctrl = JSON.parse(text.slice(1));
+        if (ctrl.type === 'resize') {
+          const cols = parseInt(ctrl.cols);
+          const rows = parseInt(ctrl.rows);
+          if (cols > 0 && cols <= 1000 && rows > 0 && rows <= 1000) {
+            ptyProcess.resize(cols, rows);
+            return;
+          }
+        }
+      } catch {
+        /* not a control message — fall through and write it to the PTY */
+      }
+    }
+
+    ptyProcess.write(text);
 
     // Update activity timestamp on user input
     try {

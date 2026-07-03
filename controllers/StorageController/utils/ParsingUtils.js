@@ -83,7 +83,12 @@ export const parsePoolIostatOutput = (output, hostname) => {
       continue;
     }
 
-    if (inDataSection && line && !line.includes('pool')) {
+    if (inDataSection && line) {
+      // Skip repeated header blocks only — a substring test on "pool" would also
+      // drop every pool whose name contains it (rpool!)
+      if (line.includes('alloc') && line.includes('free')) {
+        continue;
+      }
       const parts = line.split(/\s+/);
       if (parts.length >= 7) {
         const allocBytes = parseUnitToBytes(parts[1]);
@@ -352,7 +357,9 @@ export const parsePoolListOutput = (output, hostname) => {
         alloc_bytes: allocBytes,
         free_bytes: freeBytes,
         capacity: calculateCapacity(allocBytes, freeBytes),
-        health: parts[6],
+        // zpool list -H columns: name size alloc free ckpoint expandsz frag cap
+        // dedup health altroot — health is second-to-last (parts[6] is FRAG)
+        health: parts[parts.length - 2],
         scan_type: 'list',
         scan_timestamp: new Date(),
       });

@@ -10,9 +10,9 @@ permalink: pretty
 # Include files from root directory instead of just _includes/
 includes_dir: '.'
 
-# Logo and favicon settings
-# logo: "/assets/images/logo.png"
-favicon_ico: '/assets/images/favicon.ico'
+# Logo and favicon settings (the agent serves the UI at /ui — its favicon lives there)
+# logo: "/ui/images/logo192.png"
+favicon_ico: '/ui/favicon.ico'
 
 defaults:
   - scope:

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.1...v0.3.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* rebrand from api to agent ([8bda740](https://github.com/Makr91/zoneweaver-agent/commit/8bda74047d6923a8d94b88a71cb41c99a026aee6))
+
 ## [0.3.1](https://github.com/Makr91/zoneweaver-api/compare/v0.3.0...v0.3.1) (2026-07-03)
 
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.4](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.3...v0.3.4) (2026-07-03)
+
+
+### Bug Fixes
+
+* logo and git attributes ([fa47214](https://github.com/Makr91/zoneweaver-agent/commit/fa472146614c768b5fc65d4f10e5c7afb7325f8c))
+* packaging permissions for zwagent user ([8964eda](https://github.com/Makr91/zoneweaver-agent/commit/8964eda4ef37b3ff32609b3df723d183d03c4474))
+* pin Hyperweaver UI 0.10.4 ([0d4fa7d](https://github.com/Makr91/zoneweaver-agent/commit/0d4fa7d862fc8e748ea8732a7901fdbd944ac90e))
+* pin Hyperweaver UI 0.10.4 ([c13971c](https://github.com/Makr91/zoneweaver-agent/commit/c13971cf9f56324e71c0148f7d8d2aeb6423a116))
+
 ## [0.3.3](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.2...v0.3.3) (2026-07-03)
 
 

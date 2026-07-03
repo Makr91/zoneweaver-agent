@@ -24,6 +24,7 @@ Please describe the tests you ran to verify your changes:
 - [ ] API documentation tested (if applicable)
 
 **Test Configuration:**
+
 - OmniOS Version:
 - Node.js Version:
 - Installation Method: (package/source)
@@ -39,12 +40,14 @@ Please describe the tests you ran to verify your changes:
 ## Impact Assessment
 
 **Potential Impact:**
+
 - [ ] No breaking changes
 - [ ] Minimal impact (backward compatible)
 - [ ] Significant impact (may require configuration changes)
 - [ ] Breaking changes (requires migration steps)
 
 **Areas Affected:**
+
 - [ ] Zone management
 - [ ] API endpoints
 - [ ] Authentication/security
@@ -61,6 +64,7 @@ Any additional information that reviewers should know:
 ## Resource Acknowledgment
 
 I understand that this project is maintained with limited development resources and that:
+
 - Review times may vary based on available resources and current workload
 - Complex changes may require additional discussion and iteration
 - Community contributions directly impact the project's development pace

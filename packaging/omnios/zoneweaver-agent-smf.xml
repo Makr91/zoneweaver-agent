@@ -31,15 +31,12 @@
       </method_context>
     </exec_method>
     
-    <!-- Stop method -->
-    <exec_method name='stop' type='method' exec='/opt/zoneweaver-agent/shutdown.sh' timeout_seconds='30'>
-      <method_context working_directory='/opt/zoneweaver-agent'>
-        <method_credential user='zwagent' group='zwagent' />
-        <method_environment>
-          <envvar name='PATH' value='/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/sbin:/sbin'/>
-        </method_environment>
-      </method_context>
-    </exec_method>
+    <!-- Stop method: the :kill token sends SIGTERM to every process in the
+         service contract (node plus any zadm vnc / zlogin / host-shell PTY
+         children), so the contract empties in ~1s instead of svc.startd having
+         to wait out this timeout and force-kill surviving children. Node's own
+         SIGTERM handler (lib/Shutdown.js) closes the database cleanly on exit. -->
+    <exec_method name='stop' type='method' exec=':kill' timeout_seconds='30' />
     
     <!-- Refresh method -->
     <exec_method name='refresh' type='method' exec=':kill -HUP' timeout_seconds='30' />

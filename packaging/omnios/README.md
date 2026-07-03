@@ -20,9 +20,8 @@ This directory contains the files needed to build an OmniOS IPS package for the 
 - `local.mog` - Package transformation rules
 
 ### SMF Service Files
-- `zoneweaver-agent-smf.xml` - SMF service manifest
+- `zoneweaver-agent-smf.xml` - SMF service manifest (stop method uses SMF's `:kill` token)
 - `startup.sh` - Service startup script
-- `shutdown.sh` - Service shutdown script
 - `post-install.sh` - Post-installation setup script
 
 ### Configuration

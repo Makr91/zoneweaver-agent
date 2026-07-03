@@ -54,14 +54,10 @@ license opt/zoneweaver-agent/LICENSE.md license="GPL-3.0" must-accept=false
 <transform file path=opt/zoneweaver-agent/.* -> set group zwagent>
 <transform file path=opt/zoneweaver-agent/.* -> set mode 0644>
 
-# SMF method scripts need to be executable by root
+# SMF start method script needs to be executable by root
 <transform file path=opt/zoneweaver-agent/startup.sh -> set owner root>
 <transform file path=opt/zoneweaver-agent/startup.sh -> set group sys>
 <transform file path=opt/zoneweaver-agent/startup.sh -> set mode 0755>
-
-<transform file path=opt/zoneweaver-agent/shutdown.sh -> set owner root>
-<transform file path=opt/zoneweaver-agent/shutdown.sh -> set group sys>
-<transform file path=opt/zoneweaver-agent/shutdown.sh -> set mode 0755>
 
 
 # Make node binaries executable

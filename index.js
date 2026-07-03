@@ -31,6 +31,7 @@ import {
 } from './controllers/ArtifactStorageService.js';
 import { handleWebSocketUpgrade } from './lib/WebSocketHandler.js';
 import { setupHTTPSServer } from './lib/SSLManager.js';
+import { installShutdownHandlers } from './lib/Shutdown.js';
 import { setupSwaggerDocs } from './lib/SwaggerManager.js';
 import { startZoneOrchestration } from './controllers/ZoneOrchestrationService.js';
 import Tasks from './models/TaskModel.js';
@@ -132,7 +133,23 @@ httpServer.on('upgrade', (request, socket, head) => {
 /**
  * Setup HTTPS server
  */
-setupHTTPSServer(app, sslConfig, httpsPort, serverConfig, handleWebSocketUpgrade, wss);
+const httpsServer = setupHTTPSServer(
+  app,
+  sslConfig,
+  httpsPort,
+  serverConfig,
+  handleWebSocketUpgrade,
+  wss
+);
+
+/**
+ * Install graceful shutdown handlers
+ * @description On SIGTERM/SIGINT, stop background work producers, close the HTTP,
+ *   HTTPS and WebSocket servers, and close the database cleanly before exiting.
+ *   A watchdog guarantees the process exits even if a close step stalls, so it can
+ *   never hang the SMF `:kill` stop method.
+ */
+installShutdownHandlers({ httpServer, httpsServer, wss });
 
 /**
  * Start HTTP server

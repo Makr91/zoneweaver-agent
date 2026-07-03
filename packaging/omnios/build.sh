@@ -56,7 +56,6 @@ mkdir -p "$DESTDIR"
 #   lib/
 #   node_modules/
 #   startup.sh
-#   shutdown.sh
 # /etc/zoneweaver-agent/
 #   config.yaml
 # /var/lib/zoneweaver-agent/
@@ -113,10 +112,10 @@ install_app() {
         logcmd cp -r $SRCDIR/node_modules .
     fi
     
-    # Copy SMF method scripts
+    # Copy SMF start method script (the stop method uses SMF's :kill token, so
+    # no stop script is packaged)
     logcmd cp $SRCDIR/packaging/omnios/startup.sh .
-    logcmd cp $SRCDIR/packaging/omnios/shutdown.sh .
-    logcmd chmod 755 startup.sh shutdown.sh
+    logcmd chmod 755 startup.sh
     
     popd >/dev/null # /opt/zoneweaver-agent
 

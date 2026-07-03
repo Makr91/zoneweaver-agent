@@ -41,8 +41,6 @@ import {
   getVncSessionInfo,
   stopVncSession,
   listVncSessions,
-  serveVncConsole,
-  proxyVncContent,
   getVncScreenshot,
 } from '../controllers/VncConsoleController/index.js';
 import {
@@ -427,6 +425,7 @@ import {
 } from '../controllers/DatabaseController.js';
 import { getVersion, checkForAppUpdates } from '../controllers/VersionController.js';
 import { getStatus } from '../controllers/StatusController.js';
+import { getWsTicket } from '../controllers/WsTicketController.js';
 import config from '../config/ConfigLoader.js';
 import path from 'path';
 
@@ -507,6 +506,9 @@ router.get('/api-keys/info', verifyApiKey, getApiKeyInfo); // Get current API ke
 router.delete('/api-keys/:id', verifyApiKey, deleteApiKey); // Delete an API key
 router.put('/api-keys/:id/revoke', verifyApiKey, revokeApiKey); // Revoke an API key
 
+// WebSocket Ticket Route (every WS upgrade requires ?ticket= minted here)
+router.get('/ws-ticket', verifyApiKey, getWsTicket);
+
 // Zone Orchestration Management Routes (MUST come before parameterized routes)
 router.get('/zones/orchestration/status', verifyApiKey, getZoneOrchestrationStatus); // Get orchestration control status
 router.post('/zones/orchestration/enable', verifyApiKey, enableOrchestration); // Enable zone orchestration control
@@ -560,10 +562,6 @@ router.get('/zones/:zoneName/vnc/info', verifyApiKey, getVncSessionInfo); // Get
 router.delete('/zones/:zoneName/vnc/stop', verifyApiKey, stopVncSession); // Stop VNC session
 router.get('/zones/:zoneName/vnc/screenshot', verifyApiKey, getVncScreenshot); // Capture VNC console screenshot (PNG)
 router.get('/vnc/sessions', verifyApiKey, listVncSessions); // List all VNC sessions
-
-// VNC Console Content Routes (HTTP proxy to VNC server)
-router.get('/zones/:zoneName/vnc/console', verifyApiKey, serveVncConsole); // Serve VNC console HTML
-router.all('/zones/:zoneName/vnc/*splat', verifyApiKey, proxyVncContent); // Proxy VNC assets (JS, CSS, images)
 
 // Host Monitoring Routes
 router.get('/monitoring/status', verifyApiKey, getMonitoringStatus); // Get monitoring service status

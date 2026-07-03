@@ -1,4 +1,4 @@
-version: 0.3.2
+version: 0.3.1
 server:
   http_port: 5000
   https_port: 5001
@@ -40,6 +40,10 @@ database:
 api_keys:
   bootstrap_enabled: true
   bootstrap_auto_disable: true
+  # Require the host-local setup.token to create the first API key (proof of host
+  # ownership). Set false only on a trusted network where remote/unattended
+  # bootstrap (e.g. the aggregator auto-provisioning a key) is intended.
+  bootstrap_require_claim_token: true
   key_length: 64
   hash_rounds: 12
 stats:

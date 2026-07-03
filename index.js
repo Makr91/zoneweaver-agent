@@ -34,6 +34,8 @@ import { setupHTTPSServer } from './lib/SSLManager.js';
 import { setupSwaggerDocs } from './lib/SwaggerManager.js';
 import { startZoneOrchestration } from './controllers/ZoneOrchestrationService.js';
 import Tasks from './models/TaskModel.js';
+import Entities from './models/EntityModel.js';
+import { getOrGenerateSetupToken } from './lib/SetupToken.js';
 
 /**
  * Express application instance
@@ -162,6 +164,27 @@ httpServer.listen(httpPort, () => {
           log.app.warn('Failed to clear tasks on startup', {
             error: error.message,
           });
+        }
+
+        // First-boot claim token: if the agent can still be bootstrapped (no keys yet),
+        // ensure the setup token exists and print it so a host admin can read it. It
+        // guards POST /api-keys/bootstrap (see SetupToken.js). No-op once a key exists.
+        try {
+          const apiKeyConfig = config.getApiKeys() || {};
+          if (
+            apiKeyConfig.bootstrap_enabled &&
+            apiKeyConfig.bootstrap_require_claim_token !== false
+          ) {
+            const entityCount = await Entities.count();
+            if (entityCount === 0) {
+              const token = getOrGenerateSetupToken();
+              if (token) {
+                log.auth.info(`Setup token (required to create the first API key): ${token}`);
+              }
+            }
+          }
+        } catch (error) {
+          log.auth.warn('Failed to prepare setup token', { error: error.message });
         }
 
         // Check and install required packages

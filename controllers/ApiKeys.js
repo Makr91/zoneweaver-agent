@@ -3,12 +3,15 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';
+import { verifySetupToken } from '../lib/SetupToken.js';
 
-// Generate a secure API key with wh_ prefix
+// Generate a secure API key with hw_ (Hyperweaver) prefix. The prefix is a human
+// label only — verifyApiKey bcrypt-compares the whole string, so pre-existing wh_
+// keys keep validating unchanged.
 const generateApiKeyString = () => {
   const apiKeyConfig = config.get('api_keys') || { key_length: 64 };
   const randomBytes = crypto.randomBytes(apiKeyConfig.key_length || 64);
-  return `wh_${randomBytes.toString('base64url')}`;
+  return `hw_${randomBytes.toString('base64url')}`;
 };
 
 /**
@@ -74,6 +77,18 @@ export const bootstrapFirstApiKey = async (req, res) => {
     const entityCount = await Entities.count();
     if (entityCount > 0 && apiKeyConfig.bootstrap_auto_disable !== false) {
       return res.status(403).json({ msg: 'Bootstrap endpoint auto-disabled after first use' });
+    }
+
+    // Proof-of-ownership: require the setup (claim) token unless explicitly disabled.
+    // The token is written to a root-readable file at boot (config.getSetupTokenPath())
+    // and logged at startup, so only someone with host access can create the first key.
+    // Closes the install→first-key race that a public bootstrap endpoint otherwise leaves open.
+    if (apiKeyConfig.bootstrap_require_claim_token !== false) {
+      if (!verifySetupToken(req.body?.setupToken)) {
+        return res.status(403).json({
+          msg: 'Invalid or missing setup token. Read it from the agent host (setup.token beside the config file, or the startup log) and send it as setupToken.',
+        });
+      }
     }
 
     // Generate bootstrap API key

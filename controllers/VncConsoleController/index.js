@@ -8,9 +8,6 @@
 // Import session management functions
 import { startVncSession, getVncSessionInfo, stopVncSession } from './SessionController.js';
 
-// Import proxy functions
-import { serveVncConsole, proxyVncContent } from './ProxyController.js';
-
 // Import management functions
 import { listVncSessions } from './ManagementController.js';
 
@@ -96,16 +93,11 @@ export const performSmartCleanup = async (zoneName, isLastClient) => {
   ); // 10 minute delay for reasonable re-access
 };
 
-// Export all functions for backward compatibility
 export {
   // Session management
   startVncSession,
   getVncSessionInfo,
   stopVncSession,
-
-  // Proxy functions
-  serveVncConsole,
-  proxyVncContent,
 
   // Management functions
   listVncSessions,
@@ -122,8 +114,6 @@ export default {
   startVncSession,
   getVncSessionInfo,
   stopVncSession,
-  serveVncConsole,
-  proxyVncContent,
   listVncSessions,
   getVncScreenshot,
   startVncSessionCleanup,

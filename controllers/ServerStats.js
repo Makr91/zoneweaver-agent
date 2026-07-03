@@ -43,21 +43,19 @@ export const serverStats = async (req, res) => {
   try {
     const returnObject = {};
 
-    // Basic OS information
+    // Basic OS information. Deliberately omits networkInterfaces (host IPs/MACs),
+    // homedir (local path disclosure), and os.constants/devNull/tmpdir (noise) —
+    // this endpoint can be public, and those leak host internals for no consumer
+    // (network data has its own authed monitoring/network/* endpoints).
     returnObject.hostname = os.hostname();
     returnObject.eol = os.EOL;
     returnObject.arch = os.arch();
-    returnObject.constants = os.constants; // Fixed typo: was os.contants
     returnObject.cpus = os.cpus();
-    returnObject.devNull = os.devNull;
     returnObject.endianness = os.endianness();
     returnObject.freemem = os.freemem();
-    returnObject.homedir = os.homedir();
     returnObject.loadavg = os.loadavg();
-    returnObject.networkInterfaces = os.networkInterfaces();
     returnObject.platform = os.platform();
     returnObject.release = os.release();
-    returnObject.tmpdir = os.tmpdir();
     returnObject.totalmem = os.totalmem();
     returnObject.type = os.type();
     returnObject.uptime = os.uptime();

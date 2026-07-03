@@ -82,6 +82,18 @@ class ConfigLoader {
   }
 
   /**
+   * Gets the setup (claim) token file path.
+   * @description Proof-of-ownership token guarding first-key bootstrap. Lives beside
+   * the config file (same dir as CONFIG_PATH), so only someone with host file access
+   * can read it. Mirrors BoxVault's getSetupTokenPath.
+   * @returns {string} Absolute path to the setup.token file
+   */
+  getSetupTokenPath() {
+    const configPath = process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+    return path.join(path.dirname(configPath), 'setup.token');
+  }
+
+  /**
    * Gets server configuration
    * @description Returns server-related configuration including ports
    * @returns {Object} Server configuration object

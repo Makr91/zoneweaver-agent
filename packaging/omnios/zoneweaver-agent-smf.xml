@@ -38,8 +38,13 @@
          SIGTERM handler (lib/Shutdown.js) closes the database cleanly on exit. -->
     <exec_method name='stop' type='method' exec=':kill' timeout_seconds='30' />
     
-    <!-- Refresh method -->
-    <exec_method name='refresh' type='method' exec=':kill -HUP' timeout_seconds='30' />
+    <!-- Refresh method: no-op. Config reload is an app-initiated operation (via
+         the API), never a sysadmin action, so `svcadm refresh` must not disrupt
+         the running service. svc.startd still re-reads SMF properties into the
+         running snapshot on refresh; only the app-notification step is a no-op.
+         `:kill -HUP` would send SIGHUP to the contract, and node has no SIGHUP
+         handler, so it would terminate and force a full service restart. -->
+    <exec_method name='refresh' type='method' exec=':true' timeout_seconds='30' />
     
     <!-- Stability -->
     <stability value='Evolving' />

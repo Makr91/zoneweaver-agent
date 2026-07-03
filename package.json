@@ -1,7 +1,7 @@
 {
   "name": "zoneweaver-agent",
   "version": "0.3.3",
-  "hyperweaverUiVersion": "0.10.4",
+  "hyperweaverUiVersion": "0.10.5",
   "description": "NodeJS based API for Management of Bhyve on OmniOS",
   "main": "index.js",
   "type": "module",
@@ -9,7 +9,7 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "sync-versions": "node scripts/sync-versions.js",
-    "generate-docs": "node scripts/generate-docs.js",
+    "generate-openapi": "node scripts/generate-openapi.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

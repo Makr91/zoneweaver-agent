@@ -5,6 +5,7 @@ node_modules/
 dist/
 build/
 coverage/
+openapi.json
 
 # Package files
 package-lock.json
@@ -34,10 +35,7 @@ jspm_packages/
 # Packaging
 packaging/
 
-# Documentation 
-docs/
-_sass/
-assets/
+# Markdown (managed elsewhere; not Prettier-formatted here)
 *.md
 
 # Git files
@@ -62,7 +60,7 @@ Thumbs.db
 
 # Skip specific scripts
 scripts/sync-versions.js
-scripts/generate-docs.js
+scripts/generate-openapi.js
 
 # SQLite files
 *.sqlite

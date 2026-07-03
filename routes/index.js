@@ -459,11 +459,30 @@ router.get('/app/updates/check', verifyApiKey, checkForAppUpdates); // Check for
 // Get configuration for conditional routing
 const statsConfig = config.get('stats') || { public_access: false };
 const uiConfig = config.get('ui') || {};
+const docsConfig = config.get('docs') || {};
 
-// UI shim (Direct mode): serve the published Hyperweaver UI artifact when enabled
+// The Hyperweaver UI artifact (baked into the package) also carries the docs site at
+// ui/docs. Resolve it once, whether or not the SPA itself is served.
+const uiDir = path.resolve(uiConfig.path || path.join(process.cwd(), 'ui'));
+
+// Docs shim: serve the bundled docs site at /docs (matching its /docs baseurl),
+// independent of the SPA — so a docs-only setup (ui.enabled: false) still exposes
+// /docs. The files ride along inside the UI artifact, so this is free. Disable with
+// docs.enabled: false; the fallback fires only when the docs aren't bundled.
+if (docsConfig.enabled !== false) {
+  router.use('/docs', express.static(path.join(uiDir, 'docs')));
+  router.get('/docs/*splat', (req, res) => {
+    void req;
+    res.status(503).json({
+      error: 'Documentation not bundled in this build',
+      details:
+        'The docs site ships inside the Hyperweaver UI artifact (ui/docs); install a UI artifact >= 0.10.5.',
+    });
+  });
+}
+
+// UI shim (Direct mode): serve the published Hyperweaver UI SPA at /ui when enabled
 if (uiConfig.enabled) {
-  const uiDir = path.resolve(uiConfig.path || path.join(process.cwd(), 'ui'));
-
   router.use('/ui', express.static(uiDir));
   router.get('/ui/*splat', (req, res) => {
     // SPA fallback: client-side routes resolve to index.html

@@ -44,6 +44,9 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Generated OpenAPI spec (published as a release asset at build)
+openapi.json
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 

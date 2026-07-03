@@ -13,15 +13,12 @@ export default [
       'coverage/**/*', // Test coverage
       '*.min.js', // Minified files
       'packaging/**/*', // Packaging files
-      'docs/**/*', // Documentation
-      '_sass/**/*', // Jekyll sass files
       'logs/**/*', // Log files
       '**/*.log', // Log files
-      'assets/**/*', // Static assets
       '.git/**/*', // Git files
       'scripts/remove-console-taskqueue.js', // Temp script
       'scripts/sync-versions.js',
-      'scripts/generate-docs.js',
+      'scripts/generate-openapi.js',
     ],
   },
 

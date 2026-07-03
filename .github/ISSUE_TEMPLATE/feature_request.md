@@ -13,12 +13,14 @@ A clear and concise description of what you want to happen.
 ## Problem Statement
 
 Describe the problem or limitation you're experiencing:
+
 - What currently doesn't work or is difficult to achieve?
 - How does this limitation affect your use of Zoneweaver Agent?
 
 ## Proposed Solution
 
 Describe the solution you'd like to see implemented:
+
 - What should the new feature do?
 - How should it work from a user perspective?
 - What would the API look like (if applicable)?
@@ -26,6 +28,7 @@ Describe the solution you'd like to see implemented:
 ## Alternative Solutions
 
 Have you considered any alternative solutions or workarounds?
+
 - What alternatives have you tried?
 - Why don't they adequately solve the problem?
 
@@ -34,6 +37,7 @@ Have you considered any alternative solutions or workarounds?
 Provide specific examples of how this feature would be used:
 
 **Example 1:**
+
 ```bash
 # Current limitation:
 curl -X GET "http://localhost:5000/api/current-endpoint"
@@ -48,18 +52,21 @@ Describe a practical scenario where this feature would be beneficial.
 ## Impact Assessment
 
 **Benefit Level:**
+
 - [ ] Critical (essential for system operation)
 - [ ] High (significantly improves functionality)
 - [ ] Medium (useful improvement)
 - [ ] Low (nice to have)
 
 **User Impact:**
+
 - [ ] All users would benefit
 - [ ] Power users would benefit
 - [ ] Specific use cases would benefit
 - [ ] Optional/opt-in feature
 
 **Affected Areas:**
+
 - [ ] Zone management
 - [ ] API endpoints
 - [ ] Authentication/security
@@ -72,12 +79,14 @@ Describe a practical scenario where this feature would be beneficial.
 ## Implementation Considerations
 
 **Complexity:** (if you have technical insight)
+
 - [ ] Simple (minor API addition)
 - [ ] Moderate (some backend changes needed)
 - [ ] Complex (significant architecture changes)
 - [ ] Unknown
 
 **Breaking Changes:**
+
 - [ ] No breaking changes expected
 - [ ] Minor breaking changes possible
 - [ ] Major breaking changes likely
@@ -97,6 +106,7 @@ Add any other context, screenshots, or references about the feature request here
 ## Resource Understanding
 
 I understand that this project is maintained with limited development resources and that:
+
 - Feature requests are prioritized based on community needs and available development time
 - Complex features may require significant community contribution to be implemented
 - The development timeline depends on available resources and community involvement

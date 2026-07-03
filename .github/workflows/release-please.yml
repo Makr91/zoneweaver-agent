@@ -11,9 +11,16 @@ permissions:
   pull-requests: write
   issues: write
   actions: write
+  security-events: write
+  packages: read
 
 jobs:
+  ci-checks:
+    name: CI Checks
+    uses: ./.github/workflows/ci.yml
+
   release-please:
+    needs: ci-checks
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -23,7 +30,7 @@ jobs:
       patch: ${{ steps.release.outputs.patch }}
     steps:
       - name: Release Please
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         id: release
 
   build-packages:
@@ -35,18 +42,30 @@ jobs:
       version: ${{ needs.release-please.outputs.major }}.${{ needs.release-please.outputs.minor }}.${{ needs.release-please.outputs.patch }}
     secrets: inherit
 
-  build-docs:
-    needs: [release-please, build-packages]
+  publish-openapi:
+    name: Publish OpenAPI spec
+    needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Trigger Documentation Build
-        uses: actions/github-script@v8
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
         with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'docs.yml',
-              ref: 'main'
-            });
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate OpenAPI spec
+        run: npm run generate-openapi
+
+      - name: Upload OpenAPI spec to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" openapi.json --clobber

@@ -232,6 +232,16 @@ class NetworkCollector {
 
     const result = await this.configController.collectNetworkConfig();
 
+    // IP addresses + routing table ride the same config cycle. The pre-refactor
+    // monolithic collector gathered these during its config pass; the modular
+    // split left both methods built-but-never-invoked, so ip_addresses/routes
+    // stayed permanently empty. Both handle their own errors (warn + []), so
+    // they cannot fail the config result.
+    await Promise.all([
+      this.dataController.collectIPAddresses(),
+      this.dataController.collectRoutingTable(),
+    ]);
+
     this.isCollecting = this.configController.isCollecting;
     return result;
   }

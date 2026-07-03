@@ -19,7 +19,7 @@ jobs:
     steps:
       # OmniOS Build Steps - Just sync source and build on OmniOS
       - name: Checkout for OmniOS build
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           clean: true
 

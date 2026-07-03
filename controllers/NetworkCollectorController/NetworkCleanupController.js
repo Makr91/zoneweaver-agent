@@ -2,7 +2,7 @@
  * @fileoverview Network Cleanup Controller
  * @description Handles cleanup of old network data based on retention policies
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { Op } from 'sequelize';

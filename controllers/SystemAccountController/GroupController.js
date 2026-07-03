@@ -2,7 +2,7 @@
  * @fileoverview Group Management Controller for System Account Management
  * @description Handles group creation, modification, and deletion operations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { TaskPriority } from '../../models/TaskModel.js';

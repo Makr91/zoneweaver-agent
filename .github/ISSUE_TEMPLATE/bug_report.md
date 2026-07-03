@@ -15,7 +15,7 @@ A clear and concise description of what the bug is.
 **System Information:**
 - OS: [e.g., OmniOS r151048]
 - Node.js Version: [e.g., 22.x]
-- ZoneweaverAPI Version: [e.g., 0.0.26]
+- Zoneweaver Agent Version: [e.g., 0.0.26]
 - Installation Method: [package/source]
 
 **Configuration:**

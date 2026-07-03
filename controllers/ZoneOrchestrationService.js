@@ -1,8 +1,8 @@
 /**
- * @fileoverview Zone Orchestration Service for Zoneweaver API
+ * @fileoverview Zone Orchestration Service for Zoneweaver Agent
  * @description Handles zone orchestration startup and service management
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import config from '../config/ConfigLoader.js';

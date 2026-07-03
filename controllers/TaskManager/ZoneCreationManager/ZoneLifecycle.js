@@ -135,7 +135,7 @@ export const finalizeAndInstallZone = async (zoneName, metadata, task, onData = 
     throw new Error(`Zone installation failed: ${installResult.error}`);
   }
 
-  // Fix zonepath permissions for service user (zoneapi) access to provisioning datasets
+  // Fix zonepath permissions for service user (zwagent) access to provisioning datasets
   const pool = metadata.disks?.boot?.pool || 'rpool';
   const dataset = metadata.disks?.boot?.dataset || 'zones';
   const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);

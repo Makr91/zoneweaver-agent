@@ -2,7 +2,7 @@
  * @fileoverview Database Management Controller
  * @description Endpoints for database maintenance operations (stats, vacuum, analyze, cleanup)
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { stat } from 'fs/promises';

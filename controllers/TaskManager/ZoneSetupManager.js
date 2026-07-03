@@ -1,5 +1,5 @@
 /**
- * @fileoverview Zone Setup Task Manager for Zoneweaver API
+ * @fileoverview Zone Setup Task Manager for Zoneweaver Agent
  * @description Executes zlogin automation recipes against zones for early-boot configuration.
  *              Runs as a task in the TaskQueue system.
  */

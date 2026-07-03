@@ -1,5 +1,5 @@
 /**
- * @fileoverview Default Recipe Seeder for Zoneweaver API
+ * @fileoverview Default Recipe Seeder for Zoneweaver Agent
  * @description Seeds 5 default zlogin automation recipes for common OS families.
  *              These recipes automate early-boot network configuration before SSH is available.
  */

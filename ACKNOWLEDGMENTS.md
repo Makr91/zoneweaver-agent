@@ -1,6 +1,6 @@
 # Acknowledgments
 
-ZoneweaverAPI is built using many excellent open-source projects and tools. We are grateful to the developers and communities behind these projects.
+Zoneweaver Agent is built using many excellent open-source projects and tools. We are grateful to the developers and communities behind these projects.
 
 ## Core Dependencies
 
@@ -111,7 +111,7 @@ ZoneweaverAPI is built using many excellent open-source projects and tools. We a
 - Inspiration: Foundation for OmniOS and zone management concepts
 
 **Bhyve** - BSD Hypervisor
-- Usage: Virtualization technology managed by ZoneweaverAPI
+- Usage: Virtualization technology managed by Zoneweaver Agent
 
 **Solaris Zones** - Operating system-level virtualization
 - Inspiration: Container/zone management concepts
@@ -128,9 +128,9 @@ ZoneweaverAPI is built using many excellent open-source projects and tools. We a
 
 ## Special Recognition
 
-**Open Source Community** - The broader open-source software community whose collaborative spirit makes projects like ZoneweaverAPI possible.
+**Open Source Community** - The broader open-source software community whose collaborative spirit makes projects like Zoneweaver Agent possible.
 
-**OmniOS Community** - For creating and maintaining the excellent OmniOS platform that ZoneweaverAPI is designed for.
+**OmniOS Community** - For creating and maintaining the excellent OmniOS platform that Zoneweaver Agent is designed for.
 
 **Early Users and Testers** - Community members who provided valuable feedback during development and testing phases.
 

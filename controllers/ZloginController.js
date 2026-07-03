@@ -6,7 +6,7 @@ import { log } from '../lib/Logger.js';
 import { ptyManager } from '../lib/ZloginPtyManager.js';
 
 /**
- * @fileoverview Zlogin Session Controller for Zoneweaver API
+ * @fileoverview Zlogin Session Controller for Zoneweaver Agent
  * @description Manages the lifecycle of zlogin pseudo-terminal sessions for zones.
  *              Uses shared PTY manager for multiplexing between automation and WebSocket clients.
  */

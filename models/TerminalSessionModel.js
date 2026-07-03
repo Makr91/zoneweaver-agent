@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 const { DataTypes } = Sequelize;
 
 /**
- * @fileoverview Terminal Session model for Zoneweaver API
+ * @fileoverview Terminal Session model for Zoneweaver Agent
  * @description Defines the database model for managing terminal sessions.
  */
 

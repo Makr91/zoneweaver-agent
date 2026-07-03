@@ -1,5 +1,5 @@
 /**
- * @fileoverview Zlogin Automation Recipe Model for Zoneweaver API
+ * @fileoverview Zlogin Automation Recipe Model for Zoneweaver Agent
  * @description Stores reusable zlogin automation recipes for early-boot zone configuration
  */
 

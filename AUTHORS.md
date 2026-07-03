@@ -1,6 +1,6 @@
 # Authors
 
-This file lists the people who have contributed to ZoneweaverAPI.
+This file lists the people who have contributed to Zoneweaver Agent.
 
 ## Project Maintainer
 
@@ -51,7 +51,7 @@ All contributors retain copyright to their contributions while licensing them un
 
 Special recognition for those who have helped the project in unique ways:
 
-- **Community Members**: Thank you to everyone who uses ZoneweaverAPI, reports issues, asks questions, and provides feedback
+- **Community Members**: Thank you to everyone who uses Zoneweaver Agent, reports issues, asks questions, and provides feedback
 - **Beta Testers**: Early users who helped identify issues and improve stability
 - **Documentation Reviewers**: Those who help improve our documentation through feedback and suggestions
 

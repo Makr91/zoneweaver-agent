@@ -5,7 +5,7 @@ import ArtifactStorageLocation from './ArtifactStorageLocationModel.js';
 const { DataTypes } = Sequelize;
 
 /**
- * @fileoverview Artifact model for Zoneweaver API artifact management
+ * @fileoverview Artifact model for Zoneweaver Agent artifact management
  * @description Defines the database model for individual artifact files
  */
 

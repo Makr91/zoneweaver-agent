@@ -9,7 +9,7 @@ permalink: /docs/guides/authentication/
 # Authentication Guide
 {: .no_toc }
 
-Learn how to set up and manage API keys for secure access to the ZoneweaverAPI.
+Learn how to set up and manage API keys for secure access to the Zoneweaver Agent.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -21,11 +21,11 @@ Learn how to set up and manage API keys for secure access to the ZoneweaverAPI.
 
 ## Overview
 
-The ZoneweaverAPI uses Bearer token authentication with API keys. All requests must include a valid API key in the Authorization header.
+The Zoneweaver Agent uses Bearer token authentication with API keys. All requests must include a valid API key in the Authorization header.
 
 ## API Key Format
 
-ZoneweaverAPI keys use the following format:
+Zoneweaver Agent keys use the following format:
 ```
 wh_[random_string]
 ```
@@ -181,7 +181,7 @@ curl -H "Authorization: Bearer wh_your_api_key" \
 
 ## Configuration Options
 
-Configure API key behavior in `/etc/zoneweaver-api/config.yaml`:
+Configure API key behavior in `/etc/zoneweaver-agent/config.yaml`:
 
 ```yaml
 api_keys:
@@ -221,7 +221,7 @@ api_keys:
    api_keys:
      bootstrap_enabled: true
    ```
-3. Restart the service: `svcadm restart zoneweaver-api`
+3. Restart the service: `svcadm restart zoneweaver-agent`
 
 ### Missing Authorization Header
 

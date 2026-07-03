@@ -2,7 +2,7 @@
  * @fileoverview ZFS ARC Statistics Collection Module
  * @description Handles ZFS ARC (Adaptive Replacement Cache) statistics collection
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import ARCStats from '../../models/ARCStatsModel.js';

@@ -4,7 +4,7 @@ import db from '../config/Database.js';
 const { DataTypes } = Sequelize;
 
 /**
- * @fileoverview Task model for Zoneweaver API task queue management
+ * @fileoverview Task model for Zoneweaver Agent task queue management
  * @description Defines the database model for managing zone operation tasks with priority and dependency support
  */
 

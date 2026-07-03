@@ -5,8 +5,8 @@ server:
 ssl:
   enabled: true
   generate_ssl: true
-  key_path: /etc/zoneweaver-api/ssl/server.key
-  cert_path: /etc/zoneweaver-api/ssl/server.crt
+  key_path: /etc/zoneweaver-agent/ssl/server.key
+  cert_path: /etc/zoneweaver-agent/ssl/server.crt
 cors:
   allow_all: true
   whitelist:
@@ -16,7 +16,7 @@ cors:
     - https://localhost:5001
 database:
   dialect: sqlite
-  storage: /var/lib/zoneweaver-api/database/database.sqlite
+  storage: /var/lib/zoneweaver-agent/database/database.sqlite
   logging: false
   sqlite_options:
     journal_mode: WAL
@@ -89,11 +89,11 @@ zones:
         critical: 300
 provisioning:
   install_tools: true
-  staging_path: /var/lib/zoneweaver-api/provisioning
+  staging_path: /var/lib/zoneweaver-agent/provisioning
   playbook_timeout_seconds: 21600
   ansible_install_timeout_seconds: 300
   ssh:
-    key_path: /etc/zoneweaver-api/ssh/provision_key
+    key_path: /etc/zoneweaver-agent/ssh/provision_key
     timeout_seconds: 300
     poll_interval_seconds: 10
   network:
@@ -111,7 +111,7 @@ provisioning:
     circular_max_lines: 10000
     flush_interval_seconds: 10
     persist_log_file: true
-    log_directory: /var/log/zoneweaver-api/tasks
+    log_directory: /var/log/zoneweaver-agent/tasks
   zlogin:
     enabled: true
     default_timeout_seconds: 300
@@ -157,7 +157,7 @@ host_monitoring:
 logging:
   level: warn
   console_enabled: false
-  log_directory: /var/log/zoneweaver-api
+  log_directory: /var/log/zoneweaver-agent
   enable_compression: true
   compression_age_days: 7
   max_files: 30
@@ -179,7 +179,7 @@ api_docs:
   enabled: true
 ui:
   enabled: false
-  path: /opt/zoneweaver-api/ui
+  path: /opt/zoneweaver-agent/ui
 fault_management:
   enabled: true
   cache_interval: 3600

@@ -8,7 +8,7 @@ nav_order: 4
 # Network Management Guide
 {: .no_toc }
 
-Comprehensive guide to managing network infrastructure for zones in zoneweaver-api.
+Comprehensive guide to managing network infrastructure for zones in zoneweaver-agent.
 {: .fs-6 .fw-300 }
 
 ## Table of contents
@@ -746,7 +746,7 @@ svcs dhcp/server:ipv4
    ```
 
 **Fix:**
-- If zoneweaver-api needs to be accessible from zones, ensure it binds to `0.0.0.0` or `10.190.190.1`, not just `127.0.0.1`
+- If zoneweaver-agent needs to be accessible from zones, ensure it binds to `0.0.0.0` or `10.190.190.1`, not just `127.0.0.1`
 - Add ipfilter pass rules if packet filtering is enabled (separate from NAT)
 
 ---
@@ -763,7 +763,7 @@ svcs dhcp/server:ipv4
 
 1. **Reserve IP ranges** — Keep lower IPs (e.g., .2-.9) for static assignment, start DHCP pool at .10
 2. **Static mappings for important zones** — Use DHCP host entries for zones that need predictable IPs
-3. **Document MAC addresses** — Keep a record of which zone has which MAC (zoneweaver-api auto-generates, but track them)
+3. **Document MAC addresses** — Keep a record of which zone has which MAC (zoneweaver-agent auto-generates, but track them)
 
 ### NAT Rules
 

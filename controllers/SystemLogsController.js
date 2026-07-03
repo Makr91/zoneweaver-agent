@@ -1,8 +1,8 @@
 /**
- * @fileoverview System Logs Controller for Zoneweaver API
+ * @fileoverview System Logs Controller for Zoneweaver Agent
  * @description Provides API endpoints for viewing system and application logs
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { exec } from 'child_process';

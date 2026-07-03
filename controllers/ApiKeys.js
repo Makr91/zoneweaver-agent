@@ -112,7 +112,7 @@ export const bootstrapFirstApiKey = async (req, res) => {
  * /api-keys/generate:
  *   post:
  *     summary: Generate new API key
- *     description: Creates a new API key for accessing the Zoneweaver API. Requires existing valid API key.
+ *     description: Creates a new API key for accessing the Zoneweaver Agent. Requires existing valid API key.
  *     tags: [API Keys]
  *     security:
  *       - ApiKeyAuth: []

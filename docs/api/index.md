@@ -9,7 +9,7 @@ permalink: /docs/api/
 # API Reference
 {: .no_toc }
 
-The ZoneweaverAPI provides comprehensive RESTful endpoints for managing Bhyve virtual machines, networking, storage, and system monitoring on OmniOS/illumos systems.
+The Zoneweaver Agent provides comprehensive RESTful endpoints for managing Bhyve virtual machines, networking, storage, and system monitoring on OmniOS/illumos systems.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -31,14 +31,14 @@ See the [Authentication Guide](../guides/authentication/) for detailed setup ins
 
 ## Base URL
 
-The API is served from your ZoneweaverAPI server:
+The API is served from your Zoneweaver Agent server:
 
 - **HTTPS (Recommended)**: `https://your-server:5001`
 - **HTTP**: `http://your-server:5000`
 
 ## OpenAPI Specification
 
-The ZoneweaverAPI is fully documented using OpenAPI 3.0 specification.
+The Zoneweaver Agent is fully documented using OpenAPI 3.0 specification.
 
 ### Interactive Documentation
 
@@ -47,7 +47,7 @@ The ZoneweaverAPI is fully documented using OpenAPI 3.0 specification.
 
 ### API Categories
 
-The ZoneweaverAPI is organized into the following categories:
+The Zoneweaver Agent is organized into the following categories:
 
 #### Zone Management
 - Zone lifecycle management (create, start, stop, delete, restart)

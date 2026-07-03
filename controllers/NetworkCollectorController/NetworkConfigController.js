@@ -2,7 +2,7 @@
  * @fileoverview Network Configuration Controller
  * @description Handles network interface configuration collection from various dladm commands
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { exec } from 'child_process';

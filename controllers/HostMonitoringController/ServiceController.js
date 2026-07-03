@@ -2,7 +2,7 @@
  * @fileoverview Monitoring Service Controller for Host Monitoring
  * @description Handles monitoring service status, health checks, and manual collection triggers
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { getHostMonitoringService } from '../HostMonitoringService.js';

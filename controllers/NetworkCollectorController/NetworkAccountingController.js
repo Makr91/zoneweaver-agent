@@ -2,7 +2,7 @@
  * @fileoverview Network Accounting Controller
  * @description Handles network accounting initialization and management using acctadm
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { exec } from 'child_process';

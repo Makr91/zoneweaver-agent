@@ -2,7 +2,7 @@
  * @fileoverview Main Artifact Controller Entry Point
  * @description Central export point for all artifact management functionality
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 // Storage Path Management

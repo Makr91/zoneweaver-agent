@@ -2,7 +2,7 @@
  * @fileoverview System Host Manager Entry Point
  * @description Central export point for all system host task execution functions
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 // Restart Operations

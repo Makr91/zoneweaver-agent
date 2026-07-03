@@ -1,9 +1,9 @@
 /**
- * @fileoverview Services Controller for Zoneweaver API
+ * @fileoverview Services Controller for Zoneweaver Agent
  * @description Handles API requests for OmniOS service management.
  * @author Mark Gilbert
 
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { getServices, getServiceDetails, getProperties } from '../lib/ServiceManager.js';

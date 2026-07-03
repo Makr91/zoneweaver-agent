@@ -2,7 +2,7 @@
  * @fileoverview VNC Validation Utilities
  * @description Zone validation, port management, and VNC configuration validation with performance optimizations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import net from 'net';

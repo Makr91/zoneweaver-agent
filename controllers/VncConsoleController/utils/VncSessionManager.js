@@ -2,7 +2,7 @@
  * @fileoverview VNC Session Manager Utilities
  * @description VNC session lifecycle management using existing process utilities
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import fs from 'fs';

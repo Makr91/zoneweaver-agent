@@ -5,7 +5,7 @@ import TerminalSessions from '../models/TerminalSessionModel.js';
 import { log, createTimer } from '../lib/Logger.js';
 
 /**
- * @fileoverview Terminal Session Controller for Zoneweaver API
+ * @fileoverview Terminal Session Controller for Zoneweaver Agent
  * @description Manages the lifecycle of pseudo-terminal sessions.
  */
 

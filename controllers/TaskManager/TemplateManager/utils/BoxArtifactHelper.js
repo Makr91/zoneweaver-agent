@@ -69,7 +69,7 @@ const generateBoxMetadata = async (tempDir, zoneConfig, zoneName) => {
   const info = {
     boxname: zoneName,
     Author: 'Zoneweaver',
-    'Vagrant-Zones': 'This box was built with Zoneweaver API',
+    'Vagrant-Zones': 'This box was built with Zoneweaver Agent',
   };
   await fs.promises.writeFile(path.join(tempDir, 'info.json'), JSON.stringify(info, null, 2));
 

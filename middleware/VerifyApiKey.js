@@ -3,7 +3,7 @@ import Entities from '../models/EntityModel.js';
 import { log } from '../lib/Logger.js';
 
 /**
- * @fileoverview API Key verification middleware for Zoneweaver API
+ * @fileoverview API Key verification middleware for Zoneweaver Agent
  * @description Validates API keys provided in Authorization header and adds entity information to request
  */
 

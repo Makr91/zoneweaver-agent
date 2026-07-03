@@ -2,7 +2,7 @@
  * @fileoverview VNC Proxy Controller
  * @description Handles VNC console HTML and asset proxying
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { validateZoneName } from './utils/VncValidation.js';

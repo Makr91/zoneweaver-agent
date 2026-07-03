@@ -10,7 +10,7 @@ import {
 } from '../lib/TemplateRegistryUtils.js';
 
 /**
- * @fileoverview Template Controller for Zoneweaver API
+ * @fileoverview Template Controller for Zoneweaver Agent
  * @description Handles template listing, discovery, and initiating download/delete tasks
  */
 

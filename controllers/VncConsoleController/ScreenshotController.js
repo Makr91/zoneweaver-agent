@@ -6,7 +6,7 @@
  *   without an active VNC session. Capture runs through the existing pfexec
  *   command tooling because the zone root is root-only.
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import path from 'path';

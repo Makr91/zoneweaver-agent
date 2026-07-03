@@ -1,26 +1,26 @@
-# ZoneweaverAPI - OmniOS Package
+# Zoneweaver Agent - OmniOS Package
 
-This directory contains the files needed to build an OmniOS IPS package for the ZoneweaverAPI.
+This directory contains the files needed to build an OmniOS IPS package for the Zoneweaver Agent.
 
 ## Package Information
 
-- **Package Name**: `system/virtualization/zoneweaver-api`
-- **Service Name**: `system/virtualization/zoneweaver-api`
-- **User/Group**: `zoneapi` (UID/GID: 301)
-- **Installation Path**: `/opt/zoneweaver-api`
-- **Configuration**: `/etc/zoneweaver-api`
-- **Data Directory**: `/var/lib/zoneweaver-api` (also user home directory)
-- **Log Directory**: `/var/log/zoneweaver-api`
+- **Package Name**: `system/virtualization/zoneweaver-agent`
+- **Service Name**: `system/virtualization/zoneweaver-agent`
+- **User/Group**: `zwagent` (UID/GID: 301)
+- **Installation Path**: `/opt/zoneweaver-agent`
+- **Configuration**: `/etc/zoneweaver-agent`
+- **Data Directory**: `/var/lib/zoneweaver-agent` (also user home directory)
+- **Log Directory**: `/var/log/zoneweaver-agent`
 
 ## Package Contents
 
 ### Build Files
 - `build.sh` - Main build script that creates the IPS package
-- `zoneweaver-api.p5m` - IPS package manifest
+- `zoneweaver-agent.p5m` - IPS package manifest
 - `local.mog` - Package transformation rules
 
 ### SMF Service Files
-- `zoneweaver-api-smf.xml` - SMF service manifest
+- `zoneweaver-agent-smf.xml` - SMF service manifest
 - `startup.sh` - Service startup script
 - `shutdown.sh` - Service shutdown script
 - `post-install.sh` - Post-installation setup script
@@ -38,50 +38,50 @@ This directory contains the files needed to build an OmniOS IPS package for the 
 
 ### From Package Repository
 ```bash
-pkg install system/virtualization/zoneweaver-api
+pkg install system/virtualization/zoneweaver-agent
 ```
 
 ### Manual Installation
 ```bash
 # Install the .p5p package file
-pkg install -g zoneweaver-api-x.x.x.p5p system/virtualization/zoneweaver-api
+pkg install -g zoneweaver-agent-x.x.x.p5p system/virtualization/zoneweaver-agent
 ```
 
 ### Enable and Start Service
 ```bash
 # Enable the service
-svcadm enable system/virtualization/zoneweaver-api
+svcadm enable system/virtualization/zoneweaver-agent
 
 # Check service status
-svcs system/virtualization/zoneweaver-api
+svcs system/virtualization/zoneweaver-agent
 
 # View service logs
-tail -f /var/log/zoneweaver-api/application.log
+tail -f /var/log/zoneweaver-agent/application.log
 ```
 
 ## Configuration
 
-The service uses configuration file at `/etc/zoneweaver-api/config.yaml`. This file is preserved during package updates.
+The service uses configuration file at `/etc/zoneweaver-agent/config.yaml`. This file is preserved during package updates.
 
 ### SSL Certificates
 
 SSL certificates are automatically generated during first startup if they don't exist:
-- **Private Key**: `/etc/zoneweaver-api/ssl/server.key`
-- **Certificate**: `/etc/zoneweaver-api/ssl/server.crt`
+- **Private Key**: `/etc/zoneweaver-agent/ssl/server.key`
+- **Certificate**: `/etc/zoneweaver-agent/ssl/server.crt`
 
 ### Database
 
 The SQLite database is stored at:
-- **Database**: `/var/lib/zoneweaver-api/database/database.sqlite`
+- **Database**: `/var/lib/zoneweaver-agent/database/database.sqlite`
 
 ### User Account and Shell Environment
 
-The `zoneapi` user is created with the following shell initialization files in its home directory (`/var/lib/zoneweaver-api`):
+The `zwagent` user is created with the following shell initialization files in its home directory (`/var/lib/zoneweaver-agent`):
 - **`.profile`** - POSIX shell initialization (copied from `/etc/skel/.profile`)
 - **`.bashrc`** - Bash-specific initialization (copied from `/etc/skel/.bashrc`)
 - **`.kshrc`** - Korn shell initialization (copied from `/etc/skel/.kshrc`)
 
-These files ensure that interactive shell sessions and shell scripts run as the `zoneapi` user have proper environment setup including PATH configuration for OmniOS/OOCE tools.
+These files ensure that interactive shell sessions and shell scripts run as the `zwagent` user have proper environment setup including PATH configuration for OmniOS/OOCE tools.
 
 ## API Access
 
@@ -95,24 +95,24 @@ Once running, the API will be available at:
 ### SMF Commands
 ```bash
 # Start service
-svcadm enable system/virtualization/zoneweaver-api
+svcadm enable system/virtualization/zoneweaver-agent
 
 # Stop service
-svcadm disable system/virtualization/zoneweaver-api
+svcadm disable system/virtualization/zoneweaver-agent
 
 # Restart service
-svcadm restart system/virtualization/zoneweaver-api
+svcadm restart system/virtualization/zoneweaver-agent
 
 # Refresh configuration
-svcadm refresh system/virtualization/zoneweaver-api
+svcadm refresh system/virtualization/zoneweaver-agent
 
 # View service status
-svcs -l system/virtualization/zoneweaver-api
+svcs -l system/virtualization/zoneweaver-agent
 ```
 
 ### Log Files
-- **Service Log**: `/var/log/zoneweaver-api/application.log`
-- **SMF Log**: `/var/svc/log/system-virtualization-zoneweaver-api:default.log`
+- **Service Log**: `/var/log/zoneweaver-agent/application.log`
+- **SMF Log**: `/var/svc/log/system-virtualization-zoneweaver-agent:default.log`
 
 ## Build Process
 
@@ -128,19 +128,19 @@ The package is built automatically via GitHub Actions when a new release is crea
 ## Troubleshooting
 
 ### Service Won't Start
-1. Check SMF service status: `svcs -xv system/virtualization/zoneweaver-api`
-2. Check service logs: `tail -f /var/svc/log/system-virtualization-zoneweaver-api:default.log`
-3. Check application logs: `tail -f /var/log/zoneweaver-api/application.log`
-4. Verify configuration: `/etc/zoneweaver-api/config.yaml`
+1. Check SMF service status: `svcs -xv system/virtualization/zoneweaver-agent`
+2. Check service logs: `tail -f /var/svc/log/system-virtualization-zoneweaver-agent:default.log`
+3. Check application logs: `tail -f /var/log/zoneweaver-agent/application.log`
+4. Verify configuration: `/etc/zoneweaver-agent/config.yaml`
 
 ### SSL Certificate Issues
-1. Check certificate files exist: `ls -la /etc/zoneweaver-api/ssl/`
-2. Check file ownership: `ls -la /etc/zoneweaver-api/ssl/`
-3. Regenerate certificates: `rm /etc/zoneweaver-api/ssl/*.{key,crt}` and restart service
+1. Check certificate files exist: `ls -la /etc/zoneweaver-agent/ssl/`
+2. Check file ownership: `ls -la /etc/zoneweaver-agent/ssl/`
+3. Regenerate certificates: `rm /etc/zoneweaver-agent/ssl/*.{key,crt}` and restart service
 
 ### Database Issues
-1. Check database directory exists: `/var/lib/zoneweaver-api/database/`
-2. Check file ownership: `chown -R zoneweaver-api:zoneweaver-api /var/lib/zoneweaver-api`
+1. Check database directory exists: `/var/lib/zoneweaver-agent/database/`
+2. Check file ownership: `chown -R zoneweaver-agent:zoneweaver-agent /var/lib/zoneweaver-agent`
 3. Check database file permissions
 
 ## Package Updates
@@ -151,18 +151,18 @@ Configuration files are preserved during package updates. The service will autom
 
 ```bash
 # Stop and disable service
-svcadm disable system/virtualization/zoneweaver-api
+svcadm disable system/virtualization/zoneweaver-agent
 
 # Remove package
-pkg uninstall system/virtualization/zoneweaver-api
+pkg uninstall system/virtualization/zoneweaver-agent
 
 # Optional: Clean up data (WARNING: This removes all data!)
-rm -rf /var/lib/zoneweaver-api
-rm -rf /var/log/zoneweaver-api
+rm -rf /var/lib/zoneweaver-agent
+rm -rf /var/log/zoneweaver-agent
 ```
 
 ## Support
 
 For support and documentation, visit:
-- **GitHub**: https://github.com/Makr91/zoneweaver-api
-- **Issues**: https://github.com/Makr91/zoneweaver-api/issues
+- **GitHub**: https://github.com/Makr91/zoneweaver-agent
+- **Issues**: https://github.com/Makr91/zoneweaver-agent/issues

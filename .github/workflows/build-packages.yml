@@ -26,11 +26,11 @@ jobs:
       - name: Set package variables
         run: |
           echo "VERSION=${{ inputs.version }}" >> $GITHUB_ENV
-          echo "PACKAGE_NAME=zoneweaver-api" >> $GITHUB_ENV
+          echo "PACKAGE_NAME=zoneweaver-agent" >> $GITHUB_ENV
 
       - name: Clean OmniOS build directory
         run: |
-          ssh ghrunner@omnios.packages.startcloud.com "rm -rf /local/builds/zoneweaver-api/* /local/builds/zoneweaver-api/.*" || true
+          ssh ghrunner@omnios.packages.startcloud.com "rm -rf /local/builds/zoneweaver-agent/* /local/builds/zoneweaver-agent/.*" || true
 
       - name: Sync source code to OmniOS
         run: |
@@ -38,12 +38,12 @@ jobs:
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='*.p5p' \
-            ./ ghrunner@omnios.packages.startcloud.com:/local/builds/zoneweaver-api/
+            ./ ghrunner@omnios.packages.startcloud.com:/local/builds/zoneweaver-agent/
 
       - name: Build package on OmniOS
         run: |
           ssh ghrunner@omnios.packages.startcloud.com "
-            cd /local/builds/zoneweaver-api && 
+            cd /local/builds/zoneweaver-agent && 
             export PATH=/opt/ooce/bin:/opt/ooce/node-22/bin:\$PATH &&
             export MAKE=gmake &&
             chmod +x packaging/omnios/build.sh &&
@@ -52,7 +52,7 @@ jobs:
 
       - name: Transfer OmniOS package back
         run: |
-          rsync -av ghrunner@omnios.packages.startcloud.com:/local/builds/zoneweaver-api/*.p5p ./ || echo "No .p5p files found"
+          rsync -av ghrunner@omnios.packages.startcloud.com:/local/builds/zoneweaver-agent/*.p5p ./ || echo "No .p5p files found"
 
       - name: Install GitHub CLI
         run: |
@@ -78,12 +78,12 @@ jobs:
       - name: Publish OmniOS package to repository
         run: |
           ssh ghrunner@omnios.packages.startcloud.com "
-            cd /local/builds/zoneweaver-api &&
-            pfexec pkgsend publish -d proto -s file:///local/public/r151054/pkg zoneweaver-api.p5m.final &&
+            cd /local/builds/zoneweaver-agent &&
+            pfexec pkgsend publish -d proto -s file:///local/public/r151054/pkg zoneweaver-agent.p5m.final &&
             pfexec pkgrepo refresh -s /local/public/r151054/pkg &&
             pfexec svcadm restart pkg/server:r151054_STARTcloud
           "
 
       - name: Clean up OmniOS build directory
         run: |
-          ssh ghrunner@omnios.packages.startcloud.com "rm -rf /local/builds/zoneweaver-api/*"
+          ssh ghrunner@omnios.packages.startcloud.com "rm -rf /local/builds/zoneweaver-agent/*"

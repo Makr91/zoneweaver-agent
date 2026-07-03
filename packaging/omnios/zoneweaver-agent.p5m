@@ -1,0 +1,113 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+set name=pkg.fmri value=system/virtualization/zoneweaver-agent@@VERSION@
+set name=pkg.summary value="Zoneweaver Agent - Zone Hypervisor Management Backend"
+set name=pkg.description value="Node.js API backend for Zoneweaver Agent zone hypervisor management. Provides RESTful API for managing Bhyve virtual machines, networking, storage, and system monitoring on OmniOS/illumos."
+set name=info.classification value=org.opensolaris.category.2008:System/Virtualization
+set name=info.upstream value="ZoneweaverProject"
+set name=info.upstream-url value="https://github.com/Makr91/zoneweaver-agent"
+
+# Dependencies
+depend fmri=ooce/runtime/node-22 type=require
+depend fmri=database/sqlite-3 type=require
+
+# Create zwagent user and group for Zoneweaver Agent backend
+user username=zwagent uid=301 group=zwagent gcos-field="Zoneweaver Agent Service User" \
+    home-dir=/var/lib/zoneweaver-agent login-shell=/usr/bin/bash profiles="Primary Administrator"
+group groupname=zwagent gid=301
+
+# License
+license opt/zoneweaver-agent/LICENSE.md license="GPL-3.0" must-accept=false
+
+# Drop system directories that already exist (avoid conflicts with system packages)
+<transform dir path=^opt$ -> drop>
+<transform dir path=^etc$ -> drop>
+<transform dir path=^var$ -> drop>
+<transform dir path=^lib$ -> drop>
+<transform dir path=lib/svc$ -> drop>
+<transform dir path=lib/svc/manifest$ -> drop>
+<transform dir path=lib/svc/manifest/system$ -> drop>
+<transform dir path=var/lib$ -> drop>
+<transform dir path=var/log$ -> drop>
+
+# Transform rules to set ownership and permissions for auto-generated files
+<transform dir path=opt/zoneweaver-agent$ -> set owner zwagent>
+<transform dir path=opt/zoneweaver-agent$ -> set group zwagent>
+<transform dir path=opt/zoneweaver-agent$ -> set mode 0755>
+
+<transform dir path=opt/zoneweaver-agent/.* -> set owner zwagent>
+<transform dir path=opt/zoneweaver-agent/.* -> set group zwagent>
+<transform dir path=opt/zoneweaver-agent/.* -> set mode 0755>
+
+<transform file path=opt/zoneweaver-agent/.* -> set owner zwagent>
+<transform file path=opt/zoneweaver-agent/.* -> set group zwagent>
+<transform file path=opt/zoneweaver-agent/.* -> set mode 0644>
+
+# SMF method scripts need to be executable by root
+<transform file path=opt/zoneweaver-agent/startup.sh -> set owner root>
+<transform file path=opt/zoneweaver-agent/startup.sh -> set group sys>
+<transform file path=opt/zoneweaver-agent/startup.sh -> set mode 0755>
+
+<transform file path=opt/zoneweaver-agent/shutdown.sh -> set owner root>
+<transform file path=opt/zoneweaver-agent/shutdown.sh -> set group sys>
+<transform file path=opt/zoneweaver-agent/shutdown.sh -> set mode 0755>
+
+
+# Make node binaries executable
+<transform file path=opt/zoneweaver-agent/node_modules/.*/bin/.* -> set mode 0755>
+
+# Configuration directory and files (config file preserved via preserve=true)
+<transform dir path=etc/zoneweaver-agent$ -> set owner zwagent>
+<transform dir path=etc/zoneweaver-agent$ -> set group zwagent>
+<transform dir path=etc/zoneweaver-agent$ -> set mode 0755>
+
+<transform file path=etc/zoneweaver-agent/config.yaml -> set owner zwagent>
+<transform file path=etc/zoneweaver-agent/config.yaml -> set group zwagent>
+<transform file path=etc/zoneweaver-agent/config.yaml -> set mode 0644>
+<transform file path=etc/zoneweaver-agent/config.yaml -> set preserve true>
+
+# SSL and database directories (empty) - keeps persistent data in place on uninstall
+<transform dir path=etc/zoneweaver-agent/ssl -> set owner zwagent>
+<transform dir path=etc/zoneweaver-agent/ssl -> set group zwagent>
+<transform dir path=etc/zoneweaver-agent/ssl -> set mode 0700>
+
+<transform dir path=var/lib/zoneweaver-agent$ -> set owner zwagent>
+<transform dir path=var/lib/zoneweaver-agent$ -> set group zwagent>
+<transform dir path=var/lib/zoneweaver-agent$ -> set mode 0755>
+
+<transform dir path=var/lib/zoneweaver-agent/database -> set owner zwagent>
+<transform dir path=var/lib/zoneweaver-agent/database -> set group zwagent>
+<transform dir path=var/lib/zoneweaver-agent/database -> set mode 0755>
+
+# Skeleton files in zwagent user home directory
+<transform file path=var/lib/zoneweaver-agent/\\.profile -> set owner zwagent>
+<transform file path=var/lib/zoneweaver-agent/\\.profile -> set group zwagent>
+<transform file path=var/lib/zoneweaver-agent/\\.profile -> set mode 0644>
+
+<transform file path=var/lib/zoneweaver-agent/\\.bashrc -> set owner zwagent>
+<transform file path=var/lib/zoneweaver-agent/\\.bashrc -> set group zwagent>
+<transform file path=var/lib/zoneweaver-agent/\\.bashrc -> set mode 0644>
+
+<transform file path=var/lib/zoneweaver-agent/\\.kshrc -> set owner zwagent>
+<transform file path=var/lib/zoneweaver-agent/\\.kshrc -> set group zwagent>
+<transform file path=var/lib/zoneweaver-agent/\\.kshrc -> set mode 0644>
+
+# Log directory (packaged content to avoid permission issues)
+<transform dir path=var/log/zoneweaver-agent -> set owner zwagent>
+<transform dir path=var/log/zoneweaver-agent -> set group zwagent>
+<transform dir path=var/log/zoneweaver-agent -> set mode 0755>
+
+# SMF manifest
+<transform file path=lib/svc/manifest/system/zoneweaver-agent.xml -> set owner root>
+<transform file path=lib/svc/manifest/system/zoneweaver-agent.xml -> set group sys>
+<transform file path=lib/svc/manifest/system/zoneweaver-agent.xml -> set mode 0644>
+<transform file path=lib/svc/manifest/system/zoneweaver-agent.xml -> set restart_fmri svc:/system/manifest-import:default>

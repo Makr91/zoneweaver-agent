@@ -3,7 +3,7 @@ import yaml from 'js-yaml';
 import path from 'path';
 
 /**
- * @fileoverview Configuration loader for Zoneweaver API
+ * @fileoverview Configuration loader for Zoneweaver Agent
  * @description Loads and provides access to YAML configuration settings
  */
 

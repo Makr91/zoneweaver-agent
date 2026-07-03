@@ -1,5 +1,5 @@
 /**
- * @fileoverview NAT and IP Forwarding Task Manager for Zoneweaver API
+ * @fileoverview NAT and IP Forwarding Task Manager for Zoneweaver Agent
  * @description Executes NAT rule and IP forwarding tasks via ipnat/ipfilter and routeadm/ipadm
  */
 

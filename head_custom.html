@@ -1,4 +1,4 @@
-<!-- Custom head content for ZoneweaverAPI Documentation -->
+<!-- Custom head content for Zoneweaver Agent Documentation -->
 <link rel="icon" type="image/x-icon" href="{{ '/assets/images/favicon.ico' | relative_url }}" />
 <link
   rel="apple-touch-icon"
@@ -18,7 +18,7 @@
       var releaseDiv = document.getElementById('latest-release-content');
       if (releaseDiv) {
         fetch(
-          'https://raw.githubusercontent.com/Makr91/zoneweaver-api/refs/heads/main/package.json'
+          'https://raw.githubusercontent.com/Makr91/zoneweaver-agent/refs/heads/main/package.json'
         )
           .then(function (response) {
             return response.json();
@@ -26,10 +26,10 @@
           .then(function (data) {
             releaseDiv.innerHTML =
               '<p><strong>Version v' + data.version + '</strong> - Current Build</p>';
-            var p5pLink = document.querySelector('a[href*="zoneweaver-api.p5p"]');
+            var p5pLink = document.querySelector('a[href*="zoneweaver-agent.p5p"]');
             if (p5pLink) {
               p5pLink.href =
-                'https://github.com/Makr91/zoneweaver-api/releases/latest/download/zoneweaver-api-' +
+                'https://github.com/Makr91/zoneweaver-agent/releases/latest/download/zoneweaver-agent-' +
                 data.version +
                 '.p5p';
             }
@@ -45,7 +45,7 @@
     if (window.location.pathname.includes('/security/')) {
       var versionsDiv = document.getElementById('supported-versions-content');
       if (versionsDiv) {
-        fetch('https://api.github.com/repos/Makr91/zoneweaver-api/releases')
+        fetch('https://api.github.com/repos/Makr91/zoneweaver-agent/releases')
           .then(function (response) {
             return response.json();
           })

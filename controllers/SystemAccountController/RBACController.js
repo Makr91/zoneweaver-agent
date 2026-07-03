@@ -2,7 +2,7 @@
  * @fileoverview RBAC Discovery Controller for System Account Management
  * @description Handles RBAC authorization, profile, and role discovery operations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { executeCommand } from '../../lib/CommandManager.js';

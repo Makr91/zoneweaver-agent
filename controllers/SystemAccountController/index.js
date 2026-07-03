@@ -2,7 +2,7 @@
  * @fileoverview System Account Controller Index
  * @description Main entry point for system account management controllers
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 // Import user management functions

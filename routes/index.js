@@ -484,7 +484,7 @@ if (uiConfig.enabled) {
     res.redirect('/ui/');
   });
 } else {
-  // Root route to display registered Zoneweaver API instances
+  // Root route to display registered Zoneweaver Agent instances
   router.get('/', getRoot);
 }
 

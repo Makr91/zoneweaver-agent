@@ -1,8 +1,8 @@
 /**
- * @fileoverview Artifact Storage Service for Zoneweaver API
+ * @fileoverview Artifact Storage Service for Zoneweaver Agent
  * @description Manages artifact storage locations and synchronization between config.yaml and database
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import crypto from 'crypto';

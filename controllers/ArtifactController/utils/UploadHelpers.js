@@ -2,7 +2,7 @@
  * @fileoverview Upload Helper Functions for Artifact Management
  * @description Utilities for handling artifact upload validation and configuration
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import path from 'path';

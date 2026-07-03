@@ -2,7 +2,7 @@
  * @fileoverview System Metrics Controller for Host Monitoring
  * @description Handles CPU statistics, memory statistics, and system load metrics
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import CPUStats from '../../models/CPUStatsModel.js';

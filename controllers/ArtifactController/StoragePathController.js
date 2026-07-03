@@ -2,7 +2,7 @@
  * @fileoverview Storage Path Controller for Artifact Management
  * @description Handles CRUD operations for artifact storage paths
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import fs from 'fs';

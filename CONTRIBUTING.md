@@ -1,10 +1,10 @@
-# Contributing to ZoneweaverAPI
+# Contributing to Zoneweaver Agent
 
-Thank you for your interest in contributing to ZoneweaverAPI! We welcome contributions from the community as they are essential for the project's continued growth and development.
+Thank you for your interest in contributing to Zoneweaver Agent! We welcome contributions from the community as they are essential for the project's continued growth and development.
 
 ## Important Note on Resources
 
-ZoneweaverAPI is maintained with limited development resources. **Community contributions directly impact the pace of feature development and bug fixes.** The more the community contributes, the faster the project can grow and improve.
+Zoneweaver Agent is maintained with limited development resources. **Community contributions directly impact the pace of feature development and bug fixes.** The more the community contributes, the faster the project can grow and improve.
 
 ## How to Contribute
 
@@ -75,7 +75,7 @@ If you need help with contributing:
 
 - **GitHub Discussions**: Ask questions about development
 - **Issues**: Use the "question" template for specific inquiries
-- **Documentation**: Check our [comprehensive documentation](https://zoneweaver-api.startcloud.com/)
+- **Documentation**: Check our [comprehensive documentation](https://zoneweaver-agent.startcloud.com/)
 
 ## Recognition
 
@@ -87,8 +87,8 @@ Please note that this project follows our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-By contributing to ZoneweaverAPI, you agree that your contributions will be licensed under the [GPL-3.0 License](LICENSE.md).
+By contributing to Zoneweaver Agent, you agree that your contributions will be licensed under the [GPL-3.0 License](LICENSE.md).
 
 ---
 
-**Remember**: Your contributions directly influence the project's development speed and capabilities. Thank you for helping make ZoneweaverAPI better for everyone!
+**Remember**: Your contributions directly influence the project's development speed and capabilities. Thank you for helping make Zoneweaver Agent better for everyone!

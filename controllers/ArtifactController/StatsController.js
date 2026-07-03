@@ -2,7 +2,7 @@
  * @fileoverview Stats Controller for Artifact Management
  * @description Handles artifact statistics and service status operations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import config from '../../config/ConfigLoader.js';

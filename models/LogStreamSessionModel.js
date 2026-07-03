@@ -1,8 +1,8 @@
 /**
- * @fileoverview Log Stream Session Model for Zoneweaver API
+ * @fileoverview Log Stream Session Model for Zoneweaver Agent
  * @description Database model for tracking log streaming sessions
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { DataTypes } from 'sequelize';

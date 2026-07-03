@@ -4,7 +4,7 @@ import db from '../config/Database.js';
 const { DataTypes } = Sequelize;
 
 /**
- * @fileoverview Entity model for API key management in Zoneweaver API
+ * @fileoverview Entity model for API key management in Zoneweaver Agent
  * @description Defines the database model for API key entities that can access the system
  */
 

@@ -8,7 +8,7 @@ permalink: /docs/releases/
 # Releases
 {: .no_toc }
 
-Download the latest version of ZoneweaverAPI.
+Download the latest version of Zoneweaver Agent.
 
 ---
 
@@ -22,8 +22,8 @@ Download the latest version of ZoneweaverAPI.
 
 | Package Type | Platform | Download |
 |:-------------|:---------|:---------|
-| **OmniOS Package** | x86_64 | [📦 Download .p5p](https://github.com/Makr91/zoneweaver-api/releases/latest/download/zoneweaver-api.p5p){: .btn .btn-primary } |
-| **Source Code** | All | [📁 Download Source](https://github.com/Makr91/zoneweaver-api/archive/refs/heads/main.tar.gz){: .btn .btn-outline } |
+| **OmniOS Package** | x86_64 | [📦 Download .p5p](https://github.com/Makr91/zoneweaver-agent/releases/latest/download/zoneweaver-agent.p5p){: .btn .btn-primary } |
+| **Source Code** | All | [📁 Download Source](https://github.com/Makr91/zoneweaver-agent/archive/refs/heads/main.tar.gz){: .btn .btn-outline } |
 
 
 ---
@@ -38,4 +38,4 @@ Download the latest version of ZoneweaverAPI.
 ## Release History
 
 [📋 View Changelog](/docs/changelog/){: .btn .btn-outline }
-[🔍 All Releases](https://github.com/Makr91/zoneweaver-api/releases){: .btn .btn-outline }
+[🔍 All Releases](https://github.com/Makr91/zoneweaver-agent/releases){: .btn .btn-outline }

@@ -2,7 +2,7 @@
  * @fileoverview Network Collector Controller Index
  * @description Main entry point for modular network collection functionality
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import config from '../../config/ConfigLoader.js';

@@ -2,7 +2,7 @@
  * @fileoverview VNC Session Controller
  * @description Handles VNC session start, stop, and info operations using existing utilities
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import fs from 'fs';

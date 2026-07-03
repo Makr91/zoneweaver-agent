@@ -9,7 +9,7 @@ permalink: /docs/guides/getting-started/
 # Getting Started
 {: .no_toc }
 
-This guide will walk you through setting up and configuring the ZoneweaverAPI for the first time.
+This guide will walk you through setting up and configuring the Zoneweaver Agent for the first time.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -21,7 +21,7 @@ This guide will walk you through setting up and configuring the ZoneweaverAPI fo
 
 ## Prerequisites
 
-Before installing the ZoneweaverAPI, ensure you have:
+Before installing the Zoneweaver Agent, ensure you have:
 
 - OmniOS r151046 or later
 - Node.js 18+ (for development)
@@ -38,16 +38,16 @@ Install the pre-built package from the repository:
 # Add the Zoneweaverrepository (if not already added)
 pkg set-publisher -g https://packages.startcloud.com/omnios Makr91
 
-# Install ZoneweaverAPI
-pkg install system/virtualization/zoneweaver-api
+# Install Zoneweaver Agent
+pkg install system/virtualization/zoneweaver-agent
 ```
 
 ### Option 2: Build from Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/Makr91/zoneweaver-api.git
-cd zoneweaver-api
+git clone https://github.com/Makr91/zoneweaver-agent.git
+cd zoneweaver-agent
 
 # Install dependencies
 npm ci
@@ -60,7 +60,7 @@ npm run build
 
 ### 1. Basic Configuration
 
-The configuration file is located at `/etc/zoneweaver-api/config.yaml`:
+The configuration file is located at `/etc/zoneweaver-agent/config.yaml`:
 
 ```yaml
 server:
@@ -69,7 +69,7 @@ server:
 
 database:
   dialect: sqlite
-  storage: /var/lib/zoneweaver-api/database/zoneweaver.db
+  storage: /var/lib/zoneweaver-agent/database/zoneweaver.db
 
 api_keys:
   bootstrap_enabled: true
@@ -82,8 +82,8 @@ For production use, configure SSL certificates:
 
 ```yaml
 ssl:
-  key_path: /etc/zoneweaver-api/ssl/server.key
-  cert_path: /etc/zoneweaver-api/ssl/server.crt
+  key_path: /etc/zoneweaver-agent/ssl/server.key
+  cert_path: /etc/zoneweaver-agent/ssl/server.crt
 ```
 
 ### 3. CORS Configuration
@@ -103,10 +103,10 @@ cors:
 
 ```bash
 # Enable and start the service
-svcadm enable zoneweaver-api
+svcadm enable zoneweaver-agent
 
 # Check service status
-svcs zoneweaver-api
+svcs zoneweaver-agent
 ```
 
 ### 2. Generate Bootstrap API Key
@@ -146,16 +146,16 @@ curl -H "Authorization: Bearer wh_your_api_key_here" \
 
 Check the service logs:
 ```bash
-svcs -xv zoneweaver-api
-tail -f /var/log/zoneweaver-api/error.log
+svcs -xv zoneweaver-agent
+tail -f /var/log/zoneweaver-agent/error.log
 ```
 
 ### Permission Issues
 
 Ensure proper file permissions:
 ```bash
-chown -R zoneweaver:zoneweaver /var/lib/zoneweaver-api
-chmod 600 /etc/zoneweaver-api/config.yaml
+chown -R zoneweaver:zoneweaver /var/lib/zoneweaver-agent
+chmod 600 /etc/zoneweaver-agent/config.yaml
 ```
 
 ### Network Connectivity

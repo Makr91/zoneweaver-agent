@@ -1,10 +1,10 @@
 <?xml version='1.0'?>
 <!DOCTYPE service_bundle SYSTEM '/usr/share/lib/xml/dtd/service_bundle.dtd.1'>
 <!--
-    SMF manifest for ZoneweaverAPI
+    SMF manifest for Zoneweaver Agent
 -->
-<service_bundle type='manifest' name='zoneweaver-api'>
-  <service name='system/virtualization/zoneweaver-api' type='service' version='1'>
+<service_bundle type='manifest' name='zoneweaver-agent'>
+  <service name='system/virtualization/zoneweaver-agent' type='service' version='1'>
     <create_default_instance enabled='false'/>
     <single_instance/>
     
@@ -18,23 +18,23 @@
     </dependency>
     
     <!-- Start method -->
-    <exec_method name='start' type='method' exec='/opt/zoneweaver-api/startup.sh' timeout_seconds='60'>
-      <method_context working_directory='/opt/zoneweaver-api'>
-        <method_credential user='zoneapi' group='zoneapi' 
+    <exec_method name='start' type='method' exec='/opt/zoneweaver-agent/startup.sh' timeout_seconds='60'>
+      <method_context working_directory='/opt/zoneweaver-agent'>
+        <method_credential user='zwagent' group='zwagent' 
             privileges='basic,net_privaddr,sys_admin,proc_owner,file_dac_read,file_dac_write,proc_priocntl' />
         <method_environment>
           <envvar name='PATH' value='/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/bin:/usr/sbin:/sbin'/>
           <envvar name='NODE_ENV' value='production'/>
-          <envvar name='CONFIG_PATH' value='/etc/zoneweaver-api/config.yaml'/>
-          <envvar name='HOME' value='/var/lib/zoneweaver-api'/>
+          <envvar name='CONFIG_PATH' value='/etc/zoneweaver-agent/config.yaml'/>
+          <envvar name='HOME' value='/var/lib/zoneweaver-agent'/>
         </method_environment>
       </method_context>
     </exec_method>
     
     <!-- Stop method -->
-    <exec_method name='stop' type='method' exec='/opt/zoneweaver-api/shutdown.sh' timeout_seconds='30'>
-      <method_context working_directory='/opt/zoneweaver-api'>
-        <method_credential user='zoneapi' group='zoneapi' />
+    <exec_method name='stop' type='method' exec='/opt/zoneweaver-agent/shutdown.sh' timeout_seconds='30'>
+      <method_context working_directory='/opt/zoneweaver-agent'>
+        <method_credential user='zwagent' group='zwagent' />
         <method_environment>
           <envvar name='PATH' value='/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/sbin:/sbin'/>
         </method_environment>
@@ -50,19 +50,19 @@
     <!-- Service description -->
     <template>
       <common_name>
-        <loctext xml:lang='C'>ZoneweaverAPI</loctext>
+        <loctext xml:lang='C'>Zoneweaver Agent</loctext>
       </common_name>
       <description>
         <loctext xml:lang='C'>
-          Node.js API backend for Zoneweaverzone hypervisor management.
+          Node.js API backend for Zoneweaver Agent zone hypervisor management.
           Provides RESTful API for managing Bhyve virtual machines, networking,
           storage, and system monitoring on OmniOS/illumos.
         </loctext>
       </description>
       <documentation>
-        <manpage title='zoneweaver-api' section='8' />
-        <doc_link name='ZoneweaverAPI Project'
-                  uri='https://github.com/Makr91/zoneweaver-api' />
+        <manpage title='zoneweaver-agent' section='8' />
+        <doc_link name='Zoneweaver Agent Project'
+                  uri='https://github.com/Makr91/zoneweaver-agent' />
       </documentation>
     </template>
   </service>

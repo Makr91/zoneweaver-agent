@@ -3,7 +3,7 @@ import TerminalSessions from '../models/TerminalSessionModel.js';
 import { log } from '../lib/Logger.js';
 
 /**
- * @fileoverview Xterm Terminal WebSocket handler for Zoneweaver API
+ * @fileoverview Xterm Terminal WebSocket handler for Zoneweaver Agent
  * @description Handles the WebSocket connection for an active terminal session.
  */
 

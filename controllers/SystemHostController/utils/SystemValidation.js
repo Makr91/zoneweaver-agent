@@ -2,7 +2,7 @@
  * @fileoverview System Validation Utilities for Host Management
  * @description Safety checks and validation for system operations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { log } from '../../../lib/Logger.js';

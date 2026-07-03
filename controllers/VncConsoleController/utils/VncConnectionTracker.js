@@ -2,7 +2,7 @@
  * @fileoverview VNC Connection Tracker Utilities
  * @description WebSocket connection tracking for smart cleanup (based on TerminalSession patterns)
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { log } from '../../../lib/Logger.js';

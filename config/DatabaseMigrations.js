@@ -1,8 +1,8 @@
 /**
- * @fileoverview Database Migration Utilities for Zoneweaver API
+ * @fileoverview Database Migration Utilities for Zoneweaver Agent
  * @description Handles database schema migrations and updates
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import db from './Database.js';

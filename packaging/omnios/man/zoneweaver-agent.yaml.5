@@ -2,18 +2,18 @@
 .Dt ZONEWEAVER-API.YAML 5
 .Os
 .Sh NAME
-.Nm zoneweaver-api.yaml
-.Nd configuration file for ZoneweaverAPI server
+.Nm zoneweaver-agent.yaml
+.Nd configuration file for Zoneweaver Agent server
 .Sh DESCRIPTION
 The
 .Nm
-file is the main configuration file for the ZoneweaverAPI server.
+file is the main configuration file for the Zoneweaver Agent server.
 It is written in YAML format and controls all aspects of the service
 operation including network settings, authentication, database configuration,
 and zone management parameters.
 .Pp
 The configuration file is typically located at:
-.Pa /etc/zoneweaver-api/config.yaml
+.Pa /etc/zoneweaver-agent/config.yaml
 .Sh CONFIGURATION SECTIONS
 The configuration file is organized into logical sections that control
 different aspects of the service operation.
@@ -217,14 +217,14 @@ API documentation endpoint control.
 Boolean enabling the /api-docs interactive documentation endpoint
 .El
 .Sh FILES
-.Bl -tag -width ".Pa /etc/zoneweaver-api/"
-.It Pa /etc/zoneweaver-api/config.yaml
+.Bl -tag -width ".Pa /etc/zoneweaver-agent/"
+.It Pa /etc/zoneweaver-agent/config.yaml
 Default configuration file location
-.It Pa /etc/zoneweaver-api/ssl/
+.It Pa /etc/zoneweaver-agent/ssl/
 SSL certificate directory
-.It Pa /var/lib/zoneweaver-api/database/
+.It Pa /var/lib/zoneweaver-agent/database/
 Database storage directory
-.It Pa /var/log/zoneweaver-api/
+.It Pa /var/log/zoneweaver-agent/
 Log file directory
 .El
 .Sh EXAMPLES
@@ -243,7 +243,7 @@ cors:
     - http://localhost:3000
 database:
   dialect: sqlite
-  storage: /var/lib/zoneweaver-api/database/database.sqlite
+  storage: /var/lib/zoneweaver-agent/database/database.sqlite
 api_keys:
   bootstrap_enabled: true
 .Ed
@@ -258,8 +258,8 @@ server:
 ssl:
   enabled: true
   generate_ssl: false
-  key_path: /etc/zoneweaver-api/ssl/server.key
-  cert_path: /etc/zoneweaver-api/ssl/server.crt
+  key_path: /etc/zoneweaver-agent/ssl/server.key
+  cert_path: /etc/zoneweaver-agent/ssl/server.crt
 cors:
   whitelist:
     - https://zoneweaver.example.com
@@ -279,7 +279,7 @@ api_docs:
 Configuration file syntax errors will prevent the service from starting.
 Check the SMF service logs for detailed error information:
 .Pp
-.Dl # svcs -L zoneweaver-api
+.Dl # svcs -L zoneweaver-agent
 .Pp
 Common configuration issues:
 .Bl -bullet -offset indent
@@ -295,7 +295,7 @@ Insufficient filesystem permissions for specified directories
 Invalid CORS origin URLs
 .El
 .Sh SEE ALSO
-.Xr zoneweaver-api 8 ,
+.Xr zoneweaver-agent 8 ,
 .Xr yaml 7 ,
 .Xr svcadm 8 ,
 .Xr svcs 1

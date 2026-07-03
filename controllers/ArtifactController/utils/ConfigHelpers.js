@@ -2,7 +2,7 @@
  * @fileoverview Configuration Helper Functions for Artifact Management
  * @description Utilities for managing artifact storage configuration in config.yaml
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import fs from 'fs';

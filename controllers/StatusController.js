@@ -3,7 +3,7 @@
  * @description Public slim identity & capabilities endpoint for the Hyperweaver dual-mode contract.
  *              This is NOT /stats — no interface/IP/homedir/CPU dumps, identity + capability tokens only.
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { readFileSync } from 'fs';

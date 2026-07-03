@@ -2,7 +2,7 @@
  * @fileoverview Query Helper Utilities for Host Monitoring
  * @description Common query building, filtering, and pagination utilities
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { Op } from 'sequelize';

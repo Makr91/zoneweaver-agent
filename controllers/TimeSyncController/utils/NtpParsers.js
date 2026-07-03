@@ -2,7 +2,7 @@
  * @fileoverview NTP and Chrony Parsers for Time Synchronization
  * @description Parse NTP peer status and Chrony sources with performance optimizations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 /**

@@ -2,7 +2,7 @@
  * @fileoverview User Management Controller for System Account Management
  * @description Handles user creation, modification, deletion, password management, and account locking
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { TaskPriority } from '../../models/TaskModel.js';

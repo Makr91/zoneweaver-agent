@@ -35,16 +35,16 @@ logerr() { echo "ERROR: $*" >&2; }
 # Set up variables
 SRCDIR="$(pwd)"
 DESTDIR="${SRCDIR}/proto"
-PROG=zoneweaver-api
+PROG=zoneweaver-agent
 VER=$(node -p "require('./package.json').version" 2>/dev/null || echo "1.0.0")
-PKG=system/virtualization/zoneweaver-api
+PKG=system/virtualization/zoneweaver-agent
 
 # Clean and create staging directory
 rm -rf "$DESTDIR"
 mkdir -p "$DESTDIR"
 
 #### Build Structure
-# /opt/zoneweaver-api/
+# /opt/zoneweaver-agent/
 #   # Node.js application files
 #   index.js
 #   package.json
@@ -57,13 +57,13 @@ mkdir -p "$DESTDIR"
 #   node_modules/
 #   startup.sh
 #   shutdown.sh
-# /etc/zoneweaver-api/
+# /etc/zoneweaver-agent/
 #   config.yaml
-# /var/lib/zoneweaver-api/
-# /var/log/zoneweaver-api/
+# /var/lib/zoneweaver-agent/
+# /var/log/zoneweaver-agent/
 
 build_app() {
-    logmsg "Building ZoneweaverAPI"
+    logmsg "Building Zoneweaver Agent"
     
     # Set up environment for OmniOS/Solaris
     export MAKE=gmake
@@ -92,11 +92,11 @@ install_app() {
     pushd $DESTDIR >/dev/null
 
     # Create main application directory
-    logcmd mkdir -p opt/zoneweaver-api
-    pushd opt/zoneweaver-api >/dev/null
+    logcmd mkdir -p opt/zoneweaver-agent
+    pushd opt/zoneweaver-agent >/dev/null
 
     # Copy application files
-    logmsg "Installing ZoneweaverAPI application files"
+    logmsg "Installing Zoneweaver Agent application files"
     logcmd cp $SRCDIR/index.js .
     logcmd cp $SRCDIR/package.json .
     logcmd cp $SRCDIR/LICENSE.md .
@@ -118,20 +118,20 @@ install_app() {
     logcmd cp $SRCDIR/packaging/omnios/shutdown.sh .
     logcmd chmod 755 startup.sh shutdown.sh
     
-    popd >/dev/null # /opt/zoneweaver-api
+    popd >/dev/null # /opt/zoneweaver-agent
 
     # Install configuration
     logmsg "Installing configuration files"
-    logcmd mkdir -p etc/zoneweaver-api
-    logcmd cp $SRCDIR/packaging/config/production-config.yaml etc/zoneweaver-api/config.yaml
+    logcmd mkdir -p etc/zoneweaver-agent
+    logcmd cp $SRCDIR/packaging/config/production-config.yaml etc/zoneweaver-agent/config.yaml
 
-    # Copy skeleton files to zoneapi user home directory
-    logmsg "Installing skeleton files for zoneapi user"
+    # Copy skeleton files to zwagent user home directory
+    logmsg "Installing skeleton files for zwagent user"
     if [ -d "/etc/skel" ]; then
         # Copy each skeleton file if it exists
         for skelfile in .profile .bashrc .kshrc; do
             if [ -f "/etc/skel/$skelfile" ]; then
-                logcmd cp "/etc/skel/$skelfile" "var/lib/zoneweaver-api/" || \
+                logcmd cp "/etc/skel/$skelfile" "var/lib/zoneweaver-agent/" || \
                     logerr "--- copying skeleton file $skelfile failed"
             fi
         done
@@ -142,21 +142,21 @@ install_app() {
 
     # Create empty SSL, database, and log directories (packaged content)
     # This prevents salvaging on uninstall - files within stay in place
-    logcmd mkdir -p etc/zoneweaver-api/ssl
-    logcmd mkdir -p var/lib/zoneweaver-api/database
-    logcmd mkdir -p var/log/zoneweaver-api
+    logcmd mkdir -p etc/zoneweaver-agent/ssl
+    logcmd mkdir -p var/lib/zoneweaver-agent/database
+    logcmd mkdir -p var/log/zoneweaver-agent
 
     # Install SMF manifest
     logmsg "Installing SMF manifest"
     logcmd mkdir -p lib/svc/manifest/system
-    logcmd cp $SRCDIR/packaging/omnios/zoneweaver-api-smf.xml lib/svc/manifest/system/zoneweaver-api.xml
+    logcmd cp $SRCDIR/packaging/omnios/zoneweaver-agent-smf.xml lib/svc/manifest/system/zoneweaver-agent.xml
 
     # Install man pages in standard OOCE location
     logmsg "Installing man pages"
     logcmd mkdir -p opt/ooce/share/man/man8 opt/ooce/share/man/man5
-    logcmd cp $SRCDIR/packaging/omnios/man/zoneweaver-api.8 opt/ooce/share/man/man8/ || \
+    logcmd cp $SRCDIR/packaging/omnios/man/zoneweaver-agent.8 opt/ooce/share/man/man8/ || \
         logerr "--- copying main man page failed"
-    logcmd cp $SRCDIR/packaging/omnios/man/zoneweaver-api.yaml.5 opt/ooce/share/man/man5/ || \
+    logcmd cp $SRCDIR/packaging/omnios/man/zoneweaver-agent.yaml.5 opt/ooce/share/man/man5/ || \
         logerr "--- copying config man page failed"
 
     popd >/dev/null # $DESTDIR
@@ -175,7 +175,7 @@ install_ui() {
     logmsg "Installing Hyperweaver UI ${UI_VERSION}"
     UI_URL="https://github.com/MarkProminic/hyperweaver-ui/releases/download/v${UI_VERSION}/hyperweaver-ui-${UI_VERSION}.tar.gz"
     UI_TARBALL="${SRCDIR}/hyperweaver-ui-${UI_VERSION}.tar.gz"
-    UI_DIR="${DESTDIR}/opt/zoneweaver-api/ui"
+    UI_DIR="${DESTDIR}/opt/zoneweaver-agent/ui"
 
     logcmd curl -fsSL -o "$UI_TARBALL" "$UI_URL"
     logcmd mkdir -p "$UI_DIR"
@@ -189,13 +189,13 @@ install_ui() {
 }
 
 post_install() {
-    logmsg "--- Setting up ZoneweaverAPI staging directory"
+    logmsg "--- Setting up Zoneweaver Agent staging directory"
 
-    logmsg "ZoneweaverAPI staging setup completed"
+    logmsg "Zoneweaver Agent staging setup completed"
 }
 
 # Main build process
-logmsg "Starting ZoneweaverAPI build process"
+logmsg "Starting Zoneweaver Agent build process"
 build_app
 install_app
 install_ui
@@ -205,9 +205,9 @@ post_install
 logmsg "Creating IPS package"
 cd "$SRCDIR"
 export VERSION="$VER"
-sed "s/@VERSION@/${VERSION}/g" packaging/omnios/zoneweaver-api.p5m > zoneweaver-api.p5m.tmp
-pkgsend generate proto | pkgfmt > zoneweaver-api.p5m.generated
-pkgmogrify -DVERSION="${VERSION}" zoneweaver-api.p5m.tmp zoneweaver-api.p5m.generated > zoneweaver-api.p5m.final
+sed "s/@VERSION@/${VERSION}/g" packaging/omnios/zoneweaver-agent.p5m > zoneweaver-agent.p5m.tmp
+pkgsend generate proto | pkgfmt > zoneweaver-agent.p5m.generated
+pkgmogrify -DVERSION="${VERSION}" zoneweaver-agent.p5m.tmp zoneweaver-agent.p5m.generated > zoneweaver-agent.p5m.final
 
 # Create temporary local repository
 TEMP_REPO="${SRCDIR}/temp-repo"
@@ -216,10 +216,10 @@ pkgrepo create "$TEMP_REPO"
 pkgrepo set -s "$TEMP_REPO" publisher/prefix=Makr91
 
 # Publish package to temporary repository
-pkgsend -s "file://${TEMP_REPO}" publish -d proto zoneweaver-api.p5m.final
+pkgsend -s "file://${TEMP_REPO}" publish -d proto zoneweaver-agent.p5m.final
 
 # Create .p5p package archive
-PACKAGE_FILE="zoneweaver-api-${VERSION}.p5p"
+PACKAGE_FILE="zoneweaver-agent-${VERSION}.p5p"
 pkgrecv -s "file://${TEMP_REPO}" -a -d "${PACKAGE_FILE}" "${PKG}"
 
 # Clean up temporary repository

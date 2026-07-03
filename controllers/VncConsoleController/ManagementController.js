@@ -2,7 +2,7 @@
  * @fileoverview VNC Management Controller
  * @description Handles VNC session listing and management operations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import VncSessions from '../../models/VncSessionModel.js';

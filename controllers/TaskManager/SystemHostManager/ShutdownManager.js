@@ -2,7 +2,7 @@
  * @fileoverview System Host Shutdown Manager
  * @description Executes system shutdown operations for TaskQueue
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import yj from 'yieldable-json';

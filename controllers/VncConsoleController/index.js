@@ -2,7 +2,7 @@
  * @fileoverview VNC Console Controller Index
  * @description Main entry point for VNC console controllers
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 // Import session management functions

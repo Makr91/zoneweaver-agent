@@ -2,7 +2,7 @@
  * @fileoverview System Command Parsers for System Account Management
  * @description Utilities for parsing getent, user_attr, and RBAC system files
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { executeCommand } from '../../../lib/CommandManager.js';

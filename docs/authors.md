@@ -8,7 +8,7 @@ permalink: /docs/authors/
 # Authors
 {: .no_toc }
 
-Contributors and authors of ZoneweaverAPI.
+Contributors and authors of Zoneweaver Agent.
 
 ## Table of contents
 {: .no_toc .text-delta }

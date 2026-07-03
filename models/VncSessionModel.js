@@ -4,7 +4,7 @@ import db from '../config/Database.js';
 const { DataTypes } = Sequelize;
 
 /**
- * @fileoverview VNC Session model for Zoneweaver API console management
+ * @fileoverview VNC Session model for Zoneweaver Agent console management
  * @description Defines the database model for managing VNC console sessions
  */
 

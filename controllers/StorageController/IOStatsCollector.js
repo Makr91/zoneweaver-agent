@@ -2,7 +2,7 @@
  * @fileoverview I/O Statistics Collection Module
  * @description Handles comprehensive I/O statistics collection for pools and disks
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import DiskIOStats from '../../models/DiskIOStatsModel.js';

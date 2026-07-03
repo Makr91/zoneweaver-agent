@@ -2,7 +2,7 @@
  * @fileoverview Storage Monitoring Controller for Host Monitoring
  * @description Handles ZFS pools, datasets, disks, and I/O statistics monitoring
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import ZFSPools from '../../models/ZFSPoolModel.js';

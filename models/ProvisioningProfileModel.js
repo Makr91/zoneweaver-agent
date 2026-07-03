@@ -1,5 +1,5 @@
 /**
- * @fileoverview Provisioning Profile Model for Zoneweaver API
+ * @fileoverview Provisioning Profile Model for Zoneweaver Agent
  * @description Reusable named provisioning profiles that combine recipe, credentials,
  *              sync folders, and provisioners into a single configuration
  */

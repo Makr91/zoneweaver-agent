@@ -1,5 +1,5 @@
 /**
- * @fileoverview Recipe Controller for Zoneweaver API
+ * @fileoverview Recipe Controller for Zoneweaver Agent
  * @description CRUD operations for zlogin automation recipes and dry-run testing
  */
 

@@ -2,7 +2,7 @@
  * @fileoverview Timezone Helper Utilities for Time Synchronization
  * @description Timezone management and validation functions
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import fs from 'fs';

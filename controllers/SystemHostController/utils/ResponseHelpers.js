@@ -2,7 +2,7 @@
  * @fileoverview Response Helper Utilities for System Host Management
  * @description Common response patterns and task creation helpers
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import Tasks, { TaskPriority } from '../../../models/TaskModel.js';

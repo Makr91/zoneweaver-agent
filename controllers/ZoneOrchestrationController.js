@@ -2,7 +2,7 @@
  * @fileoverview Zone Orchestration Controller
  * @description HTTP endpoints for zone orchestration management
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import {
@@ -39,7 +39,7 @@ import { log } from '../lib/Logger.js';
  *                 controller:
  *                   type: string
  *                   description: Current zone lifecycle controller
- *                   enum: [system/zones, zoneweaver-api, unknown]
+ *                   enum: [system/zones, zoneweaver-agent, unknown]
  *       500:
  *         description: Failed to retrieve orchestration status
  */

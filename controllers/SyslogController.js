@@ -1,8 +1,8 @@
 /**
- * @fileoverview Syslog Configuration Controller for Zoneweaver API
+ * @fileoverview Syslog Configuration Controller for Zoneweaver Agent
  * @description Provides API endpoints for managing syslog configuration
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { exec } from 'child_process';

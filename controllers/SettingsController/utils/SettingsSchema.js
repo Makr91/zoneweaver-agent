@@ -40,12 +40,12 @@ export const SETTINGS_SCHEMA = {
       key_path: {
         type: 'string',
         description: 'Path to SSL private key file',
-        default: '/etc/zoneweaver-api/ssl/server.key',
+        default: '/etc/zoneweaver-agent/ssl/server.key',
       },
       cert_path: {
         type: 'string',
         description: 'Path to SSL certificate file',
-        default: '/etc/zoneweaver-api/ssl/server.crt',
+        default: '/etc/zoneweaver-agent/ssl/server.crt',
       },
     },
   },
@@ -74,7 +74,7 @@ export const SETTINGS_SCHEMA = {
       storage: {
         type: 'string',
         description: 'SQLite database file path',
-        default: '/var/lib/zoneweaver-api/database/database.sqlite',
+        default: '/var/lib/zoneweaver-agent/database/database.sqlite',
       },
       logging: { type: 'boolean', description: 'Enable SQL query logging', default: false },
     },
@@ -191,7 +191,7 @@ export const SETTINGS_SCHEMA = {
       staging_path: {
         type: 'string',
         description: 'Path for provisioning staging files',
-        default: '/var/lib/zoneweaver-api/provisioning',
+        default: '/var/lib/zoneweaver-agent/provisioning',
       },
     },
   },
@@ -282,7 +282,7 @@ export const SETTINGS_SCHEMA = {
       log_directory: {
         type: 'string',
         description: 'Log file directory',
-        default: '/var/log/zoneweaver-api',
+        default: '/var/log/zoneweaver-agent',
       },
       enable_compression: {
         type: 'boolean',

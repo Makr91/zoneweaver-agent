@@ -2,7 +2,7 @@
  * @fileoverview Host Configuration Controller
  * @description Endpoints for managing host-level configuration files (/etc/hosts, /etc/resolv.conf)
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { readFile, writeFile, copyFile } from 'fs/promises';
@@ -49,7 +49,12 @@ const parseHostsFile = content => {
  * @returns {string} File content
  */
 const serializeHostsFile = entries => {
-  const lines = ['# /etc/hosts - managed by zoneweaver-api', '#', '# IP Address    Hostnames', ''];
+  const lines = [
+    '# /etc/hosts - managed by zoneweaver-agent',
+    '#',
+    '# IP Address    Hostnames',
+    '',
+  ];
 
   for (const entry of entries) {
     const hostnames = Array.isArray(entry.hostnames) ? entry.hostnames.join('\t') : entry.hostnames;
@@ -100,7 +105,7 @@ const parseResolvConf = content => {
  * @returns {string} File content
  */
 const serializeResolvConf = dnsConfig => {
-  const lines = ['# /etc/resolv.conf - managed by zoneweaver-api', ''];
+  const lines = ['# /etc/resolv.conf - managed by zoneweaver-agent', ''];
 
   if (dnsConfig.domain) {
     lines.push(`domain ${dnsConfig.domain}`);

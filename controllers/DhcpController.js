@@ -1,8 +1,8 @@
 /**
- * @fileoverview DHCP Server Management Controller for Zoneweaver API
+ * @fileoverview DHCP Server Management Controller for Zoneweaver Agent
  * @description Manages ISC DHCP server configuration, static host entries, and service lifecycle
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { exec } from 'child_process';

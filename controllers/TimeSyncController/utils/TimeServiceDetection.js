@@ -2,7 +2,7 @@
  * @fileoverview Time Service Detection Utilities
  * @description Service detection and status checking using ServiceManager
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { getServices, getServiceDetails } from '../../../lib/ServiceManager.js';

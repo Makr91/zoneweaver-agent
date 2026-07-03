@@ -2,7 +2,7 @@
  * @fileoverview Role Management Controller for System Account Management
  * @description Handles role creation, modification, and deletion operations with RBAC support
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { TaskPriority } from '../../models/TaskModel.js';

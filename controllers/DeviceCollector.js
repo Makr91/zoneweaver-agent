@@ -1,8 +1,8 @@
 /**
- * @fileoverview Device Data Collection Controller for Zoneweaver API
+ * @fileoverview Device Data Collection Controller for Zoneweaver Agent
  * @description Collects PCI device information and passthrough capabilities from OmniOS prtconf and pptadm commands
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { exec } from 'child_process';

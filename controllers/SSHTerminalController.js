@@ -1,9 +1,9 @@
 /**
- * @fileoverview SSH Terminal Controller for Zoneweaver API
+ * @fileoverview SSH Terminal Controller for Zoneweaver Agent
  * @description Manages interactive SSH terminal sessions to zones via WebSocket.
  *              Uses ssh2 library for SSH connections piped through WebSocket to xterm.js frontend.
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { Client } from 'ssh2';
@@ -29,7 +29,7 @@ const activeConnections = new Map();
 const getSSHKeyPath = () => {
   const provConfig = config.get('provisioning') || {};
   const sshConfig = provConfig.ssh || {};
-  return sshConfig.key_path || '/etc/zoneweaver-api/ssh/provision_key';
+  return sshConfig.key_path || '/etc/zoneweaver-agent/ssh/provision_key';
 };
 
 /**

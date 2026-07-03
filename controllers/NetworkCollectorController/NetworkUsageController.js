@@ -2,7 +2,7 @@
  * @fileoverview Network Usage Controller
  * @description Handles network usage data collection, bandwidth calculations, and utilization tracking
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { exec } from 'child_process';

@@ -2,7 +2,7 @@
  * @fileoverview User Validation Utilities for System Account Management
  * @description Validation functions for usernames, UIDs, group names, and system account parameters
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 /**

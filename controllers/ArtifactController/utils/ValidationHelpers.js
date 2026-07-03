@@ -2,7 +2,7 @@
  * @fileoverview Validation Helper Functions for Artifact Management
  * @description Utilities for validating storage locations and other artifact-related data
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import ArtifactStorageLocation from '../../../models/ArtifactStorageLocationModel.js';

@@ -47,7 +47,7 @@ export const restartServer = (req, res) => {
         .then(({ exec }) => {
           // Use pfexec to restart the SMF service in a detached process
           exec(
-            'pfexec svcadm restart system/virtualization/zoneweaver-api',
+            'pfexec svcadm restart system/virtualization/zoneweaver-agent',
             {
               detached: true,
               stdio: 'ignore',

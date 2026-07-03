@@ -1,5 +1,5 @@
 /**
- * @fileoverview DHCP Task Manager for Zoneweaver API
+ * @fileoverview DHCP Task Manager for Zoneweaver Agent
  * @description Executes DHCP configuration, host entry, and service control tasks
  */
 
@@ -118,7 +118,7 @@ export const executeDhcpUpdateConfigTask = async metadataJson => {
     }
 
     // Build new config
-    let config = `# DHCP server configuration - managed by zoneweaver-api\n`;
+    let config = `# DHCP server configuration - managed by zoneweaver-agent\n`;
     config += `# Last updated: ${new Date().toISOString()}\n\n`;
     config += `subnet ${subnet} netmask ${netmask} {\n`;
     config += `  option routers ${router};\n`;

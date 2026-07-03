@@ -1,5 +1,5 @@
 /**
- * @fileoverview Zone Provisioning Task Manager for Zoneweaver API
+ * @fileoverview Zone Provisioning Task Manager for Zoneweaver Agent
  * @description Executes provisioning tasks: SSH wait, file sync, and provisioner execution.
  *              Each operation runs as a separate task in the TaskQueue with depends_on chaining.
  */
@@ -515,8 +515,8 @@ export const executeZoneProvisioningExtractTask = async task => {
       };
     }
 
-    // Fix ownership and permissions for service user (zoneapi)
-    await executeCommand(`pfexec chown -R zoneapi:other ${dataset_path}`, undefined, onData);
+    // Fix ownership and permissions for service user (zwagent)
+    await executeCommand(`pfexec chown -R zwagent:other ${dataset_path}`, undefined, onData);
 
     // Fix SSH private key permissions (600 for security)
     await executeCommand(

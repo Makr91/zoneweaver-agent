@@ -1,8 +1,8 @@
 /**
- * @fileoverview NAT and IP Forwarding Management Controller for Zoneweaver API
+ * @fileoverview NAT and IP Forwarding Management Controller for Zoneweaver Agent
  * @description Handles NAT rule management via ipnat/ipfilter and IP forwarding via routeadm/ipadm
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { exec } from 'child_process';

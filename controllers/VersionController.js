@@ -2,7 +2,7 @@
  * @fileoverview Version and Update Controller
  * @description Endpoints for version information and update checking
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { readFileSync } from 'fs';
@@ -64,7 +64,7 @@ const compareVersions = (a, b) => {
  *                   example: "0.1.14"
  *                 name:
  *                   type: string
- *                   example: "zoneweaver-api"
+ *                   example: "zoneweaver-agent"
  *                 node_version:
  *                   type: string
  *                   example: "v20.10.0"

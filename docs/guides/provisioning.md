@@ -8,7 +8,7 @@ nav_order: 4
 # Provisioning Pipeline Guide
 {: .no_toc }
 
-Complete guide to the Zoneweaver API provisioning pipeline for automated zone configuration.
+Complete guide to the Zoneweaver Agent provisioning pipeline for automated zone configuration.
 {: .fs-6 .fw-300 }
 
 ## Table of contents
@@ -21,7 +21,7 @@ Complete guide to the Zoneweaver API provisioning pipeline for automated zone co
 
 ## Overview
 
-The Zoneweaver API provisioning pipeline automates the complete lifecycle from zone creation through network configuration, file synchronization, and application deployment. This replicates the full vagrant-zones + core_provisioner workflow in a REST API.
+The Zoneweaver Agent provisioning pipeline automates the complete lifecycle from zone creation through network configuration, file synchronization, and application deployment. This replicates the full vagrant-zones + core_provisioner workflow in a REST API.
 
 ### Pipeline Stages
 
@@ -172,7 +172,7 @@ Recipes are zlogin automation templates for configuring networking via the zone'
 
 ### Default Recipes
 
-Zoneweaver API ships with 5 default recipes:
+Zoneweaver Agent ships with 5 default recipes:
 
 | Name | OS Family | Description |
 |------|-----------|-------------|
@@ -339,9 +339,9 @@ Run ansible-playbook **on the host** targeting the zone:
 }
 ```
 
-- Ansible runs on the Zoneweaver API host
+- Ansible runs on the Zoneweaver Agent host
 - Uses SSH to target the zone
-- SSH key: `/etc/zoneweaver-api/ssh/provision_key`
+- SSH key: `/etc/zoneweaver-agent/ssh/provision_key`
 
 ### Ansible-Local Provisioner
 

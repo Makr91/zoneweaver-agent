@@ -21,7 +21,7 @@ Create, modify, and manage bhyve virtual machine zones through the API.
 
 ## Overview
 
-The ZoneweaverAPI provides full zone lifecycle management:
+The Zoneweaver Agent provides full zone lifecycle management:
 
 - **Create** zones with `POST /zones` - from scratch, from templates, or with existing storage
 - **Modify** zone configuration with `PUT /zones/:zoneName` - changes queue and apply on next boot
@@ -483,7 +483,7 @@ curl -X PUT https://your-server:5001/zones/web-server-01 \
       "credentials": {
         "username": "startcloud",
         "password": "STARTcloud24@!",
-        "ssh_key_path": "/etc/zoneweaver-api/ssh/provision_key"
+        "ssh_key_path": "/etc/zoneweaver-agent/ssh/provision_key"
       },
       "sync_folders": [
         {

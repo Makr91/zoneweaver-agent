@@ -2,7 +2,7 @@
  * @fileoverview Sampling Helper Utilities for Host Monitoring
  * @description Performance-optimized sampling logic for time-series data
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 /**

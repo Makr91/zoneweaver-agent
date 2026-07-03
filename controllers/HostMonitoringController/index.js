@@ -2,7 +2,7 @@
  * @fileoverview Host Monitoring Controller Index
  * @description Main entry point for host monitoring controllers
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 // Import service management functions

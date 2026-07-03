@@ -2,7 +2,7 @@
  * @fileoverview Download Controller for Artifact Management
  * @description Handles artifact download from URLs and streaming downloads to clients
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import fs from 'fs';

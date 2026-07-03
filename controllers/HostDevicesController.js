@@ -1,8 +1,8 @@
 /**
- * @fileoverview Host Devices API Controller for Zoneweaver API
+ * @fileoverview Host Devices API Controller for Zoneweaver Agent
  * @description Handles API endpoints for PCI device inventory and passthrough capabilities
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import PCIDevices from '../models/PCIDeviceModel.js';

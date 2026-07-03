@@ -2,7 +2,7 @@
  * @fileoverview Query Controller for System Account Management
  * @description Handles user, group, and role lookup and listing operations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import os from 'os';
@@ -65,7 +65,7 @@ import { log } from '../../lib/Logger.js';
  *                 current_user:
  *                   type: string
  *                   description: Current username
- *                   example: "zoneapi"
+ *                   example: "zwagent"
  *                 uid:
  *                   type: integer
  *                   description: Current user ID
@@ -77,7 +77,7 @@ import { log } from '../../lib/Logger.js';
  *                 home_directory:
  *                   type: string
  *                   description: Home directory path
- *                   example: "/opt/zoneweaver-api"
+ *                   example: "/opt/zoneweaver-agent"
  *                 shell:
  *                   type: string
  *                   description: Default shell
@@ -87,7 +87,7 @@ import { log } from '../../lib/Logger.js';
  *                   items:
  *                     type: string
  *                   description: Groups the user belongs to
- *                   example: ["zoneapi", "staff", "sys"]
+ *                   example: ["zwagent", "staff", "sys"]
  *       500:
  *         description: Failed to get user information
  */

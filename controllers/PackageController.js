@@ -1,8 +1,8 @@
 /**
- * @fileoverview Package Management Controller for Zoneweaver API
+ * @fileoverview Package Management Controller for Zoneweaver Agent
  * @description Handles package management operations via pkg commands
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { spawn } from 'child_process';

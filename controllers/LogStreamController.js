@@ -1,8 +1,8 @@
 /**
- * @fileoverview Log Stream Controller for Zoneweaver API
+ * @fileoverview Log Stream Controller for Zoneweaver Agent
  * @description Provides WebSocket streaming for real-time log file monitoring
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { spawn } from 'child_process';

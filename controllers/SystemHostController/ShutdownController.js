@@ -2,7 +2,7 @@
  * @fileoverview System Host Shutdown Controller
  * @description Handles system shutdown operations through TaskQueue
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { createSystemTask, taskCreatedResponse, errorResponse } from './utils/ResponseHelpers.js';

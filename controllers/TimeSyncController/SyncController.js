@@ -2,7 +2,7 @@
  * @fileoverview Time Sync Operations Controller
  * @description Handles time sync operations and system switching using task queue
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { TaskPriority } from '../../models/TaskModel.js';

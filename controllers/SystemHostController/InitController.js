@@ -2,7 +2,7 @@
  * @fileoverview System Host Init Controller
  * @description Handles system runlevel changes through TaskQueue
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { executeCommand } from '../../lib/CommandManager.js';

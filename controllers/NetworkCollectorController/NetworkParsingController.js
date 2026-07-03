@@ -2,7 +2,7 @@
  * @fileoverview Network Parsing Controller
  * @description Handles parsing of network command outputs (dladm, ipadm, netstat)
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import os from 'os';

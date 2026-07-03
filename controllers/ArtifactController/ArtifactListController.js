@@ -2,7 +2,7 @@
  * @fileoverview Artifact List Controller for Artifact Management
  * @description Handles artifact listing, filtering, and detail retrieval operations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import config from '../../config/ConfigLoader.js';

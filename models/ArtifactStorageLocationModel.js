@@ -4,7 +4,7 @@ import db from '../config/Database.js';
 const { DataTypes } = Sequelize;
 
 /**
- * @fileoverview Artifact Storage Location model for Zoneweaver API
+ * @fileoverview Artifact Storage Location model for Zoneweaver Agent
  * @description Defines the database model for artifact storage path configuration
  */
 

@@ -1,8 +1,8 @@
 /**
- * @fileoverview Zoneweaver API - Main application entry point
+ * @fileoverview Zoneweaver Agent - Main application entry point
  * @description Express.js server for managing Bhyve virtual machines on OmniOS with API key authentication
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import express from 'express';
@@ -201,7 +201,7 @@ httpServer.listen(httpPort, () => {
         // Start zone orchestration service
         await startZoneOrchestration();
 
-        log.app.info('Zoneweaver API fully initialized and ready for zone management', {
+        log.app.info('Zoneweaver Agent fully initialized and ready for zone management', {
           services_started: [
             'task_processor',
             'vnc_session_cleanup',

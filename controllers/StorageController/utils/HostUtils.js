@@ -2,7 +2,7 @@
  * @fileoverview Host Management Utilities
  * @description Shared utilities for host information management and error handling
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import os from 'os';

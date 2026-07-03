@@ -3,7 +3,7 @@ import config from './ConfigLoader.js';
 import { log } from '../lib/Logger.js';
 
 /**
- * @fileoverview Database connection configuration for Zoneweaver API
+ * @fileoverview Database connection configuration for Zoneweaver Agent
  * @description Configures and establishes database connection using Sequelize ORM with support for multiple database types
  */
 

@@ -1,8 +1,8 @@
 /**
- * @fileoverview System Metrics Data Collection Controller for Zoneweaver API
+ * @fileoverview System Metrics Data Collection Controller for Zoneweaver Agent
  * @description Collects CPU and memory statistics from OmniOS system utilities
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { exec } from 'child_process';

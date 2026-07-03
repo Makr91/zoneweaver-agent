@@ -2,7 +2,7 @@
  * @fileoverview Summary Controller for Host Monitoring
  * @description Handles monitoring summary, host info, and aggregated monitoring data
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { Op } from 'sequelize';

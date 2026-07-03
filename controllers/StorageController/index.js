@@ -1,8 +1,8 @@
 /**
- * @fileoverview Storage Data Collection Controller for Zoneweaver API
+ * @fileoverview Storage Data Collection Controller for Zoneweaver Agent
  * @description Main orchestrator for ZFS pool and dataset information collection
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import os from 'os';

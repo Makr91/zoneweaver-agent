@@ -2,7 +2,7 @@
  * @fileoverview VNC Cleanup Service Utilities
  * @description VNC session cleanup operations using existing process utilities with parallel execution
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import fs from 'fs';

@@ -2,7 +2,7 @@
  * @fileoverview Disk Data Collection Module
  * @description Handles physical disk information collection and processing
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import Disks from '../../models/DiskModel.js';

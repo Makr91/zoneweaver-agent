@@ -1,8 +1,8 @@
 /**
- * @fileoverview Process Controller for Zoneweaver API
+ * @fileoverview Process Controller for Zoneweaver Agent
  * @description Handles API requests for OmniOS process management
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import {

@@ -4,14 +4,14 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "package-name": "zoneweaver-api",
+      "package-name": "zoneweaver-agent",
       "include-component-in-tag": false,
       "extra-files": [
         "index.js",
         "config/swagger.js",
         "packaging/config/production-config.yaml",
-        "packaging/omnios/man/zoneweaver-api.8",
-        "packaging/omnios/man/zoneweaver-api.yaml.5"
+        "packaging/omnios/man/zoneweaver-agent.8",
+        "packaging/omnios/man/zoneweaver-agent.yaml.5"
       ],
       "changelog-sections": [
         { "type": "feat", "section": "Features", "hidden": false },

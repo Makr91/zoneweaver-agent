@@ -5,21 +5,21 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Zoneweaver API',
+      title: 'Zoneweaver Agent',
       version: '0.3.1', // x-release-please-version
       description: 'API for managing Bhyve virtual machines on OmniOS',
       license: {
         name: 'GPL-3.0',
-        url: 'https://zoneweaver-api.startcloud.com/license/',
+        url: 'https://zoneweaver-agent.startcloud.com/license/',
       },
       contact: {
-        name: 'Zoneweaver API',
-        url: 'https://zoneweaver-api.startcloud.com',
+        name: 'Zoneweaver Agent',
+        url: 'https://zoneweaver-agent.startcloud.com',
       },
     },
     externalDocs: {
       description: 'View on GitHub',
-      url: 'https://github.com/Makr91/zoneweaver-api',
+      url: 'https://github.com/Makr91/zoneweaver-agent',
     },
     servers: [
       {

@@ -8,7 +8,7 @@ permalink: /docs/configuration/
 # Configuration Reference
 {: .no_toc }
 
-Complete reference for configuring the ZoneweaverAPI using the configuration file.
+Complete reference for configuring the Zoneweaver Agent using the configuration file.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -34,7 +34,7 @@ Complete reference for configuring the ZoneweaverAPI using the configuration fil
 ## Configuration File Location
 
 The main configuration file is located at:
-- **Package Installation**: `/etc/zoneweaver-api/config.yaml`  
+- **Package Installation**: `/etc/zoneweaver-agent/config.yaml`  
 - **Development**: `config/config.yaml`
 
 ## Configuration Format
@@ -109,9 +109,9 @@ Configures HTTPS/TLS encryption (highly recommended for production).
 
 ```yaml
 ssl:
-  key_path: /etc/zoneweaver-api/ssl/server.key
-  cert_path: /etc/zoneweaver-api/ssl/server.crt
-  ca_path: /etc/zoneweaver-api/ssl/ca.crt    # Optional
+  key_path: /etc/zoneweaver-agent/ssl/server.key
+  cert_path: /etc/zoneweaver-agent/ssl/server.crt
+  ca_path: /etc/zoneweaver-agent/ssl/ca.crt    # Optional
 ```
 
 **Options:**
@@ -141,7 +141,7 @@ Configures the database connection and behavior.
 ```yaml
 database:
   dialect: sqlite                    # Database type
-  storage: /var/lib/zoneweaver-api/database/zoneweaver.db
+  storage: /var/lib/zoneweaver-agent/database/zoneweaver.db
   logging: false                     # Enable SQL query logging
   pool:                             # Connection pooling (optional)
     max: 5
@@ -246,10 +246,10 @@ Controls the provisioning pipeline for automated zone configuration.
 ```yaml
 provisioning:
   install_tools: true                           # Auto-install provisioning tools
-  staging_path: /var/lib/zoneweaver-api/provisioning
+  staging_path: /var/lib/zoneweaver-agent/provisioning
 
   ssh:
-    key_path: /etc/zoneweaver-api/ssh/provision_key
+    key_path: /etc/zoneweaver-agent/ssh/provision_key
     timeout_seconds: 300                        # SSH connection timeout
     poll_interval_seconds: 10                   # SSH readiness poll interval
 
@@ -273,13 +273,13 @@ provisioning:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `install_tools` | Automatically install provisioning tools (rsync, ansible, dhcpd) on first run | `true` |
-| `staging_path` | Directory for staging provisioning artifacts and temporary files | `/var/lib/zoneweaver-api/provisioning` |
+| `staging_path` | Directory for staging provisioning artifacts and temporary files | `/var/lib/zoneweaver-agent/provisioning` |
 
 **SSH Options:**
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `ssh.key_path` | Path to SSH private key for zone access | `/etc/zoneweaver-api/ssh/provision_key` |
+| `ssh.key_path` | Path to SSH private key for zone access | `/etc/zoneweaver-agent/ssh/provision_key` |
 | `ssh.timeout_seconds` | Maximum time to wait for SSH connection | `300` |
 | `ssh.poll_interval_seconds` | How often to poll for SSH readiness | `10` |
 
@@ -345,7 +345,7 @@ provisioning:
 ```
 
 {: .warning }
-The SSH private key should be readable by the zoneweaver-api process user. Ensure proper file permissions: `chmod 600 /etc/zoneweaver-api/ssh/provision_key`
+The SSH private key should be readable by the zoneweaver-agent process user. Ensure proper file permissions: `chmod 600 /etc/zoneweaver-agent/ssh/provision_key`
 
 **Related Documentation:**
 - [Provisioning Pipeline Guide](guides/provisioning.md) — Complete provisioning workflow
@@ -389,14 +389,14 @@ For production deployments:
      https_port: 5001
    
    ssl:
-     key_path: /etc/ssl/private/zoneweaver-api.key
-     cert_path: /etc/ssl/certs/zoneweaver-api.crt
+     key_path: /etc/ssl/private/zoneweaver-agent.key
+     cert_path: /etc/ssl/certs/zoneweaver-agent.crt
    ```
 
 2. **Secure Database**:
    ```yaml
    database:
-     storage: /var/lib/zoneweaver-api/database/zoneweaver.db
+     storage: /var/lib/zoneweaver-agent/database/zoneweaver.db
      logging: false      # Disable query logging
    ```
 
@@ -419,9 +419,9 @@ Create backups of your configuration:
 
 ```bash
 # Create backup
-cp /etc/zoneweaver-api/config.yaml /etc/zoneweaver-api/config.yaml.backup
+cp /etc/zoneweaver-agent/config.yaml /etc/zoneweaver-agent/config.yaml.backup
 
 # Restore from backup
-cp /etc/zoneweaver-api/config.yaml.backup /etc/zoneweaver-api/config.yaml
-svcadm restart zoneweaver-api
+cp /etc/zoneweaver-agent/config.yaml.backup /etc/zoneweaver-agent/config.yaml
+svcadm restart zoneweaver-agent
 ```

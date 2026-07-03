@@ -1,8 +1,8 @@
 /**
- * @fileoverview Host Monitoring Service for Zoneweaver API
+ * @fileoverview Host Monitoring Service for Zoneweaver Agent
  * @description Coordinates network and storage data collection with configurable intervals
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import config from '../config/ConfigLoader.js';

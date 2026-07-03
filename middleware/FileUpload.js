@@ -1,8 +1,8 @@
 /**
- * @fileoverview File Upload Middleware for Zoneweaver API
+ * @fileoverview File Upload Middleware for Zoneweaver Agent
  * @description Handles file uploads with security validation and size limits using multer
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import multer from 'multer';

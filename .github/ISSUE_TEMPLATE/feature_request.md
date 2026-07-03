@@ -14,7 +14,7 @@ A clear and concise description of what you want to happen.
 
 Describe the problem or limitation you're experiencing:
 - What currently doesn't work or is difficult to achieve?
-- How does this limitation affect your use of ZoneweaverAPI?
+- How does this limitation affect your use of Zoneweaver Agent?
 
 ## Proposed Solution
 

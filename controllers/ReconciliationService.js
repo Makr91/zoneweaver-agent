@@ -1,9 +1,9 @@
 /**
- * @fileoverview Reconciliation Service for Zoneweaver API
+ * @fileoverview Reconciliation Service for Zoneweaver Agent
  * @description Periodically scans the host system and reconciles the database with the actual state of the system.
  * @author Mark Gilbert
 
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import config from '../config/ConfigLoader.js';

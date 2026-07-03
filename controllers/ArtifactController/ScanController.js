@@ -2,7 +2,7 @@
  * @fileoverview Scan Controller for Artifact Management
  * @description Handles artifact scanning and discovery operations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import config from '../../config/ConfigLoader.js';

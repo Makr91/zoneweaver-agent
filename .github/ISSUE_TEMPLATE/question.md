@@ -1,6 +1,6 @@
 ---
 name: Question
-about: Ask a question about ZoneweaverAPI
+about: Ask a question about Zoneweaver Agent
 title: '[QUESTION] '
 labels: 'question'
 assignees: ''
@@ -8,7 +8,7 @@ assignees: ''
 
 ## Question
 
-What would you like to know about ZoneweaverAPI?
+What would you like to know about Zoneweaver Agent?
 
 ## Context
 
@@ -22,15 +22,15 @@ Provide context about what you're trying to achieve:
 **System Information:**
 - OS: [e.g., OmniOS r151048]
 - Node.js Version: [e.g., 22.x]
-- ZoneweaverAPI Version: [e.g., 0.0.26]
+- Zoneweaver Agent Version: [e.g., 0.0.26]
 - Installation Method: [package/source]
 
 ## What You've Tried
 
 Please describe what you've already attempted:
-- [ ] Checked the [documentation](https://zoneweaver-api.startcloud.com/)
+- [ ] Checked the [documentation](https://zoneweaver-agent.startcloud.com/)
 - [ ] Searched existing issues and discussions
-- [ ] Tried the interactive [API documentation](https://zoneweaver-api.startcloud.com/docs/api/)
+- [ ] Tried the interactive [API documentation](https://zoneweaver-agent.startcloud.com/docs/api/)
 
 **Specific attempts:**
 1. ...

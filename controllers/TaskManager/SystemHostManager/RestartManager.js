@@ -2,7 +2,7 @@
  * @fileoverview System Host Restart Manager
  * @description Executes system restart operations for TaskQueue
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import yj from 'yieldable-json';

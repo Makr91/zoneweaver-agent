@@ -2,7 +2,7 @@
  * @fileoverview Optimized Network Sampling Helper Utilities
  * @description High-performance time-series sampling using database window functions
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { QueryTypes, Op } from 'sequelize';

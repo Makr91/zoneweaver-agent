@@ -1,6 +1,6 @@
 # License
 
-ZoneweaverAPI is distributed under the GNU General Public License v3.0.
+Zoneweaver Agent is distributed under the GNU General Public License v3.0.
 
 ## License Summary
 

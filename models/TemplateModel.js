@@ -4,7 +4,7 @@ import db from '../config/Database.js';
 const { DataTypes } = Sequelize;
 
 /**
- * @fileoverview Template model for Zoneweaver API template management
+ * @fileoverview Template model for Zoneweaver Agent template management
  * @description Defines the database model for locally-stored zone templates extracted from box registries
  */
 

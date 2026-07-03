@@ -1,5 +1,5 @@
 /**
- * @fileoverview Zone Lifecycle Manager for Zoneweaver API
+ * @fileoverview Zone Lifecycle Manager for Zoneweaver Agent
  * @description Executes zone lifecycle operations: start, stop, restart, delete, discover with dataset cleanup.
  * CRITICAL: NO BACKWARD COMPATIBILITY - Hosts.yml structure ONLY (settings/zones/networks/disks/provisioner)
  */

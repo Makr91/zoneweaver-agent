@@ -9,7 +9,7 @@ permalink: /docs/guides/development-installation/
 # Development Installation
 {: .no_toc }
 
-Complete guide for setting up ZoneweaverAPI for development and testing.
+Complete guide for setting up Zoneweaver Agent for development and testing.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -55,8 +55,8 @@ pfexec pkg install database/sqlite-3
 
 ```bash
 # Clone the repository
-git clone https://github.com/Makr91/zoneweaver-api.git
-cd zoneweaver-api
+git clone https://github.com/Makr91/zoneweaver-agent.git
+cd zoneweaver-agent
 
 # Create development branch (optional)
 git checkout -b feature/your-feature-name
@@ -147,13 +147,13 @@ NODE_ENV=development CONFIG_PATH=./config/config.dev.yaml npm start
 
 Expected output:
 ```
-🚀 ZoneweaverAPI Server starting...
+🚀 Zoneweaver Agent Server starting...
 📊 Database connection established (SQLite: ./dev-database.sqlite)
 🔐 API Key system initialized
 🌐 HTTP Server listening on port 5000
 🔒 HTTPS Server listening on port 5001
 📚 Swagger documentation available at /api-docs
-✅ ZoneweaverAPI Server ready!
+✅ Zoneweaver Agent Server ready!
 ```
 
 ### Development Commands
@@ -279,7 +279,7 @@ Development mode includes:
 ### Project Structure
 
 ```
-zoneweaver-api/
+zoneweaver-agent/
 ├── controllers/          # API endpoint logic
 ├── models/              # Database models
 ├── routes/              # Route definitions
@@ -306,7 +306,7 @@ zoneweaver-api/
 class ExampleController {
     static async getExample(req, res) {
         try {
-            res.json({ message: 'Hello from ZoneweaverAPI!' });
+            res.json({ message: 'Hello from Zoneweaver Agent!' });
         } catch (error) {
             res.status(500).json({ msg: error.message });
         }
@@ -432,7 +432,7 @@ MAKE=gmake npm install
 
 ### Getting Help
 
-- **GitHub Issues**: [Report bugs and request features](https://github.com/Makr91/zoneweaver-api/issues)
+- **GitHub Issues**: [Report bugs and request features](https://github.com/Makr91/zoneweaver-agent/issues)
 - **Documentation**: Review other guides in the `guides/` directory
 - **API Reference**: Use the interactive Swagger documentation at `/api-docs`
 
@@ -456,4 +456,4 @@ MAKE=gmake npm install
 - [ ] Security considerations have been addressed
 - [ ] Performance impact has been considered
 
-See the [Code of Conduct](https://github.com/Makr91/zoneweaver-api/blob/main/CODE_OF_CONDUCT.md) for community guidelines.
+See the [Code of Conduct](https://github.com/Makr91/zoneweaver-agent/blob/main/CODE_OF_CONDUCT.md) for community guidelines.

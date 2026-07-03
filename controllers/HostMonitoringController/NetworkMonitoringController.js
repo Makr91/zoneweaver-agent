@@ -2,7 +2,7 @@
  * @fileoverview Network Monitoring Controller for Host Monitoring
  * @description Handles network interface monitoring, usage statistics, IP addresses, and routing
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';

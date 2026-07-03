@@ -2,7 +2,7 @@
 .Dt ZONEWEAVER-API 8
 .Os
 .Sh NAME
-.Nm zoneweaver-api
+.Nm zoneweaver-agent
 .Nd zone hypervisor management backend API server
 .Sh SYNOPSIS
 .Nm
@@ -13,7 +13,7 @@ The
 .Nm
 utility provides a RESTful API backend for managing Bhyve virtual machines
 and zones on OmniOS systems. It serves as the backend component of the
-Zoneweaverzone hypervisor management platform.
+Zoneweaver Agent zone hypervisor management platform.
 .Pp
 .Nm
 is a Node.js Express application that provides comprehensive zone and virtual
@@ -40,13 +40,13 @@ HTTP and HTTPS protocols with automatic SSL certificate generation.
 .Sh CONFIGURATION
 .Nm
 reads its configuration from
-.Pa /etc/zoneweaver-api/config.yaml
+.Pa /etc/zoneweaver-agent/config.yaml
 by default. The configuration file uses YAML format and controls all aspects
 of the service including network ports, SSL settings, database configuration,
 and zone management parameters.
 .Pp
 See
-.Xr zoneweaver-api.yaml 5
+.Xr zoneweaver-agent.yaml 5
 for detailed configuration file format documentation.
 .Sh SERVICE MANAGEMENT
 The
@@ -54,13 +54,13 @@ The
 service is managed through the Service Management Facility (SMF). Use the
 following commands to control the service:
 .Pp
-.Dl # svcadm enable zoneweaver-api
-.Dl # svcadm disable zoneweaver-api
-.Dl # svcadm restart zoneweaver-api
+.Dl # svcadm enable zoneweaver-agent
+.Dl # svcadm disable zoneweaver-agent
+.Dl # svcadm restart zoneweaver-agent
 .Pp
 Check service status:
 .Pp
-.Dl # svcs zoneweaver-api
+.Dl # svcs zoneweaver-agent
 .Sh API ENDPOINTS
 The service provides REST API endpoints for zone management operations.
 When API documentation is enabled in configuration, interactive documentation
@@ -93,16 +93,16 @@ This endpoint is automatically disabled after the first successful use when
 .Cm bootstrap_auto_disable
 is enabled in configuration.
 .Sh FILES
-.Bl -tag -width ".Pa /var/lib/zoneweaver-api/database/"
-.It Pa /etc/zoneweaver-api/config.yaml
+.Bl -tag -width ".Pa /var/lib/zoneweaver-agent/database/"
+.It Pa /etc/zoneweaver-agent/config.yaml
 Main configuration file
-.It Pa /etc/zoneweaver-api/ssl/
+.It Pa /etc/zoneweaver-agent/ssl/
 SSL certificate directory (auto-generated if enabled)
-.It Pa /var/lib/zoneweaver-api/database/
+.It Pa /var/lib/zoneweaver-agent/database/
 SQLite database directory
-.It Pa /var/log/zoneweaver-api/
+.It Pa /var/log/zoneweaver-agent/
 Service log directory
-.It Pa /opt/zoneweaver-api/
+.It Pa /opt/zoneweaver-agent/
 Installation directory
 .El
 .Sh EXIT STATUS
@@ -110,7 +110,7 @@ Installation directory
 .Sh EXAMPLES
 Start the service manually for testing:
 .Bd -literal -offset indent
-# cd /opt/zoneweaver-api
+# cd /opt/zoneweaver-agent
 # node index.js
 .Ed
 .Pp
@@ -131,20 +131,20 @@ Common diagnostic steps:
 .Bl -enum -offset indent
 .It
 Check SMF service status: 
-.Cm svcs -xv zoneweaver-api
+.Cm svcs -xv zoneweaver-agent
 .It
 Review service logs: 
-.Cm svcs -L zoneweaver-api
+.Cm svcs -L zoneweaver-agent
 .It
 Verify configuration syntax: 
-.Cm node -c /opt/zoneweaver-api/index.js
+.Cm node -c /opt/zoneweaver-agent/index.js
 .It
 Test network connectivity to configured ports
 .It
 Verify database permissions and disk space
 .El
 .Sh SEE ALSO
-.Xr zoneweaver-api.yaml 5 ,
+.Xr zoneweaver-agent.yaml 5 ,
 .Xr svcadm 8 ,
 .Xr svcs 1 ,
 .Xr zonecfg 8 ,

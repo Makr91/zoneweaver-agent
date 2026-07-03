@@ -2,7 +2,7 @@
  * @fileoverview ZFS Dataset Data Collection Module
  * @description Handles ZFS dataset information collection and processing
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import ZFSDatasets from '../../models/ZFSDatasetModel.js';

@@ -2,7 +2,7 @@
  * @fileoverview Storage Command Execution Utilities
  * @description Wrapper functions for ZFS and storage-related command execution
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { executeCommand } from '../../../lib/ProcessManager.js';

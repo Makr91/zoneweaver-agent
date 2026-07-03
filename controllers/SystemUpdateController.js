@@ -1,8 +1,8 @@
 /**
- * @fileoverview System Update Controller for Zoneweaver API
+ * @fileoverview System Update Controller for Zoneweaver Agent
  * @description Handles system update operations via pkg update commands
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { spawn } from 'child_process';

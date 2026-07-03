@@ -2,7 +2,7 @@
  * @fileoverview Network Host Manager Utility
  * @description Handles host information management and error tracking for network operations
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import os from 'os';

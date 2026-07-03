@@ -2,7 +2,7 @@
  * @fileoverview System Host Status Controller
  * @description Handles system status, uptime, and reboot flag management
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import os from 'os';

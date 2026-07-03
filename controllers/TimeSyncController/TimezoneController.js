@@ -2,7 +2,7 @@
  * @fileoverview Timezone Controller
  * @description Handles timezone operations using task queue and existing utilities
  * @author Mark Gilbert
- * @license: https://zoneweaver-api.startcloud.com/license/
+ * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { TaskPriority } from '../../models/TaskModel.js';

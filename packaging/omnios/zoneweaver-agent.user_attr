@@ -1,0 +1,7 @@
+#
+# RBAC profile grant for the Zoneweaver Agent service user.
+# pkg(7)'s user action cannot deliver profiles= (silently ignored), so this
+# fragment in /etc/user_attr.d supplies it — the system merges these fragments
+# into user_attr(5). Required for pfexec zadm vnc / zlogin console access.
+#
+zwagent::::profiles=Primary Administrator

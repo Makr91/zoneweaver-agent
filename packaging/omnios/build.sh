@@ -125,6 +125,12 @@ install_app() {
     logcmd mkdir -p etc/zoneweaver-agent
     logcmd cp $SRCDIR/packaging/config/production-config.yaml etc/zoneweaver-agent/config.yaml
 
+    # RBAC: pkg's user action cannot set profiles= (silently ignored), so the
+    # Primary Administrator grant ships as a user_attr.d fragment
+    logmsg "Installing user_attr fragment for zwagent RBAC profile"
+    logcmd mkdir -p etc/user_attr.d
+    logcmd cp $SRCDIR/packaging/omnios/zoneweaver-agent.user_attr etc/user_attr.d/zoneweaver-agent
+
     # Copy skeleton files to zwagent user home directory
     logmsg "Installing skeleton files for zwagent user"
     if [ -d "/etc/skel" ]; then

@@ -20,9 +20,11 @@ set name=info.upstream-url value="https://github.com/Makr91/zoneweaver-agent"
 depend fmri=ooce/runtime/node-22 type=require
 depend fmri=database/sqlite-3 type=require
 
-# Create zwagent user and group for Zoneweaver Agent backend
+# Create zwagent user and group for Zoneweaver Agent backend.
+# NOTE: pkg's user action silently ignores a profiles= attribute — the
+# Primary Administrator grant is delivered via /etc/user_attr.d/zoneweaver-agent.
 user username=zwagent uid=301 group=zwagent gcos-field="Zoneweaver Agent Service User" \
-    home-dir=/var/lib/zoneweaver-agent login-shell=/usr/bin/bash profiles="Primary Administrator"
+    home-dir=/var/lib/zoneweaver-agent login-shell=/usr/bin/bash
 group groupname=zwagent gid=301
 
 # License
@@ -74,6 +76,12 @@ license opt/zoneweaver-agent/LICENSE.md license="GPL-3.0" must-accept=false
 <transform file path=etc/zoneweaver-agent/config.yaml -> set group zwagent>
 <transform file path=etc/zoneweaver-agent/config.yaml -> set mode 0644>
 <transform file path=etc/zoneweaver-agent/config.yaml -> set preserve true>
+
+# RBAC user_attr fragment (the /etc/user_attr.d dir itself belongs to core OS)
+<transform dir path=etc/user_attr.d$ -> drop>
+<transform file path=etc/user_attr.d/zoneweaver-agent -> set owner root>
+<transform file path=etc/user_attr.d/zoneweaver-agent -> set group sys>
+<transform file path=etc/user_attr.d/zoneweaver-agent -> set mode 0644>
 
 # SSL and database directories (empty) - keeps persistent data in place on uninstall
 <transform dir path=etc/zoneweaver-agent/ssl -> set owner zwagent>

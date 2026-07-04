@@ -4,7 +4,7 @@
 
 # Zoneweaver Agent
 
-**Zoneweaver Agent** is a powerful, Node.js-based API server designed for comprehensive management of Bhyve virtual machines on the OmniOS operating system. It serves as the backbone of the Zoneweaver ecosystem, providing a secure and robust RESTful API for all your virtualization needs.
+**Zoneweaver Agent** is a powerful, Node.js-based API server designed for comprehensive management of Bhyve virtual machines on the OmniOS operating system. It serves as the backbone of the Zoneweaver ecosystem and is compatabile with the Hyperweaver-Server, providing a secure and robust RESTful API for all your virtualization needs.
 
 ## Overview
 

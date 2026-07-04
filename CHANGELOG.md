@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.6](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.5...v0.3.6) (2026-07-04)
+
+
+### Bug Fixes
+
+* nothing ([cdfabfe](https://github.com/Makr91/zoneweaver-agent/commit/cdfabfe167e6c1ce22b8798941a0b1eb9e5af7b7))
+* service restarts and shutdowns ([c2e0b18](https://github.com/Makr91/zoneweaver-agent/commit/c2e0b18c60d2288f9ec87ab6bb3f2dfaaebc30c3))
+* service restarts and shutdowns ([281ab23](https://github.com/Makr91/zoneweaver-agent/commit/281ab23441be6e83d6b962ced1eb78e99acdc1af))
+* UI, API, Docs OIDC CHnages ([dcf6481](https://github.com/Makr91/zoneweaver-agent/commit/dcf6481c0699602b351d6319e0444797116e4314))
+* UI, API, Docs OIDC CHnages ([8ec697f](https://github.com/Makr91/zoneweaver-agent/commit/8ec697fb5f18cd9bc01689ab80215e7d588a35a2))
+
 ## [0.3.5](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.4...v0.3.5) (2026-07-03)
 
 

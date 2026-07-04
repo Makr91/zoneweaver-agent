@@ -431,6 +431,12 @@ import path from 'path';
 
 const router = express.Router();
 
+// Agent API v1 resource noun (architecture O1): `machines` is the canonical noun in
+// the published contract; every machine-scoped route below is registered at BOTH
+// nouns, keeping the legacy `/zones/*` path as this Node agent's alias. The published
+// OpenAPI (config/swagger.js) documents the canonical /machines/* form.
+const withMachinesAlias = zonesPath => [zonesPath.replace(/^\/zones/, '/machines'), zonesPath];
+
 // Provisioning Routes
 router.get('/provisioning/status', verifyApiKey, getProvisioningStatus);
 router.get('/provisioning/network/status', verifyApiKey, getProvisioningNetworkStatus); // Check provisioning network status
@@ -529,43 +535,51 @@ router.put('/api-keys/:id/revoke', verifyApiKey, revokeApiKey); // Revoke an API
 router.get('/ws-ticket', verifyApiKey, getWsTicket);
 
 // Zone Orchestration Management Routes (MUST come before parameterized routes)
-router.get('/zones/orchestration/status', verifyApiKey, getZoneOrchestrationStatus); // Get orchestration control status
-router.post('/zones/orchestration/enable', verifyApiKey, enableOrchestration); // Enable zone orchestration control
-router.post('/zones/orchestration/disable', verifyApiKey, disableOrchestration); // Disable zone orchestration control
-router.get('/zones/priorities', verifyApiKey, getZonePriorities); // List all zones with priorities
-router.post('/zones/orchestration/test', verifyApiKey, testOrchestration); // Test orchestration (dry run)
+router.get(
+  withMachinesAlias('/zones/orchestration/status'),
+  verifyApiKey,
+  getZoneOrchestrationStatus
+); // Get orchestration control status
+router.post(withMachinesAlias('/zones/orchestration/enable'), verifyApiKey, enableOrchestration); // Enable zone orchestration control
+router.post(withMachinesAlias('/zones/orchestration/disable'), verifyApiKey, disableOrchestration); // Disable zone orchestration control
+router.get(withMachinesAlias('/zones/priorities'), verifyApiKey, getZonePriorities); // List all zones with priorities
+router.post(withMachinesAlias('/zones/orchestration/test'), verifyApiKey, testOrchestration); // Test orchestration (dry run)
 
 // Bulk Zone Operations (MUST come before parameterized routes)
-router.post('/zones/bulk/start', verifyApiKey, bulkStartZones); // Bulk start zones
-router.post('/zones/bulk/stop', verifyApiKey, bulkStopZones); // Bulk stop zones
+router.post(withMachinesAlias('/zones/bulk/start'), verifyApiKey, bulkStartZones); // Bulk start zones
+router.post(withMachinesAlias('/zones/bulk/stop'), verifyApiKey, bulkStopZones); // Bulk stop zones
 
 // Zone Server ID Discovery Routes (must come before parameterized routes)
-router.get('/zones/ids/next', verifyApiKey, getNextServerId); // Get next available server ID
-router.get('/zones/ids', verifyApiKey, getServerIds); // Get server ID usage information
+router.get(withMachinesAlias('/zones/ids/next'), verifyApiKey, getNextServerId); // Get next available server ID
+router.get(withMachinesAlias('/zones/ids'), verifyApiKey, getServerIds); // Get server ID usage information
 
 // Zone Creation & Modification Routes (must come before parameterized routes)
-router.post('/zones', verifyApiKey, createZone); // Create a new zone
-router.put('/zones/:zoneName', verifyApiKey, modifyZone); // Modify zone configuration
+router.post(withMachinesAlias('/zones'), verifyApiKey, createZone); // Create a new zone
+router.put(withMachinesAlias('/zones/:zoneName'), verifyApiKey, modifyZone); // Modify zone configuration
 
 // Zone Management Routes (parameterized routes come after specific routes)
-router.get('/zones', verifyApiKey, listZones); // List all zones
-router.get('/zones/:zoneName', verifyApiKey, getZoneDetails); // Get zone details
-router.get('/zones/:zoneName/config', verifyApiKey, getZoneConfig); // Get zone configuration
-router.get('/zones/:zoneName/notes', verifyApiKey, getZoneNotes); // Get zone notes
-router.put('/zones/:zoneName/notes', verifyApiKey, updateZoneNotes); // Update zone notes
-router.get('/zones/:zoneName/tags', verifyApiKey, getZoneTags); // Get zone tags
-router.put('/zones/:zoneName/tags', verifyApiKey, updateZoneTags); // Update zone tags
-router.post('/zones/:zoneName/start', verifyApiKey, startZone); // Start zone
-router.post('/zones/:zoneName/stop', verifyApiKey, stopZone); // Stop zone
-router.post('/zones/:zoneName/restart', verifyApiKey, restartZone); // Restart zone
-router.delete('/zones/:zoneName', verifyApiKey, deleteZone); // Delete zone
-router.post('/zones/:zoneName/clone', verifyApiKey, cloneZone); // Clone zone
+router.get(withMachinesAlias('/zones'), verifyApiKey, listZones); // List all zones
+router.get(withMachinesAlias('/zones/:zoneName'), verifyApiKey, getZoneDetails); // Get zone details
+router.get(withMachinesAlias('/zones/:zoneName/config'), verifyApiKey, getZoneConfig); // Get zone configuration
+router.get(withMachinesAlias('/zones/:zoneName/notes'), verifyApiKey, getZoneNotes); // Get zone notes
+router.put(withMachinesAlias('/zones/:zoneName/notes'), verifyApiKey, updateZoneNotes); // Update zone notes
+router.get(withMachinesAlias('/zones/:zoneName/tags'), verifyApiKey, getZoneTags); // Get zone tags
+router.put(withMachinesAlias('/zones/:zoneName/tags'), verifyApiKey, updateZoneTags); // Update zone tags
+router.post(withMachinesAlias('/zones/:zoneName/start'), verifyApiKey, startZone); // Start zone
+router.post(withMachinesAlias('/zones/:zoneName/stop'), verifyApiKey, stopZone); // Stop zone
+router.post(withMachinesAlias('/zones/:zoneName/restart'), verifyApiKey, restartZone); // Restart zone
+router.delete(withMachinesAlias('/zones/:zoneName'), verifyApiKey, deleteZone); // Delete zone
+router.post(withMachinesAlias('/zones/:zoneName/clone'), verifyApiKey, cloneZone); // Clone zone
 
 // Zone Provisioning Routes
-router.post('/zones/:name/provision', verifyApiKey, provisionZone); // Start provisioning pipeline
-router.get('/zones/:name/provision/status', verifyApiKey, getZoneProvisioningStatus); // Get provisioning status
-router.post('/zones/:name/sync', verifyApiKey, syncZone); // Sync provisioning files ad-hoc
-router.post('/zones/:name/run-provisioners', verifyApiKey, runProvisioners); // Run provisioners ad-hoc
+router.post(withMachinesAlias('/zones/:name/provision'), verifyApiKey, provisionZone); // Start provisioning pipeline
+router.get(
+  withMachinesAlias('/zones/:name/provision/status'),
+  verifyApiKey,
+  getZoneProvisioningStatus
+); // Get provisioning status
+router.post(withMachinesAlias('/zones/:name/sync'), verifyApiKey, syncZone); // Sync provisioning files ad-hoc
+router.post(withMachinesAlias('/zones/:name/run-provisioners'), verifyApiKey, runProvisioners); // Run provisioners ad-hoc
 
 // Task Management Routes
 router.get('/tasks', verifyApiKey, listTasks); // List tasks (supports ?sort=&order= params)
@@ -576,10 +590,10 @@ router.get('/tasks/:taskId/output', verifyApiKey, getTaskOutput); // Get task ou
 router.delete('/tasks/:taskId', verifyApiKey, cancelTask); // Cancel task
 
 // VNC Console Management Routes
-router.post('/zones/:zoneName/vnc/start', verifyApiKey, startVncSession); // Start VNC session
-router.get('/zones/:zoneName/vnc/info', verifyApiKey, getVncSessionInfo); // Get VNC session info
-router.delete('/zones/:zoneName/vnc/stop', verifyApiKey, stopVncSession); // Stop VNC session
-router.get('/zones/:zoneName/vnc/screenshot', verifyApiKey, getVncScreenshot); // Capture VNC console screenshot (PNG)
+router.post(withMachinesAlias('/zones/:zoneName/vnc/start'), verifyApiKey, startVncSession); // Start VNC session
+router.get(withMachinesAlias('/zones/:zoneName/vnc/info'), verifyApiKey, getVncSessionInfo); // Get VNC session info
+router.delete(withMachinesAlias('/zones/:zoneName/vnc/stop'), verifyApiKey, stopVncSession); // Stop VNC session
+router.get(withMachinesAlias('/zones/:zoneName/vnc/screenshot'), verifyApiKey, getVncScreenshot); // Capture VNC console screenshot (PNG)
 router.get('/vnc/sessions', verifyApiKey, listVncSessions); // List all VNC sessions
 
 // Host Monitoring Routes
@@ -641,13 +655,13 @@ router.get('/terminal/sessions/:sessionId', verifyApiKey, getTerminalSessionInfo
 router.delete('/terminal/sessions/:sessionId/stop', verifyApiKey, stopTerminalSession);
 
 // Zlogin Routes
-router.post('/zones/:zoneName/zlogin/start', verifyApiKey, startZloginSession);
+router.post(withMachinesAlias('/zones/:zoneName/zlogin/start'), verifyApiKey, startZloginSession);
 router.get('/zlogin/sessions', verifyApiKey, listZloginSessions);
 router.get('/zlogin/sessions/:sessionId', verifyApiKey, getZloginSessionInfo);
 router.delete('/zlogin/sessions/:sessionId/stop', verifyApiKey, stopZloginSession);
 
 // SSH Terminal Routes
-router.post('/zones/:zoneName/ssh/start', verifyApiKey, startSSHSession);
+router.post(withMachinesAlias('/zones/:zoneName/ssh/start'), verifyApiKey, startSSHSession);
 router.get('/ssh/sessions', verifyApiKey, listSSHSessions);
 router.get('/ssh/sessions/:sessionId', verifyApiKey, getSSHSessionInfo);
 router.delete('/ssh/sessions/:sessionId/stop', verifyApiKey, stopSSHSession);

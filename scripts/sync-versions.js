@@ -21,15 +21,16 @@ try {
 
   console.log(`🔄 Synchronizing versions to ${rootVersion}`);
 
-  // 1. Update swagger config
+  // 1. Update swagger config — stamp ONLY the app version (info['x-app-version']).
+  // info.version is the Agent API CONTRACT version (v1) and must stay frozen.
   if (fs.existsSync(swaggerConfigPath)) {
     let swaggerConfig = fs.readFileSync(swaggerConfigPath, 'utf8');
     swaggerConfig = swaggerConfig.replace(
-      /version:\s*['"`][^'"`]*['"`]/g,
-      `version: '${rootVersion}'`
+      /'x-app-version':\s*['"`][^'"`]*['"`]/g,
+      `'x-app-version': '${rootVersion}'`
     );
     fs.writeFileSync(swaggerConfigPath, swaggerConfig);
-    console.log(`   ✅ Updated swagger config`);
+    console.log(`   ✅ Updated swagger config (x-app-version)`);
   } else {
     console.log(`   ⚠️  Swagger config not found: ${swaggerConfigPath}`);
   }

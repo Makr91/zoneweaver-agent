@@ -5,9 +5,20 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Zoneweaver Agent',
-      version: '0.3.5', // x-release-please-version
-      description: 'API for managing Bhyve virtual machines on OmniOS',
+      title: 'Agent API',
+      // Agent API CONTRACT version (architecture D1) — frozen at the v1 line,
+      // deliberately NOT release-please-stamped. Both host-agents (zoneweaver-agent
+      // Node/Bhyve and hyperweaver-agent Go/VirtualBox) implement this contract.
+      version: '1.0.0',
+      'x-app-version': '0.3.5', // x-release-please-version
+      description:
+        'Hyperweaver Agent API v1 — the shared host-agent contract (architecture D1). ' +
+        'Reference implementation: zoneweaver-agent (Bhyve/OmniOS, Node). ' +
+        'The canonical resource noun is `machines` (O1); this Node agent additionally ' +
+        'serves every machine-scoped route at its legacy `/zones/*` alias. ' +
+        'Capabilities are advertised by the public GET /api/status ' +
+        '(role, hypervisors, console, auth, features) and drive conditional UI rendering. ' +
+        'The implementing application version is `info.x-app-version`.',
       license: {
         name: 'GPL-3.0',
         url: 'https://zoneweaver-agent.startcloud.com/license/',
@@ -72,6 +83,12 @@ const options = {
               description: 'Optional description of the API key purpose',
               example: 'API key for Zoneweaverfrontend',
             },
+            role: {
+              type: 'string',
+              enum: ['admin', 'operator', 'viewer'],
+              description: 'Authorization role of the key (Agent API v1 role model)',
+              example: 'admin',
+            },
             message: {
               type: 'string',
               description: 'Success message',
@@ -96,6 +113,12 @@ const options = {
               type: 'string',
               description: 'Entity description',
               example: 'API key for Zoneweaverfrontend',
+            },
+            role: {
+              type: 'string',
+              enum: ['admin', 'operator', 'viewer'],
+              description: 'Authorization role of the key (Agent API v1 role model)',
+              example: 'admin',
             },
             is_active: {
               type: 'boolean',
@@ -291,6 +314,21 @@ const options = {
   apis: ['./controllers/**/*.js', './routes/*.js', './models/*.js'], // paths to files containing OpenAPI definitions
 };
 
-const specs = swaggerJsdoc(options);
+const generatedSpecs = swaggerJsdoc(options);
+
+// Agent API v1 (architecture O1): `machines` is the canonical resource noun in the
+// published contract; this Node agent also serves every machine-scoped route at its
+// legacy `/zones/*` alias (routes/index.js withMachinesAlias). The controllers'
+// JSDoc annotations still say /zones — rewrite the generated path keys so the spec
+// documents the canonical noun exactly once.
+const specs = {
+  ...generatedSpecs,
+  paths: Object.fromEntries(
+    Object.entries(generatedSpecs.paths || {}).map(([route, definition]) => [
+      route.replace(/^\/zones(?=\/|$)/, '/machines'),
+      definition,
+    ])
+  ),
+};
 
 export { specs, swaggerUi };

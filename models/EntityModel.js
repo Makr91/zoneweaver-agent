@@ -33,6 +33,15 @@ const { DataTypes } = Sequelize;
  *           nullable: true
  *           description: Optional description of the API key purpose
  *           example: "API key for Zoneweaverfrontend"
+ *         role:
+ *           type: string
+ *           enum: [admin, operator, viewer]
+ *           description: |
+ *             Authorization role (Agent API v1 direct-mode role model).
+ *             viewer = read-only; operator = all operations incl. consoles;
+ *             admin = everything incl. key management, settings, host power,
+ *             system account management.
+ *           example: "admin"
  *         is_active:
  *           type: boolean
  *           description: Whether the API key is active and can be used
@@ -71,6 +80,12 @@ const Entities = db.define(
       type: DataTypes.TEXT,
       allowNull: true,
       comment: 'Optional description of the API key purpose',
+    },
+    role: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'admin',
+      comment: 'Authorization role for this API key: admin | operator | viewer (Agent API v1)',
     },
     is_active: {
       type: DataTypes.BOOLEAN,

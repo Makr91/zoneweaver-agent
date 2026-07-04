@@ -1,9 +1,33 @@
 import Entities from '../models/EntityModel.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
+import { Op } from 'sequelize';
 import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';
 import { verifySetupToken } from '../lib/SetupToken.js';
+
+// Agent API v1 direct-mode role model (enforced in middleware/VerifyApiKey.js)
+const VALID_ROLES = ['admin', 'operator', 'viewer'];
+
+/**
+ * Guard against locking the agent out of administration: true when the given
+ * entity is the last ACTIVE admin key.
+ * @param {import('sequelize').Model} entity - Entity being deleted/revoked
+ * @returns {Promise<boolean>} True if no other active admin key exists
+ */
+const isLastActiveAdmin = async entity => {
+  if ((entity.role || 'admin') !== 'admin' || !entity.is_active) {
+    return false;
+  }
+  const otherAdmins = await Entities.count({
+    where: {
+      is_active: true,
+      role: 'admin',
+      id: { [Op.ne]: entity.id },
+    },
+  });
+  return otherAdmins === 0;
+};
 
 // Generate a secure API key with hw_ (Hyperweaver) prefix. The prefix is a human
 // label only — verifyApiKey bcrypt-compares the whole string, so pre-existing wh_
@@ -100,6 +124,7 @@ export const bootstrapFirstApiKey = async (req, res) => {
       name: req.body.name || 'Bootstrap-Key',
       api_key_hash: hashedKey,
       description: req.body.description || 'Initial bootstrap API key',
+      role: 'admin', // First key is always the admin key (Agent API v1 role model)
       is_active: true,
       created_at: new Date(),
       last_used: new Date(),
@@ -148,6 +173,15 @@ export const bootstrapFirstApiKey = async (req, res) => {
  *                 type: string
  *                 description: Optional description for the API key
  *                 example: "API key for Zoneweaverfrontend"
+ *               role:
+ *                 type: string
+ *                 enum: [admin, operator, viewer]
+ *                 default: admin
+ *                 description: |
+ *                   Authorization role (Agent API v1). viewer = read-only;
+ *                   operator = all operations incl. consoles; admin = everything
+ *                   incl. key management, settings, host power, account management.
+ *                 example: "operator"
  *     responses:
  *       200:
  *         description: API key generated successfully
@@ -156,7 +190,7 @@ export const bootstrapFirstApiKey = async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/ApiKey'
  *       400:
- *         description: Name is required
+ *         description: Name is required or role invalid
  *         content:
  *           application/json:
  *             schema:
@@ -182,10 +216,16 @@ export const bootstrapFirstApiKey = async (req, res) => {
  */
 export const generateApiKey = async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, role } = req.body;
 
     if (!name) {
       return res.status(400).json({ msg: 'Name is required' });
+    }
+
+    // Role defaults to admin (the pre-v1 behavior every existing caller expects)
+    const entityRole = role || 'admin';
+    if (!VALID_ROLES.includes(entityRole)) {
+      return res.status(400).json({ msg: `role must be one of: ${VALID_ROLES.join(', ')}` });
     }
 
     // Generate new API key
@@ -198,6 +238,7 @@ export const generateApiKey = async (req, res) => {
       name,
       api_key_hash: hashedKey,
       description: description || null,
+      role: entityRole,
       is_active: true,
       created_at: new Date(),
       last_used: new Date(),
@@ -208,6 +249,7 @@ export const generateApiKey = async (req, res) => {
       entity_id: entity.id,
       name: entity.name,
       description: entity.description,
+      role: entity.role,
       message: 'API key generated successfully',
     });
   } catch (error) {
@@ -268,7 +310,7 @@ export const listApiKeys = async (req, res) => {
   void req;
   try {
     const entities = await Entities.findAll({
-      attributes: ['id', 'name', 'description', 'is_active', 'created_at', 'last_used'],
+      attributes: ['id', 'name', 'description', 'role', 'is_active', 'created_at', 'last_used'],
       order: [['created_at', 'DESC']],
     });
 
@@ -317,6 +359,13 @@ export const deleteApiKey = async (req, res) => {
     const entity = await Entities.findByPk(entityId);
     if (!entity) {
       return res.status(404).json({ msg: 'API key not found' });
+    }
+
+    // Lockout guard: never delete the last active admin key
+    if (await isLastActiveAdmin(entity)) {
+      return res.status(409).json({
+        msg: 'Cannot delete the last active admin API key — create another admin key first',
+      });
     }
 
     await entity.destroy();
@@ -368,6 +417,13 @@ export const revokeApiKey = async (req, res) => {
     const entity = await Entities.findByPk(entityId);
     if (!entity) {
       return res.status(404).json({ msg: 'API key not found' });
+    }
+
+    // Lockout guard: never revoke the last active admin key
+    if (await isLastActiveAdmin(entity)) {
+      return res.status(409).json({
+        msg: 'Cannot revoke the last active admin API key — create another admin key first',
+      });
     }
 
     await entity.update({ is_active: false });
@@ -432,7 +488,7 @@ export const getApiKeyInfo = async (req, res) => {
   try {
     // Return info about the current API key being used
     const entity = await Entities.findByPk(req.entity.id, {
-      attributes: ['id', 'name', 'description', 'created_at', 'last_used'],
+      attributes: ['id', 'name', 'description', 'role', 'created_at', 'last_used'],
     });
 
     if (!entity) {

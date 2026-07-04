@@ -193,6 +193,16 @@ class DatabaseMigrations {
         await this.addColumnIfNotExists('zones', 'tags', 'TEXT');
       }
 
+      // Migration for entities role column (Agent API v1 direct-mode role model).
+      // Existing keys default to 'admin' — the flat super-admin behavior they had.
+      if (await this.tableExists('entities')) {
+        await this.addColumnIfNotExists(
+          'entities',
+          'role',
+          "VARCHAR(255) NOT NULL DEFAULT 'admin'"
+        );
+      }
+
       // Migration: Rename partition_id to server_id in zones table
       if (await this.tableExists('zones')) {
         const hasPartitionId = await this.columnExists('zones', 'partition_id');

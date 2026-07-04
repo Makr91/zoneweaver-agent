@@ -4,8 +4,77 @@ import { log } from '../lib/Logger.js';
 
 /**
  * @fileoverview API Key verification middleware for Zoneweaver Agent
- * @description Validates API keys provided in Authorization header and adds entity information to request
+ * @description Validates API keys provided in Authorization header, adds entity
+ * information to the request, and enforces the Agent API v1 direct-mode role
+ * model (viewer < operator < admin) via a central method+path policy.
  */
+
+/**
+ * Role hierarchy for the direct-mode authorization model (Agent API v1).
+ * Unknown/legacy roles compare as 0 and only pass checks requiring nothing.
+ */
+const ROLE_LEVELS = { viewer: 1, operator: 2, admin: 3 };
+
+/**
+ * Admin-only surfaces for MUTATING requests: host power/init, system account
+ * management, database maintenance, server restart. (Reads on these stay
+ * viewer-accessible — e.g. GET /system/host/status.)
+ */
+const ADMIN_WRITE_PREFIXES = [
+  '/server',
+  '/system/host',
+  '/system/users',
+  '/system/groups',
+  '/system/roles',
+  '/database',
+];
+
+/**
+ * Surfaces that are admin-only regardless of method: key management (listing
+ * keys is admin metadata) and agent settings (GET /settings can expose
+ * registry credentials and host paths).
+ */
+const ADMIN_ALWAYS_PREFIXES = ['/api-keys', '/settings'];
+
+/**
+ * Check whether a request path falls under a prefix (exact or subpath).
+ * @param {string} path - Request path
+ * @param {string[]} prefixes - Path prefixes
+ * @returns {boolean} True when the path is under one of the prefixes
+ */
+const underPrefix = (path, prefixes) =>
+  prefixes.some(prefix => path === prefix || path.startsWith(`${prefix}/`));
+
+/**
+ * Determine the minimum role a request requires (central policy, Agent API v1):
+ * - `/api-keys/info` (self-identification) — any valid key.
+ * - `/api-keys/*` + `/settings/*` — admin, all methods.
+ * - `/ws-ticket` — operator (tickets are unbound and open console WebSockets).
+ * - `/filesystem/*` — operator, all methods (reads return host file contents).
+ * - other GET/HEAD — viewer.
+ * - other mutations — operator; admin on ADMIN_WRITE_PREFIXES.
+ * @param {string} method - HTTP method
+ * @param {string} path - Request path
+ * @returns {string} Minimum role: viewer | operator | admin
+ */
+const requiredRole = (method, path) => {
+  if (path === '/api-keys/info') {
+    return 'viewer';
+  }
+  if (underPrefix(path, ADMIN_ALWAYS_PREFIXES)) {
+    return 'admin';
+  }
+  if (path === '/ws-ticket' || underPrefix(path, ['/filesystem'])) {
+    return 'operator';
+  }
+  if (method === 'GET' || method === 'HEAD') {
+    return 'viewer';
+  }
+  if (underPrefix(path, ADMIN_WRITE_PREFIXES)) {
+    return 'admin';
+  }
+  return 'operator';
+};
 
 /**
  * Middleware to verify API key authentication
@@ -60,6 +129,23 @@ export const verifyApiKey = async (req, res, next) => {
       return res.status(403).json({ msg: 'Invalid API key' });
     }
 
+    // Enforce the direct-mode role model (Agent API v1). Legacy rows without a
+    // role are admin — the flat super-admin behavior they were created under.
+    const role = validEntity.role || 'admin';
+    const needed = requiredRole(req.method, req.path);
+    if ((ROLE_LEVELS[role] || 0) < ROLE_LEVELS[needed]) {
+      log.auth.warn('API key role insufficient for request', {
+        entity_name: validEntity.name,
+        role,
+        required_role: needed,
+        request_path: req.path,
+        request_method: req.method,
+      });
+      return res.status(403).json({
+        msg: `Insufficient role: this operation requires '${needed}' (key role: '${role}')`,
+      });
+    }
+
     // Update last_used timestamp
     await validEntity.update({ last_used: new Date() });
 
@@ -68,6 +154,7 @@ export const verifyApiKey = async (req, res, next) => {
       id: validEntity.id,
       name: validEntity.name,
       description: validEntity.description,
+      role,
     };
 
     return next();

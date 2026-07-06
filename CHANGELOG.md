@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.8](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.7...v0.3.8) (2026-07-06)
+
+
+### Bug Fixes
+
+* pin Hyperweaver UI artifact 0.10.10 ([de2b7f7](https://github.com/Makr91/zoneweaver-agent/commit/de2b7f7fdb6964f1137641f8a3366c153eda4272))
+* run periodic collections directly instead of minting task rows, compact per-core CPU storage with full-fidelity API expansion ([1aeac04](https://github.com/Makr91/zoneweaver-agent/commit/1aeac04c1787bd5b3178c25b056a2421bf49ae9b))
+* single-compare cached API key auth, per-datatype SQLite files with real WAL pragmas, bounded task-queue scanning ([3f15670](https://github.com/Makr91/zoneweaver-agent/commit/3f156700ea4dfa6519456a899c1bdbb436e8e675))
+* split oversized controllers and libs into modules (500-tier campaign) ([3da1b25](https://github.com/Makr91/zoneweaver-agent/commit/3da1b25a0537ef48a82ce5621ba021d7e64eff10))
+* UI, API, Docs OIDC CHnages ([b42adc3](https://github.com/Makr91/zoneweaver-agent/commit/b42adc3e0bd1d251484644285fdbf40db0c37dc1))
+
 ## [0.3.7](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.6...v0.3.7) (2026-07-06)
 
 

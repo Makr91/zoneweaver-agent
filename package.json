@@ -37,7 +37,7 @@
     "mime-types": "^3.0.1",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
-    "node-os-utils": "^1.3.7",
+    "node-os-utils": "^2.0.3",
     "node-pty": "^0.10.1",
     "os-monitor": "^2.0.10",
     "os-utils": "^0.0.14",

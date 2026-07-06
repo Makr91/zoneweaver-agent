@@ -99,9 +99,10 @@ const { DataTypes } = Sequelize;
  *         per_core_data:
  *           type: string
  *           description: >-
- *             Raw JSON string of per-core CPU utilization data. The /monitoring/system/cpu
- *             endpoint exposes a parsed `per_core_parsed` array (replacing this raw field)
- *             when include_cores=true.
+ *             Compact per-core CPU data - JSON array of [user_pct, system_pct, idle_pct,
+ *             utilization_pct] tuples indexed by core number. The /monitoring/system/cpu
+ *             endpoint expands this into a full `per_core_parsed` object array (replacing
+ *             this raw field) when include_cores=true.
  *         scan_timestamp:
  *           type: string
  *           format: date-time
@@ -211,7 +212,8 @@ const CPUStats = db.define(
     per_core_data: {
       type: DataTypes.TEXT,
       allowNull: true,
-      comment: 'JSON string containing per-core CPU utilization data',
+      comment:
+        'Compact per-core CPU data: JSON array of [user_pct, system_pct, idle_pct, utilization_pct] indexed by core number',
     },
     scan_timestamp: {
       type: DataTypes.DATE,

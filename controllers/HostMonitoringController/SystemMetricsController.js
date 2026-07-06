@@ -22,6 +22,31 @@ import {
 import { log } from '../../lib/Logger.js';
 
 /**
+ * Expand the compact stored per-core form — [[user_pct, system_pct, idle_pct,
+ * utilization_pct], ...] indexed by core — into the full per_core_parsed
+ * objects this API has always served. cpu_id derives from the index; iowait is
+ * always 0 (os.cpus() exposes none). Full fidelity, ~4x smaller storage.
+ * Plain JSON.parse, NOT yieldable-json: yj's incremental parser rejects
+ * exponent-notation numbers and this payload is a few KB.
+ * @param {string} raw - Stored per_core_data JSON
+ * @returns {Array|null} Parsed per-core objects, or null on parse failure
+ */
+const expandPerCoreData = raw => {
+  try {
+    return JSON.parse(raw).map((core, i) => ({
+      cpu_id: `cpu${i}`,
+      user_pct: core[0],
+      system_pct: core[1],
+      idle_pct: core[2],
+      iowait_pct: 0,
+      utilization_pct: core[3],
+    }));
+  } catch {
+    return null;
+  }
+};
+
+/**
  * @swagger
  * /monitoring/system/cpu:
  *   get:
@@ -123,17 +148,10 @@ export const getCPUStats = async (req, res) => {
       // Respond with a PLAIN object: the row was fetched with an explicit
       // attributes list, and Sequelize's toJSON honors that list — anything
       // stuffed into dataValues (per_core_parsed) would be silently dropped.
-      // Plain JSON.parse, NOT yieldable-json: yj's incremental parser rejects
-      // exponent-notation numbers the collector math can emit, and this payload
-      // is a few KB — nothing worth yielding over.
       const latest = latestRecord ? latestRecord.get({ plain: true }) : null;
       if ((include_cores === 'true' || include_cores === true) && latestRecord?.per_core_data) {
-        try {
-          latest.per_core_parsed = JSON.parse(latestRecord.per_core_data);
-        } catch {
-          latest.per_core_parsed = null;
-        }
-        delete latest.per_core_data; // heavy raw JSON the UI never reads
+        latest.per_core_parsed = expandPerCoreData(latestRecord.per_core_data);
+        delete latest.per_core_data; // compact storage form the UI never reads
       }
 
       const results = latest ? [latest] : [];
@@ -169,19 +187,15 @@ export const getCPUStats = async (req, res) => {
 
     let sampledResults = sampleByTime(allData, requestedLimit);
 
-    // Parse per-core data if requested — attached to PLAIN objects (toJSON honors
-    // the explicit attributes list and would drop keys stuffed into dataValues).
-    // Plain JSON.parse, NOT yieldable-json (see the latest branch above).
+    // Expand per-core data if requested — attached to PLAIN objects (toJSON
+    // honors the explicit attributes list and would drop keys stuffed into
+    // dataValues).
     if (include_cores === 'true' || include_cores === true) {
       sampledResults = sampledResults.map(row => {
         const plain = row.get({ plain: true });
         if (row.per_core_data) {
-          try {
-            plain.per_core_parsed = JSON.parse(row.per_core_data);
-          } catch {
-            plain.per_core_parsed = null;
-          }
-          delete plain.per_core_data; // heavy raw JSON the UI never reads
+          plain.per_core_parsed = expandPerCoreData(row.per_core_data);
+          delete plain.per_core_data; // compact storage form the UI never reads
         }
         return plain;
       });

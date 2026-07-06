@@ -280,7 +280,7 @@ class HostMonitoringService {
     return {
       isRunning: this.isRunning,
       isInitialized: this.isInitialized,
-      discoveryMode: 'taskqueue',
+      discoveryMode: 'direct',
       config: {
         enabled: this.hostMonitoringConfig.enabled,
         intervals: this.hostMonitoringConfig.intervals,
@@ -292,7 +292,7 @@ class HostMonitoringService {
           ? Math.floor((Date.now() - (this.stats.lastNetworkConfigSuccess || Date.now())) / 1000)
           : 0,
       },
-      note: 'Discovery is now handled by TaskQueue with BACKGROUND priority tasks',
+      note: 'Collections run directly on their timers; progress via host_info last_*_scan timestamps',
     };
   }
 

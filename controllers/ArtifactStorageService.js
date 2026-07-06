@@ -10,7 +10,7 @@ import fs from 'fs/promises';
 import config from '../config/ConfigLoader.js';
 import ArtifactStorageLocation from '../models/ArtifactStorageLocationModel.js';
 import Artifact from '../models/ArtifactModel.js';
-import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import { executeArtifactScanAllTask } from './TaskManager/ArtifactManager/index.js';
 import CleanupService from './CleanupService.js';
 import { log, createTimer } from '../lib/Logger.js';
 import { validatePath, executeCommand } from '../lib/FileSystemManager.js';
@@ -29,6 +29,7 @@ class ArtifactStorageService {
     };
     this.isRunning = false;
     this.isInitialized = false;
+    this.isScanning = false;
 
     // Performance tracking
     this.stats = {
@@ -188,50 +189,76 @@ class ArtifactStorageService {
   }
 
   /**
-   * Perform initial filesystem scan of all enabled locations
-   * @description Scans all enabled storage locations and creates artifact records
+   * Run a scan of all storage locations directly — periodic and startup scans
+   * no longer mint task-queue rows (user-triggered scans via the API still do).
+   * In-flight guarded so a slow scan can never stack behind itself.
+   * @param {string} source - Scan origin for logging (initial_scan | periodic_scan)
    */
-  async performInitialScan() {
+  async runScanAll(source) {
+    if (this.isScanning) {
+      log.artifact.debug('Skipping artifact scan - previous scan still in progress', { source });
+      return;
+    }
+    this.isScanning = true;
+
+    try {
+      const metadataJson = await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            verify_checksums: false,
+            remove_orphaned: true, // Clean orphaned records during automatic scans
+            source,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      });
+
+      const result = await executeArtifactScanAllTask(metadataJson);
+      if (result.success) {
+        this.stats.scanRuns++;
+        this.stats.lastScanSuccess = Date.now();
+        log.artifact.debug('Artifact scan completed', {
+          source,
+          run_count: this.stats.scanRuns,
+        });
+      } else {
+        this.stats.totalScanErrors++;
+        log.artifact.error('Artifact scan failed', {
+          source,
+          error: result.error,
+          total_errors: this.stats.totalScanErrors,
+        });
+      }
+    } catch (error) {
+      this.stats.totalScanErrors++;
+      log.artifact.error('Artifact scan failed', {
+        source,
+        error: error?.message || 'Unknown error',
+        stack: error?.stack || 'No stack trace available',
+        total_errors: this.stats.totalScanErrors,
+      });
+    } finally {
+      this.isScanning = false;
+    }
+  }
+
+  /**
+   * Perform initial filesystem scan of all enabled locations
+   * @description Kicks off the startup scan without blocking initialization —
+   * the scan walks every enabled storage location on disk.
+   */
+  performInitialScan() {
     if (!this.config.enabled) {
       return;
     }
 
-    try {
-      // Create initial scan task for all locations
-      const task = await Tasks.create({
-        zone_name: 'artifact',
-        operation: 'artifact_scan_all',
-        priority: TaskPriority.BACKGROUND,
-        created_by: 'system_startup',
-        status: 'pending',
-        metadata: await new Promise((resolve, reject) => {
-          yj.stringifyAsync(
-            {
-              verify_checksums: false,
-              remove_orphaned: true, // Clean orphaned records during initial scan
-              source: 'initial_scan',
-            },
-            (err, result) => {
-              if (err) {
-                reject(err);
-              } else {
-                resolve(result);
-              }
-            }
-          );
-        }),
-      });
-
-      log.artifact.info('Initial scan task created', {
-        task_id: task.id,
-      });
-    } catch (error) {
-      log.artifact.error('Failed to create initial scan task', {
-        error: error?.message || 'Unknown error',
-        stack: error?.stack || 'No stack trace available',
-        error_type: typeof error,
-      });
-    }
+    void this.runScanAll('initial_scan');
   }
 
   /**
@@ -323,51 +350,6 @@ class ArtifactStorageService {
   }
 
   /**
-   * Create a scan task for periodic scanning
-   * @description Creates a background task to scan all storage locations
-   */
-  async createPeriodicScanTask() {
-    try {
-      const task = await Tasks.create({
-        zone_name: 'artifact',
-        operation: 'artifact_scan_all',
-        priority: TaskPriority.BACKGROUND,
-        created_by: 'system_periodic',
-        status: 'pending',
-        metadata: await new Promise((resolve, reject) => {
-          yj.stringifyAsync(
-            {
-              verify_checksums: false,
-              remove_orphaned: true, // Clean orphaned records during periodic scans
-              source: 'periodic_scan',
-            },
-            (err, result) => {
-              if (err) {
-                reject(err);
-              } else {
-                resolve(result);
-              }
-            }
-          );
-        }),
-      });
-
-      this.stats.scanRuns++;
-      log.artifact.debug('Periodic scan task created', {
-        task_id: task.id,
-        run_count: this.stats.scanRuns,
-      });
-    } catch (error) {
-      this.stats.totalScanErrors++;
-      log.artifact.error('Failed to create periodic scan task', {
-        error: error.message,
-        run_count: this.stats.scanRuns,
-        total_errors: this.stats.totalScanErrors,
-      });
-    }
-  }
-
-  /**
    * Initialize the artifact storage service
    * @description Sets up database synchronization and performs initial scan
    */
@@ -387,8 +369,8 @@ class ArtifactStorageService {
       // Sync config with database
       await this.syncConfigWithDatabase();
 
-      // Perform initial scan
-      await this.performInitialScan();
+      // Kick off the initial scan (runs in the background)
+      this.performInitialScan();
 
       // Register cleanup tasks
       this.registerCleanupTasks();
@@ -427,9 +409,9 @@ class ArtifactStorageService {
     try {
       const scanInterval = this.config.scanning?.periodic_scan_interval || 300;
 
-      // Start periodic scanning
-      this.intervals.periodicScan = setInterval(async () => {
-        await this.createPeriodicScanTask();
+      // Start periodic scanning (direct, no task rows)
+      this.intervals.periodicScan = setInterval(() => {
+        void this.runScanAll('periodic_scan');
       }, scanInterval * 1000);
 
       this.isRunning = true;

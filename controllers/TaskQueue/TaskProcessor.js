@@ -1,4 +1,4 @@
-import Tasks, { TaskPriority } from '../../models/TaskModel.js';
+import Tasks from '../../models/TaskModel.js';
 import { Op } from 'sequelize';
 import config from '../../config/ConfigLoader.js';
 import { log } from '../../lib/Logger.js';
@@ -10,6 +10,8 @@ import {
   MAX_CONCURRENT_TASKS,
 } from './TaskState.js';
 import { executeAndHandleTask, updateParentTaskProgress } from './TaskExecutor.js';
+import { executeDiscoverTask } from '../TaskManager/ZoneManager.js';
+import { getHostMonitoringService } from '../HostMonitoringService.js';
 
 /**
  * @fileoverview Task processor - queue processing and periodic task scheduling
@@ -158,6 +160,53 @@ const processNextTask = async () => {
 };
 
 /**
+ * In-flight guard for periodic collections — a tick fires only while no
+ * previous run of the SAME collection is still executing, so a slow scan can
+ * never stack behind itself.
+ */
+const runningCollections = new Set();
+
+/**
+ * Wrap a periodic collection with the in-flight guard and error logging.
+ * Collections run DIRECTLY on their timers — they no longer mint task-queue
+ * rows per tick (the tasks table was 99.8% discovery bookkeeping). "Has it
+ * run" stays visible via host_info's last_*_scan timestamps and the
+ * monitoring health endpoint; failures via the collectors' own error logging.
+ * @param {string} name - Collection name for logging
+ * @param {Function} collect - Async collection function
+ * @returns {Function} Guarded interval callback
+ */
+const runCollection = (name, collect) => async () => {
+  if (runningCollections.has(name)) {
+    log.monitoring.debug('Skipping collection - previous run still in progress', {
+      collection: name,
+    });
+    return;
+  }
+  runningCollections.add(name);
+  try {
+    await collect();
+  } catch (error) {
+    log.monitoring.error('Periodic collection failed', {
+      collection: name,
+      error: error.message,
+    });
+  } finally {
+    runningCollections.delete(name);
+  }
+};
+
+/**
+ * Run zone discovery directly (no task row) and surface failures in the log.
+ */
+const runZoneDiscovery = runCollection('zone_discovery', async () => {
+  const result = await executeDiscoverTask();
+  if (result && result.success === false) {
+    log.monitoring.warn('Zone discovery failed', { error: result.error });
+  }
+});
+
+/**
  * Start the task processor
  */
 export const startTaskProcessor = () => {
@@ -181,36 +230,23 @@ export const startTaskProcessor = () => {
       interval_seconds: zonesConfig.discovery_interval,
     });
 
-    // Start periodic discovery interval
-    processorState.discoveryProcessor = setInterval(async () => {
-      await Tasks.create({
-        zone_name: 'system',
-        operation: 'discover',
-        priority: TaskPriority.BACKGROUND,
-        created_by: 'system_periodic',
-        status: 'pending',
-      });
-    }, zonesConfig.discovery_interval * 1000);
+    processorState.discoveryProcessor = setInterval(
+      runZoneDiscovery,
+      zonesConfig.discovery_interval * 1000
+    );
   }
 
-  // Initial discovery task
-  setTimeout(async () => {
-    await Tasks.create({
-      zone_name: 'system',
-      operation: 'discover',
-      priority: TaskPriority.BACKGROUND,
-      created_by: 'system_startup',
-      status: 'pending',
-    });
-  }, 5000);
+  // Initial discovery
+  setTimeout(runZoneDiscovery, 5000);
 
-  // Get host monitoring configuration for discovery intervals
+  // Get host monitoring configuration for collection intervals
   const hostMonitoringConfig = config.getHostMonitoring();
 
   if (hostMonitoringConfig.enabled && hostMonitoringConfig.intervals) {
     const { intervals } = hostMonitoringConfig;
+    const monitoring = getHostMonitoringService();
 
-    log.task.info('Starting periodic host monitoring discovery tasks', {
+    log.task.info('Starting periodic host monitoring collections', {
       network_config_interval: intervals.network_config,
       network_usage_interval: intervals.network_usage,
       storage_interval: intervals.storage,
@@ -219,71 +255,39 @@ export const startTaskProcessor = () => {
       system_metrics_interval: intervals.system_metrics,
     });
 
-    // Network config discovery
-    processorState.networkConfigProcessor = setInterval(async () => {
-      await Tasks.create({
-        zone_name: 'system',
-        operation: 'network_config_discovery',
-        priority: TaskPriority.BACKGROUND,
-        created_by: 'system_periodic',
-        status: 'pending',
-      });
-    }, intervals.network_config * 1000);
+    processorState.networkConfigProcessor = setInterval(
+      runCollection('network_config', () => monitoring.networkCollector.collectNetworkConfig()),
+      intervals.network_config * 1000
+    );
 
-    // Network usage discovery
-    processorState.networkUsageProcessor = setInterval(async () => {
-      await Tasks.create({
-        zone_name: 'system',
-        operation: 'network_usage_discovery',
-        priority: TaskPriority.BACKGROUND,
-        created_by: 'system_periodic',
-        status: 'pending',
-      });
-    }, intervals.network_usage * 1000);
+    processorState.networkUsageProcessor = setInterval(
+      runCollection('network_usage', () => monitoring.networkCollector.collectNetworkUsage()),
+      intervals.network_usage * 1000
+    );
 
-    // Storage discovery
-    processorState.storageProcessor = setInterval(async () => {
-      await Tasks.create({
-        zone_name: 'system',
-        operation: 'storage_discovery',
-        priority: TaskPriority.BACKGROUND,
-        created_by: 'system_periodic',
-        status: 'pending',
-      });
-    }, intervals.storage * 1000);
+    processorState.storageProcessor = setInterval(
+      runCollection('storage', () => monitoring.storageCollector.collectStorageData()),
+      intervals.storage * 1000
+    );
 
-    // Storage frequent metrics discovery
-    processorState.storageFrequentProcessor = setInterval(async () => {
-      await Tasks.create({
-        zone_name: 'system',
-        operation: 'storage_frequent_discovery',
-        priority: TaskPriority.BACKGROUND,
-        created_by: 'system_periodic',
-        status: 'pending',
-      });
-    }, intervals.storage_frequent * 1000);
+    processorState.storageFrequentProcessor = setInterval(
+      runCollection('storage_frequent', () =>
+        monitoring.storageCollector.collectFrequentStorageMetrics()
+      ),
+      intervals.storage_frequent * 1000
+    );
 
-    // Device discovery
-    processorState.deviceProcessor = setInterval(async () => {
-      await Tasks.create({
-        zone_name: 'system',
-        operation: 'device_discovery',
-        priority: TaskPriority.BACKGROUND,
-        created_by: 'system_periodic',
-        status: 'pending',
-      });
-    }, intervals.device_discovery * 1000);
+    processorState.deviceProcessor = setInterval(
+      runCollection('device_discovery', () => monitoring.deviceCollector.collectPCIDevices()),
+      intervals.device_discovery * 1000
+    );
 
-    // System metrics discovery
-    processorState.systemMetricsProcessor = setInterval(async () => {
-      await Tasks.create({
-        zone_name: 'system',
-        operation: 'system_metrics_discovery',
-        priority: TaskPriority.BACKGROUND,
-        created_by: 'system_periodic',
-        status: 'pending',
-      });
-    }, intervals.system_metrics * 1000);
+    processorState.systemMetricsProcessor = setInterval(
+      runCollection('system_metrics', () =>
+        monitoring.systemMetricsCollector.collectSystemMetrics()
+      ),
+      intervals.system_metrics * 1000
+    );
   }
 };
 

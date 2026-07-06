@@ -316,6 +316,11 @@ class SystemMetricsCollector {
         const pct = (part, whole) =>
           Math.min(100, Math.max(0, Math.round((part / whole) * 10000) / 100));
 
+        // Stored in the COMPACT per-core form: [user_pct, system_pct, idle_pct,
+        // utilization_pct], array index = core number. cpu_id derives from the
+        // index and iowait is always 0 (os.cpus() exposes none), so nothing is
+        // lost — /monitoring/system/cpu expands rows back to the full
+        // per_core_parsed objects. Cuts the stored JSON ~4x (repeated keys gone).
         perCoreData = currentCPUTimes.map((core, i) => {
           const lastCore = this.lastCPUTimes[i];
           // irq is deliberately EXCLUDED: illumos cpu_nsec_intr overlaps the
@@ -330,28 +335,19 @@ class SystemMetricsCollector {
             (core.times.idle - lastCore.times.idle);
 
           if (totalDiff <= 0) {
-            return {
-              cpu_id: `cpu${i}`,
-              user_pct: 0,
-              system_pct: 0,
-              idle_pct: 100,
-              iowait_pct: 0,
-              utilization_pct: 0,
-            };
+            return [0, 0, 100, 0];
           }
 
           const idleDiff = core.times.idle - lastCore.times.idle;
           const userDiff = core.times.user - lastCore.times.user;
           const sysDiff = core.times.sys - lastCore.times.sys;
 
-          return {
-            cpu_id: `cpu${i}`,
-            user_pct: pct(userDiff, totalDiff),
-            system_pct: pct(sysDiff, totalDiff),
-            idle_pct: pct(idleDiff, totalDiff),
-            iowait_pct: 0, // Not available in os.cpus()
-            utilization_pct: pct(totalDiff - idleDiff, totalDiff),
-          };
+          return [
+            pct(userDiff, totalDiff),
+            pct(sysDiff, totalDiff),
+            pct(idleDiff, totalDiff),
+            pct(totalDiff - idleDiff, totalDiff),
+          ];
         });
       }
 

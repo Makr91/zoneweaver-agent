@@ -151,6 +151,15 @@ export const getZFSPools = async (req, res) => {
  *                     $ref: '#/components/schemas/ZFSDataset'
  *                 totalCount:
  *                   type: integer
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
+ *                     hasMore:
+ *                       type: boolean
  *       500:
  *         description: Failed to get ZFS datasets
  */
@@ -236,6 +245,15 @@ export const getZFSDatasets = async (req, res) => {
  *                     $ref: '#/components/schemas/Disk'
  *                 totalCount:
  *                   type: integer
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
+ *                     hasMore:
+ *                       type: boolean
  *       500:
  *         description: Failed to get disk information
  */
@@ -324,6 +342,26 @@ export const getDisks = async (req, res) => {
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/DiskIOStats'
+ *                 totalCount:
+ *                   type: integer
+ *                 returnedCount:
+ *                   type: integer
+ *                   description: Number of records in this response
+ *                 sampling:
+ *                   type: object
+ *                   description: Time-series sampling metadata applied to the result set
+ *                   properties:
+ *                     applied:
+ *                       type: boolean
+ *                     strategy:
+ *                       type: string
+ *                     entityCount:
+ *                       type: integer
+ *                     samplesPerEntity:
+ *                       type: integer
+ *                 queryTime:
+ *                   type: string
+ *                   description: Server-side query duration (e.g. "12ms")
  *       500:
  *         description: Failed to get disk I/O statistics
  */
@@ -494,6 +532,26 @@ export const getDiskIOStats = async (req, res) => {
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/PoolIOStats'
+ *                 totalCount:
+ *                   type: integer
+ *                 returnedCount:
+ *                   type: integer
+ *                   description: Number of records in this response
+ *                 sampling:
+ *                   type: object
+ *                   description: Time-series sampling metadata applied to the result set
+ *                   properties:
+ *                     applied:
+ *                       type: boolean
+ *                     strategy:
+ *                       type: string
+ *                     entityCount:
+ *                       type: integer
+ *                     samplesPerEntity:
+ *                       type: integer
+ *                 queryTime:
+ *                   type: string
+ *                   description: Server-side query duration (e.g. "12ms")
  *       500:
  *         description: Failed to get pool I/O statistics
  */
@@ -650,6 +708,41 @@ export const getPoolIOStats = async (req, res) => {
  *                     $ref: '#/components/schemas/ARCStats'
  *                 latest:
  *                   $ref: '#/components/schemas/ARCStats'
+ *                 totalCount:
+ *                   type: integer
+ *                 returnedCount:
+ *                   type: integer
+ *                   description: Number of records in this response
+ *                 sampling:
+ *                   type: object
+ *                   description: Time-series sampling metadata applied to the result set
+ *                   properties:
+ *                     applied:
+ *                       type: boolean
+ *                     strategy:
+ *                       type: string
+ *                     samplesRequested:
+ *                       type: integer
+ *                     samplesReturned:
+ *                       type: integer
+ *                 metadata:
+ *                   type: object
+ *                   description: Present on the historical (since) path
+ *                   properties:
+ *                     timeSpan:
+ *                       type: object
+ *                       properties:
+ *                         start:
+ *                           type: string
+ *                           format: date-time
+ *                         end:
+ *                           type: string
+ *                           format: date-time
+ *                         durationMinutes:
+ *                           type: integer
+ *                 queryTime:
+ *                   type: string
+ *                   description: Server-side query duration (e.g. "12ms")
  *       500:
  *         description: Failed to get ARC statistics
  */

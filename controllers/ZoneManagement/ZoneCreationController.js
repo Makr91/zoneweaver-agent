@@ -17,20 +17,20 @@ import {
 
 /**
  * @swagger
- * /zones/{zoneName}:
+ * /machines/{machineName}:
  *   delete:
- *     summary: Delete zone
- *     description: Queues tasks to stop, uninstall, and delete the specified zone
+ *     summary: Delete machine
+ *     description: Queues tasks to stop, uninstall, and delete the specified machine (zone)
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone to delete
+ *         description: Name of the machine to delete
  *       - in: query
  *         name: force
  *         schema:
@@ -55,9 +55,9 @@ import {
  */
 /**
  * @swagger
- * /zones:
+ * /machines:
  *   post:
- *     summary: Create a new zone
+ *     summary: Create a new machine
  *     description: |
  *       Queues a task to create a new zone with the specified configuration using Hosts.yml structure.
  *       Required: `settings.hostname`, `settings.domain`, `zones.brand`
@@ -568,7 +568,7 @@ import {
  *                   type: string
  *                   format: uuid
  *                   description: Parent orchestration task ID (poll this for overall progress)
- *                 zone_name:
+ *                 machine_name:
  *                   type: string
  *                   example: "0001--web-server-01.example.com"
  *                 operation:
@@ -725,7 +725,7 @@ export const createZone = async (req, res) => {
     const createResponse = {
       success: true,
       parent_task_id: parentTask.id,
-      zone_name: finalZoneName,
+      machine_name: finalZoneName,
       operation: 'zone_create_orchestration',
       status: 'pending',
       message: 'Zone creation queued',

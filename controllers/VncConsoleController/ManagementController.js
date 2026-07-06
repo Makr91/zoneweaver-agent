@@ -31,14 +31,14 @@ export const listVncSessions = async (req, res) => {
       Expires: '0',
     });
 
-    const { status, zone_name } = req.query;
+    const { status, machine_name } = req.query;
     const whereClause = {};
 
     if (status) {
       whereClause.status = status;
     }
-    if (zone_name) {
-      whereClause.zone_name = zone_name;
+    if (machine_name) {
+      whereClause.zone_name = machine_name;
     }
 
     const sessions = await VncSessions.findAll({

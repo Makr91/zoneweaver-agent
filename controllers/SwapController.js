@@ -101,8 +101,8 @@ const parseZfsSize = sizeString => {
  *         description: Failed to get swap areas
  */
 export const listSwapAreas = async (req, res) => {
-  const { limit = 100, offset = 0, pool, host } = req.query;
-  const hostname = host || os.hostname();
+  const { limit = 100, offset = 0, pool } = req.query;
+  const hostname = os.hostname();
 
   try {
     // The table only holds CURRENT swap areas (vanished ones are deleted by the
@@ -198,12 +198,31 @@ export const listSwapAreas = async (req, res) => {
  *                         type: string
  *                       message:
  *                         type: string
+ *                 swapAreaCount:
+ *                   type: integer
+ *                 lastScanned:
+ *                   type: string
+ *                   format: date-time
+ *                   nullable: true
+ *                 memoryStatsReference:
+ *                   type: object
+ *                   nullable: true
+ *                   description: Cross-reference to the latest MemoryStats swap figures
+ *                   properties:
+ *                     total_swap_gb:
+ *                       type: string
+ *                       nullable: true
+ *                     used_swap_gb:
+ *                       type: string
+ *                       nullable: true
+ *                     utilization_pct:
+ *                       type: number
  *       500:
  *         description: Failed to get swap summary
  */
 export const getSwapSummary = async (req, res) => {
-  const { host } = req.query;
-  const hostname = host || os.hostname();
+  void req;
+  const hostname = os.hostname();
 
   try {
     // Get current swap areas (the table only ever holds the current configuration)

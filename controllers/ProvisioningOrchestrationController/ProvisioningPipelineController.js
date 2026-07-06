@@ -10,19 +10,19 @@ import { buildProvisioningTaskChain } from './utils/TaskChainBuilder.js';
 
 /**
  * @swagger
- * /zones/{name}/provision:
+ * /machines/{name}/provision:
  *   post:
- *     summary: Kick off provisioning pipeline for a zone
+ *     summary: Kick off provisioning pipeline for a machine
  *     description: |
  *       Orchestrates the full provisioning pipeline:
- *       1. Boot zone (if not running)
+ *       1. Boot machine (if not running)
  *       2. Run zlogin recipe (zone_setup) to configure network
  *       3. Wait for SSH to become available (zone_wait_ssh)
- *       4. Sync provisioning files to zone (zone_sync)
+ *       4. Sync provisioning files to the machine (zone_sync)
  *       5. Execute provisioners (zone_provision)
  *
  *       Prerequisites:
- *       - Zone must have provisioning config set via PUT /zones/:name
+ *       - Machine must have provisioning config set via PUT /machines/:name
  *       - Provisioning artifact must be uploaded
  *       - Recipe must exist (if specified)
  *     tags: [Provisioning Pipeline]
@@ -107,7 +107,7 @@ export const provisionZone = async (req, res) => {
     return res.json({
       success: true,
       message: `Provisioning pipeline started for ${zoneName}`,
-      zone_name: zoneName,
+      machine_name: zoneName,
       parent_task_id: parentTask.id,
       steps: taskChain.length,
       task_chain: taskChain,
@@ -123,10 +123,10 @@ export const provisionZone = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{name}/provision/status:
+ * /machines/{name}/provision/status:
  *   get:
  *     summary: Get provisioning pipeline status
- *     description: Returns the status of all provisioning-related tasks for a zone.
+ *     description: Returns the status of all provisioning-related tasks for a machine.
  *     tags: [Provisioning Pipeline]
  *     security:
  *       - ApiKeyAuth: []
@@ -167,7 +167,7 @@ export const getProvisioningStatus = async (req, res) => {
 
     return res.json({
       success: true,
-      zone_name: zoneName,
+      machine_name: zoneName,
       provisioning_configured: !!zone.configuration?.provisioning,
       provisioning_status: provisioning.status || 'not_started',
       last_provisioned_at: provisioning.last_provisioned_at,

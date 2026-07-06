@@ -245,16 +245,16 @@ const buildCloneMetadata = async (sourceZone, requestBody, snapshotInfo, newZone
 
 /**
  * @swagger
- * /zones/{zoneName}/clone:
+ * /machines/{machineName}/clone:
  *   post:
- *     summary: Clone a zone
- *     description: Creates a copy of an existing zone using ZFS snapshots and clones.
+ *     summary: Clone a machine
+ *     description: Creates a copy of an existing machine (zone) using ZFS snapshots and clones.
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
@@ -299,7 +299,7 @@ const buildCloneMetadata = async (sourceZone, requestBody, snapshotInfo, newZone
  */
 export const cloneZone = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
     const { settings, start_after_create = false, reprovision = false } = req.body;
 
     if (!settings || !settings.hostname || !settings.server_id) {
@@ -391,8 +391,8 @@ export const cloneZone = async (req, res) => {
     return res.status(202).json({
       success: true,
       parent_task_id: parentTask.id,
-      zone_name: finalZoneName,
-      source_zone: zoneName,
+      machine_name: finalZoneName,
+      source_machine: zoneName,
       operation: 'zone_clone_orchestration',
       status: 'pending',
       message: 'Zone clone queued',

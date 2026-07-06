@@ -8,39 +8,39 @@ import { validateZoneName } from '../../lib/ZoneValidation.js';
 
 /**
  * @swagger
- * /zones/{zoneName}/notes:
+ * /machines/{machineName}/notes:
  *   get:
- *     summary: Get zone notes
- *     description: Retrieves the user notes/annotations for a specific zone
+ *     summary: Get machine notes
+ *     description: Retrieves the user notes/annotations for a specific machine (zone)
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     responses:
  *       200:
- *         description: Zone notes retrieved successfully
+ *         description: Machine notes retrieved successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 zone_name:
+ *                 machine_name:
  *                   type: string
  *                 notes:
  *                   type: string
  *                   nullable: true
  *       404:
- *         description: Zone not found
+ *         description: Machine not found
  */
 export const getZoneNotes = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -52,13 +52,13 @@ export const getZoneNotes = async (req, res) => {
     }
 
     return res.json({
-      zone_name: zoneName,
+      machine_name: zoneName,
       notes: zone.notes || null,
     });
   } catch (error) {
     log.database.error('Database error getting zone notes', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
     });
     return res.status(500).json({ error: 'Failed to retrieve zone notes' });
   }
@@ -66,20 +66,20 @@ export const getZoneNotes = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{zoneName}/notes:
+ * /machines/{machineName}/notes:
  *   put:
- *     summary: Update zone notes
- *     description: Sets or updates the user notes/annotations for a specific zone
+ *     summary: Update machine notes
+ *     description: Sets or updates the user notes/annotations for a specific machine (zone)
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     requestBody:
  *       required: true
  *       content:
@@ -96,7 +96,7 @@ export const getZoneNotes = async (req, res) => {
  *                 example: "Primary web server - do not stop during business hours"
  *     responses:
  *       200:
- *         description: Zone notes updated successfully
+ *         description: Machine notes updated successfully
  *         content:
  *           application/json:
  *             schema:
@@ -104,17 +104,17 @@ export const getZoneNotes = async (req, res) => {
  *               properties:
  *                 success:
  *                   type: boolean
- *                 zone_name:
+ *                 machine_name:
  *                   type: string
  *                 notes:
  *                   type: string
  *                   nullable: true
  *       404:
- *         description: Zone not found
+ *         description: Machine not found
  */
 export const updateZoneNotes = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
     const { notes } = req.body;
 
     if (!validateZoneName(zoneName)) {
@@ -134,13 +134,13 @@ export const updateZoneNotes = async (req, res) => {
 
     return res.json({
       success: true,
-      zone_name: zoneName,
+      machine_name: zoneName,
       notes: zone.notes,
     });
   } catch (error) {
     log.database.error('Database error updating zone notes', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
     });
     return res.status(500).json({ error: 'Failed to update zone notes' });
   }
@@ -148,29 +148,29 @@ export const updateZoneNotes = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{zoneName}/tags:
+ * /machines/{machineName}/tags:
  *   get:
- *     summary: Get zone tags
- *     description: Retrieves the tags for a specific zone
+ *     summary: Get machine tags
+ *     description: Retrieves the tags for a specific machine (zone)
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     responses:
  *       200:
- *         description: Zone tags retrieved successfully
+ *         description: Machine tags retrieved successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 zone_name:
+ *                 machine_name:
  *                   type: string
  *                 tags:
  *                   type: array
@@ -178,11 +178,11 @@ export const updateZoneNotes = async (req, res) => {
  *                   items:
  *                     type: string
  *       404:
- *         description: Zone not found
+ *         description: Machine not found
  */
 export const getZoneTags = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -194,13 +194,13 @@ export const getZoneTags = async (req, res) => {
     }
 
     return res.json({
-      zone_name: zoneName,
+      machine_name: zoneName,
       tags: zone.tags || [],
     });
   } catch (error) {
     log.database.error('Database error getting zone tags', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
     });
     return res.status(500).json({ error: 'Failed to retrieve zone tags' });
   }
@@ -208,20 +208,20 @@ export const getZoneTags = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{zoneName}/tags:
+ * /machines/{machineName}/tags:
  *   put:
- *     summary: Update zone tags
- *     description: Sets or updates the tags for a specific zone
+ *     summary: Update machine tags
+ *     description: Sets or updates the tags for a specific machine (zone)
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     requestBody:
  *       required: true
  *       content:
@@ -240,7 +240,7 @@ export const getZoneTags = async (req, res) => {
  *                 example: ["web", "production", "critical"]
  *     responses:
  *       200:
- *         description: Zone tags updated successfully
+ *         description: Machine tags updated successfully
  *         content:
  *           application/json:
  *             schema:
@@ -248,7 +248,7 @@ export const getZoneTags = async (req, res) => {
  *               properties:
  *                 success:
  *                   type: boolean
- *                 zone_name:
+ *                 machine_name:
  *                   type: string
  *                 tags:
  *                   type: array
@@ -256,11 +256,11 @@ export const getZoneTags = async (req, res) => {
  *                   items:
  *                     type: string
  *       404:
- *         description: Zone not found
+ *         description: Machine not found
  */
 export const updateZoneTags = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
     const { tags } = req.body;
 
     if (!validateZoneName(zoneName)) {
@@ -285,13 +285,13 @@ export const updateZoneTags = async (req, res) => {
 
     return res.json({
       success: true,
-      zone_name: zoneName,
+      machine_name: zoneName,
       tags: zone.tags || [],
     });
   } catch (error) {
     log.database.error('Database error updating zone tags', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
     });
     return res.status(500).json({ error: 'Failed to update zone tags' });
   }

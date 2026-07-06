@@ -4,6 +4,7 @@ server:
   https_port: 5001
 ssl:
   enabled: true
+  force_secure: true
   generate_ssl: true
   key_path: /etc/zoneweaver-agent/ssl/server.key
   cert_path: /etc/zoneweaver-agent/ssl/server.crt

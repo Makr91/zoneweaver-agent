@@ -8,8 +8,8 @@ const execProm = util.promisify(exec);
  * @swagger
  * /stats:
  *   get:
- *     summary: Get server statistics and zone information
- *     description: Returns comprehensive system information including OS details, hardware specs, and OmniOS zone status. Access may be public or require API key based on configuration.
+ *     summary: Get server statistics and machine information
+ *     description: Returns comprehensive system information including OS details, hardware specs, and machine (OmniOS zone) status. Access may be public or require API key based on configuration.
  *     tags: [System]
  *     security: []
  *     responses:
@@ -61,10 +61,10 @@ export const serverStats = async (req, res) => {
     returnObject.uptime = os.uptime();
     returnObject.version = os.version();
 
-    // Zone information with proper error handling
+    // Machine (zone) information with proper error handling
     try {
       const { stdout: allzones } = await execProm('zoneadm list -ic | grep -v global');
-      returnObject.allzones = allzones
+      returnObject.allmachines = allzones
         .trim()
         .split('\n')
         .filter(line => line.trim() !== '');
@@ -73,12 +73,12 @@ export const serverStats = async (req, res) => {
         error: error.message,
         command: 'zoneadm list -ic | grep -v global',
       });
-      returnObject.allzones = [];
+      returnObject.allmachines = [];
     }
 
     try {
       const { stdout: runningzones } = await execProm('zoneadm list | grep -v global');
-      returnObject.runningzones = runningzones
+      returnObject.runningmachines = runningzones
         .trim()
         .split('\n')
         .filter(line => line.trim() !== '');
@@ -87,7 +87,7 @@ export const serverStats = async (req, res) => {
         error: error.message,
         command: 'zoneadm list | grep -v global',
       });
-      returnObject.runningzones = [];
+      returnObject.runningmachines = [];
     }
 
     res.json(returnObject);

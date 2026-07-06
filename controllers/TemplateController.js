@@ -427,12 +427,12 @@ export const deleteLocalTemplate = async (req, res) => {
  *               - box_name
  *               - version
  *             properties:
- *               zone_name:
+ *               machine_name:
  *                 type: string
- *                 description: Name of the zone to export and publish (Required if box_path not set)
+ *                 description: Name of the machine to export and publish (Required if box_path not set)
  *               box_path:
  *                 type: string
- *                 description: Path to existing .box file to publish (Required if zone_name not set)
+ *                 description: Path to existing .box file to publish (Required if machine_name not set)
  *               source_name:
  *                 type: string
  *                 description: Target registry source name
@@ -462,7 +462,7 @@ export const deleteLocalTemplate = async (req, res) => {
  */
 export const publishTemplate = async (req, res) => {
   const {
-    zone_name,
+    machine_name,
     box_path,
     source_name,
     organization,
@@ -475,7 +475,7 @@ export const publishTemplate = async (req, res) => {
   } = req.body;
 
   try {
-    if ((!zone_name && !box_path) || !source_name || !organization || !box_name || !version) {
+    if ((!machine_name && !box_path) || !source_name || !organization || !box_name || !version) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -488,7 +488,7 @@ export const publishTemplate = async (req, res) => {
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
           {
-            zone_name,
+            zone_name: machine_name,
             box_path,
             source_name,
             organization,
@@ -505,7 +505,7 @@ export const publishTemplate = async (req, res) => {
 
     return res.status(202).json({
       success: true,
-      message: `Publish task created for ${zone_name || box_path}`,
+      message: `Publish task created for ${machine_name || box_path}`,
       task_id: task.id,
     });
   } catch (error) {
@@ -518,8 +518,8 @@ export const publishTemplate = async (req, res) => {
  * @swagger
  * /templates/export:
  *   post:
- *     summary: Export zone to local template
- *     description: Exports a zone to a local .box file without uploading (async task)
+ *     summary: Export machine to local template
+ *     description: Exports a machine (zone) to a local .box file without uploading (async task)
  *     tags: [Template Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -530,9 +530,9 @@ export const publishTemplate = async (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - zone_name
+ *               - machine_name
  *             properties:
- *               zone_name:
+ *               machine_name:
  *                 type: string
  *               filename:
  *                 type: string
@@ -542,11 +542,11 @@ export const publishTemplate = async (req, res) => {
  *         description: Export task created
  */
 export const exportTemplate = async (req, res) => {
-  const { zone_name, filename, snapshot_name, created_by = 'api' } = req.body;
+  const { machine_name, filename, snapshot_name, created_by = 'api' } = req.body;
 
   try {
-    if (!zone_name) {
-      return res.status(400).json({ error: 'zone_name is required' });
+    if (!machine_name) {
+      return res.status(400).json({ error: 'machine_name is required' });
     }
 
     const task = await Tasks.create({
@@ -555,12 +555,12 @@ export const exportTemplate = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by,
       status: 'pending',
-      metadata: JSON.stringify({ zone_name, filename, snapshot_name }),
+      metadata: JSON.stringify({ zone_name: machine_name, filename, snapshot_name }),
     });
 
     return res.status(202).json({
       success: true,
-      message: `Export task created for zone ${zone_name}`,
+      message: `Export task created for zone ${machine_name}`,
       task_id: task.id,
     });
   } catch (error) {

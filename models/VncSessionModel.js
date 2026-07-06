@@ -19,9 +19,9 @@ const { DataTypes } = Sequelize;
  *           type: integer
  *           description: Unique session identifier
  *           example: 1
- *         zone_name:
+ *         machine_name:
  *           type: string
- *           description: Zone name for this VNC session
+ *           description: Machine name for this VNC session
  *           example: "web-server-01"
  *         web_port:
  *           type: integer
@@ -134,5 +134,12 @@ const VncSessions = db.define(
     comment: 'VNC console sessions for zone management',
   }
 );
+
+// Agent API v1 wire vocabulary (architecture O1): session rows serialize with
+// machine_name; the zone_name attribute/column stays internal (OmniOS domain naming).
+VncSessions.prototype.toJSON = function toJSON() {
+  const { zone_name: machineName, ...values } = this.get({ plain: true });
+  return { ...values, machine_name: machineName };
+};
 
 export default VncSessions;

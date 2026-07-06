@@ -10,20 +10,20 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
 
 /**
  * @swagger
- * /zones/{zoneName}/start:
+ * /machines/{machineName}/start:
  *   post:
- *     summary: Start zone
- *     description: Queues a task to start the specified zone
+ *     summary: Start machine
+ *     description: Queues a task to start the specified machine (zone)
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone to start
+ *         description: Name of the machine to start
  *     responses:
  *       200:
  *         description: Start task queued successfully
@@ -36,7 +36,7 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
  *                   type: boolean
  *                 task_id:
  *                   type: string
- *                 zone_name:
+ *                 machine_name:
  *                   type: string
  *                 operation:
  *                   type: string
@@ -53,7 +53,7 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
  */
 export const startZone = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -72,7 +72,7 @@ export const startZone = async (req, res) => {
     if (currentStatus === 'running') {
       return res.json({
         success: true,
-        zone_name: zoneName,
+        machine_name: zoneName,
         operation: 'start',
         status: 'already_running',
         message: 'Zone is already running',
@@ -92,7 +92,7 @@ export const startZone = async (req, res) => {
       return res.json({
         success: true,
         task_id: existingTask.id,
-        zone_name: zoneName,
+        machine_name: zoneName,
         operation: 'start',
         status: existingTask.status,
         message: 'Start task already queued',
@@ -111,7 +111,7 @@ export const startZone = async (req, res) => {
     return res.json({
       success: true,
       task_id: task.id,
-      zone_name: zoneName,
+      machine_name: zoneName,
       operation: 'start',
       status: 'pending',
       message: 'Start task queued successfully',
@@ -119,7 +119,7 @@ export const startZone = async (req, res) => {
   } catch (error) {
     log.database.error('Database error starting zone task', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
       user: req.entity.name,
     });
     return res.status(500).json({ error: 'Failed to queue start task' });
@@ -128,20 +128,20 @@ export const startZone = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{zoneName}/stop:
+ * /machines/{machineName}/stop:
  *   post:
- *     summary: Stop zone
- *     description: Queues a task to stop the specified zone
+ *     summary: Stop machine
+ *     description: Queues a task to stop the specified machine (zone)
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone to stop
+ *         description: Name of the machine to stop
  *       - in: query
  *         name: force
  *         schema:
@@ -160,7 +160,7 @@ export const startZone = async (req, res) => {
  */
 export const stopZone = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
     const { force = false } = req.query;
 
     if (!validateZoneName(zoneName)) {
@@ -178,7 +178,7 @@ export const stopZone = async (req, res) => {
     if (currentStatus === 'configured' || currentStatus === 'installed') {
       return res.json({
         success: true,
-        zone_name: zoneName,
+        machine_name: zoneName,
         operation: 'stop',
         status: 'already_stopped',
         message: 'Zone is already stopped',
@@ -210,7 +210,7 @@ export const stopZone = async (req, res) => {
       return res.json({
         success: true,
         task_id: existingTask.id,
-        zone_name: zoneName,
+        machine_name: zoneName,
         operation: 'stop',
         status: existingTask.status,
         message: 'Stop task already queued',
@@ -228,7 +228,7 @@ export const stopZone = async (req, res) => {
     return res.json({
       success: true,
       task_id: task.id,
-      zone_name: zoneName,
+      machine_name: zoneName,
       operation: 'stop',
       status: 'pending',
       message: 'Stop task queued successfully',
@@ -237,7 +237,7 @@ export const stopZone = async (req, res) => {
   } catch (error) {
     log.database.error('Database error stopping zone task', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
       user: req.entity.name,
     });
     return res.status(500).json({ error: 'Failed to queue stop task' });
@@ -246,20 +246,20 @@ export const stopZone = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{zoneName}/restart:
+ * /machines/{machineName}/restart:
  *   post:
- *     summary: Restart zone
- *     description: Queues tasks to stop and then start the specified zone
+ *     summary: Restart machine
+ *     description: Queues tasks to stop and then start the specified machine (zone)
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone to restart
+ *         description: Name of the machine to restart
  *     responses:
  *       200:
  *         description: Restart tasks queued successfully
@@ -272,7 +272,7 @@ export const stopZone = async (req, res) => {
  */
 export const restartZone = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -308,7 +308,7 @@ export const restartZone = async (req, res) => {
         stop_task_id: stopTask.id,
         start_task_id: startTask.id,
       },
-      zone_name: zoneName,
+      machine_name: zoneName,
       operation: 'restart',
       status: 'pending',
       message: 'Restart tasks queued successfully',
@@ -316,7 +316,7 @@ export const restartZone = async (req, res) => {
   } catch (error) {
     log.database.error('Database error restarting zone task', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
       user: req.entity.name,
     });
     return res.status(500).json({ error: 'Failed to queue restart tasks' });

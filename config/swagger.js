@@ -14,11 +14,38 @@ const options = {
       description:
         'Hyperweaver Agent API v1 — the shared host-agent contract (architecture D1). ' +
         'Reference implementation: zoneweaver-agent (Bhyve/OmniOS, Node). ' +
-        'The canonical resource noun is `machines` (O1); this Node agent additionally ' +
-        'serves every machine-scoped route at its legacy `/zones/*` alias. ' +
+        'The canonical resource noun is `machines` (O1) — machine-scoped routes are ' +
+        'served at /machines/* only. ' +
         'Capabilities are advertised by the public GET /api/status ' +
         '(role, hypervisors, console, auth, features) and drive conditional UI rendering. ' +
-        'The implementing application version is `info.x-app-version`.',
+        'The implementing application version is `info.x-app-version`.' +
+        '\n\n## Response envelopes\n' +
+        'Direct (synchronous) success responses are wrapped by the DirectSuccessEnvelope ' +
+        '(`success`, `message`, `timestamp`) and async-task 202 responses by the ' +
+        'TaskCreatedEnvelope (`success`, `message`, `task_id`, `status`, `created_at`) — ' +
+        'see the component schemas. Endpoint-specific fields are spread at the TOP LEVEL ' +
+        'alongside the envelope fields; per-endpoint response schemas that document only ' +
+        'their data fields implicitly include the envelope. Errors from these surfaces use ' +
+        'the ErrorEnvelope (`success:false`, `error`, `timestamp`, optional `details`).\n\n' +
+        '## Authorization role model (direct mode)\n' +
+        'Every authenticated endpoint enforces the Agent API v1 role hierarchy ' +
+        'viewer < operator < admin via a central method+path policy (not repeated per ' +
+        'endpoint): `/api-keys/info` = any valid key; `/api-keys/*` and `/settings/*` = ' +
+        'admin (all methods); `/ws-ticket` and `/filesystem/*` = operator (all methods); ' +
+        'other GET/HEAD = viewer; other mutations = operator, except mutations under ' +
+        '`/server`, `/system/host`, `/system/users`, `/system/groups`, `/system/roles`, ' +
+        '`/database` = admin. An insufficient role returns ' +
+        '`403 {"msg": "Insufficient role: ..."}` on ANY endpoint. Authentication itself: ' +
+        'missing key = 401, invalid key = 403. Keys are sent as `Authorization: Bearer ' +
+        '<key>` or `X-API-Key: <key>`.\n\n' +
+        '## Config-gated surfaces\n' +
+        'Surfaces with a configuration kill-switch return `503 {"error": "... disabled in ' +
+        'configuration"}` on every endpoint when their config block is disabled: ' +
+        'fault-management (`fault_management.enabled`), syslog + system logs + log ' +
+        'streaming (`system_logs.enabled`), file browser (`file_browser.enabled`), ' +
+        'artifacts (`artifact_storage.enabled`), templates (`template_sources.enabled`). ' +
+        'The matching capability token is absent from GET /api/status in that state — ' +
+        'clients gating on tokens never hit these 503s.',
       license: {
         name: 'GPL-3.0',
         url: 'https://zoneweaver-agent.startcloud.com/license/',
@@ -189,9 +216,9 @@ const options = {
               description: 'System uptime in seconds',
               example: 86400,
             },
-            allzones: {
+            allmachines: {
               type: 'array',
-              description: 'All configured zones',
+              description: 'All configured machines (zoneadm list lines on this agent)',
               items: {
                 type: 'string',
               },
@@ -200,9 +227,9 @@ const options = {
                 'zone2:running:/zones/zone2:excl:1:uuid2',
               ],
             },
-            runningzones: {
+            runningmachines: {
               type: 'array',
-              description: 'Currently running zones',
+              description: 'Currently running machines',
               items: {
                 type: 'string',
               },
@@ -314,21 +341,6 @@ const options = {
   apis: ['./controllers/**/*.js', './routes/*.js', './models/*.js'], // paths to files containing OpenAPI definitions
 };
 
-const generatedSpecs = swaggerJsdoc(options);
-
-// Agent API v1 (architecture O1): `machines` is the canonical resource noun in the
-// published contract; this Node agent also serves every machine-scoped route at its
-// legacy `/zones/*` alias (routes/index.js withMachinesAlias). The controllers'
-// JSDoc annotations still say /zones — rewrite the generated path keys so the spec
-// documents the canonical noun exactly once.
-const specs = {
-  ...generatedSpecs,
-  paths: Object.fromEntries(
-    Object.entries(generatedSpecs.paths || {}).map(([route, definition]) => [
-      route.replace(/^\/zones(?=\/|$)/, '/machines'),
-      definition,
-    ])
-  ),
-};
+const specs = swaggerJsdoc(options);
 
 export { specs, swaggerUi };

@@ -10,11 +10,11 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
 
 /**
  * @swagger
- * /zones/{zoneName}:
+ * /machines/{machineName}:
  *   put:
- *     summary: Modify zone configuration
+ *     summary: Modify machine configuration
  *     description: |
- *       Queues a task to modify an existing zone's configuration via `zonecfg`.
+ *       Queues a task to modify an existing machine's (zone's) configuration via `zonecfg`.
  *       Changes are applied to the zone config but take effect on next zone boot.
  *       The zone can continue running while modifications are queued.
  *       At least one modification field must be provided.
@@ -23,11 +23,11 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone to modify
+ *         description: Name of the machine to modify
  *     requestBody:
  *       required: true
  *       content:
@@ -237,7 +237,7 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
  *                 task_id:
  *                   type: string
  *                   format: uuid
- *                 zone_name:
+ *                 machine_name:
  *                   type: string
  *                   example: "web-server-01"
  *                 operation:
@@ -261,7 +261,7 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
  */
 export const modifyZone = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -323,7 +323,7 @@ export const modifyZone = async (req, res) => {
     if (hasDbOnlyChanges && !hasOtherChanges) {
       return res.json({
         success: true,
-        zone_name: zoneName,
+        machine_name: zoneName,
         operation: 'zone_modify',
         status: 'completed',
         message: 'Zone metadata updated successfully.',
@@ -355,7 +355,7 @@ export const modifyZone = async (req, res) => {
       if (!otherChanges) {
         return res.json({
           success: true,
-          zone_name: zoneName,
+          machine_name: zoneName,
           operation: 'zone_modify',
           status: 'completed',
           message: 'Provisioner configuration updated successfully.',
@@ -386,7 +386,7 @@ export const modifyZone = async (req, res) => {
     const modifyResponse = {
       success: true,
       task_id: modifyTask.id,
-      zone_name: zoneName,
+      machine_name: zoneName,
       operation: 'zone_modify',
       status: 'pending',
       message: 'Modification queued. Changes will take effect on next zone boot.',
@@ -399,7 +399,7 @@ export const modifyZone = async (req, res) => {
   } catch (error) {
     log.database.error('Database error modifying zone task', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
       user: req.entity.name,
     });
     return res.status(500).json({ error: 'Failed to queue zone modification task' });

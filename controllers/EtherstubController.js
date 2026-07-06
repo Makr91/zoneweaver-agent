@@ -69,8 +69,9 @@ const executeCommand = async command => {
  *                   type: array
  *                   items:
  *                     type: object
- *                 total:
+ *                 returned:
  *                   type: integer
+ *                   description: Number of records in this response
  *                 source:
  *                   type: string
  *                   enum: [database, live]
@@ -230,6 +231,9 @@ export const getEtherstubDetails = async (req, res) => {
  *                   type: string
  *                 etherstub_name:
  *                   type: string
+ *                 temporary:
+ *                   type: boolean
+ *                   description: Whether the etherstub is temporary (echoed from the request)
  *       400:
  *         description: Invalid request parameters
  *       500:
@@ -357,6 +361,14 @@ export const createEtherstub = async (req, res) => {
  *                   type: string
  *                 etherstub_name:
  *                   type: string
+ *                 temporary:
+ *                   type: boolean
+ *                   description: Whether only the temporary configuration was deleted (echoed from the request)
+ *                 force:
+ *                   type: boolean
+ *                   description: Whether deletion was forced despite existing VNICs (echoed from the request)
+ *       400:
+ *         description: VNICs still exist on the etherstub (delete them first or pass force=true)
  *       404:
  *         description: Etherstub not found
  *       500:

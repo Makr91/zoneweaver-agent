@@ -234,6 +234,12 @@ export const setHostname = async (req, res) => {
  *                   type: string
  *                 addrobj:
  *                   type: string
+ *                 type:
+ *                   type: string
+ *                   description: The address type echoed from the request
+ *                 interface:
+ *                   type: string
+ *                   description: The interface echoed from the request
  *       400:
  *         description: Invalid request parameters
  *       500:
@@ -370,6 +376,9 @@ export const createIPAddress = async (req, res) => {
  *                   type: string
  *                 addrobj:
  *                   type: string
+ *                 release:
+ *                   type: boolean
+ *                   description: Whether the DHCP lease was released before deletion (echoed from the request)
  *       404:
  *         description: Address object not found
  *       500:

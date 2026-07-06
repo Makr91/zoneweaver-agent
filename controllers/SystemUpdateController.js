@@ -254,7 +254,16 @@ const parseUpdateCheckOutput = output => {
  *                 packages:
  *                   type: array
  *                   items:
- *                     type: string
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       publisher:
+ *                         type: string
+ *                       current_version:
+ *                         type: string
+ *                       new_version:
+ *                         type: string
  *                 plan_summary:
  *                   type: object
  *                   properties:
@@ -264,8 +273,27 @@ const parseUpdateCheckOutput = output => {
  *                       type: integer
  *                     packages_to_remove:
  *                       type: integer
- *                     total_download_size:
+ *                     estimated_space_available:
  *                       type: string
+ *                       nullable: true
+ *                     estimated_space_consumed:
+ *                       type: string
+ *                       nullable: true
+ *                 boot_environment:
+ *                   type: object
+ *                   properties:
+ *                     create_boot_environment:
+ *                       type: boolean
+ *                     create_backup_boot_environment:
+ *                       type: boolean
+ *                     rebuild_boot_archive:
+ *                       type: boolean
+ *                 raw_output:
+ *                   type: string
+ *                   description: Raw `pkg update -nv` output (the sole structured field when format=raw)
+ *                 message:
+ *                   type: string
+ *                   description: Present when no updates are available
  *                 last_checked:
  *                   type: string
  *                   format: date-time

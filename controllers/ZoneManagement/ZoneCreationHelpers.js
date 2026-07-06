@@ -249,7 +249,7 @@ export const resolveZoneName = async (baseName, settings) => {
       error: {
         status: 400,
         error: 'server_id required when prefix_zone_names is enabled',
-        hint: 'Use GET /zones/ids to find available server IDs',
+        hint: 'Use GET /machines/ids to find available server IDs',
         config: {
           prefix_zone_names: true,
           constraints: {
@@ -286,8 +286,8 @@ export const resolveZoneName = async (baseName, settings) => {
       error: {
         status: 409,
         error: `Server ID ${serverId} is already in use`,
-        zone: existingServerId.name,
-        hint: 'Use GET /zones/ids/next to get the next available ID',
+        machine: existingServerId.name,
+        hint: 'Use GET /machines/ids/next to get the next available ID',
       },
     };
   }
@@ -357,7 +357,7 @@ export const handleAutoDownload = async (
   return {
     success: true,
     parent_task_id: parentTask.id,
-    zone_name: finalZoneName,
+    machine_name: finalZoneName,
     operation: 'zone_create_orchestration',
     status: 'pending',
     message: 'Template download and zone creation queued',

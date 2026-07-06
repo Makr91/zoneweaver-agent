@@ -123,7 +123,10 @@ const detectActiveInterface = async () => {
  *       - ApiKeyAuth: []
  *     responses:
  *       200:
- *         description: Provisioning network status
+ *         description: >-
+ *           Provisioning network status. When the provisioning network is disabled in
+ *           configuration the response is just { enabled: false, message } — the
+ *           ready/components/config fields are only present when enabled.
  *         content:
  *           application/json:
  *             schema:
@@ -131,6 +134,9 @@ const detectActiveInterface = async () => {
  *               properties:
  *                 enabled:
  *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                   description: Present only on the disabled branch
  *                 ready:
  *                   type: boolean
  *                 components:
@@ -140,6 +146,7 @@ const detectActiveInterface = async () => {
  *                     vnic: { type: object }
  *                     ip_address: { type: object }
  *                     nat: { type: object }
+ *                     ip_forwarding: { type: object }
  *                     dhcp: { type: object }
  *                 config:
  *                   type: object
@@ -224,6 +231,26 @@ export const getProvisioningNetworkStatus = async (req, res) => {
  *     responses:
  *       202:
  *         description: Provisioning network setup tasks queued
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 parent_task_id:
+ *                   type: string
+ *                   format: uuid
+ *                 task_ids:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                     format: uuid
+ *                 config:
+ *                   type: object
+ *                   description: The provisioning network configuration used
  *       500:
  *         description: Provisioning network setup failed
  */
@@ -352,8 +379,25 @@ export const setupProvisioningNetwork = async (req, res) => {
  *     security:
  *       - ApiKeyAuth: []
  *     responses:
- *       200:
- *         description: Provisioning network teardown completed
+ *       202:
+ *         description: Provisioning network teardown tasks queued
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 parent_task_id:
+ *                   type: string
+ *                   format: uuid
+ *                 task_ids:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                     format: uuid
  *       500:
  *         description: Provisioning network teardown failed
  */

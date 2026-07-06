@@ -9,10 +9,38 @@ import { log } from '../../lib/Logger.js';
 import { createBackup, configPath } from './utils/BackupHelper.js';
 
 /**
+ * True for plain objects (not arrays, not null) — the only values we recurse into.
+ * @param {*} value
+ * @returns {boolean}
+ */
+const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * Recursively merge source into target. Nested plain objects merge key-by-key;
+ * arrays and scalars replace wholesale. A partial section update therefore keeps
+ * its sibling keys instead of dropping them.
+ * @param {Object} target - Base object (current config)
+ * @param {Object} source - Overrides (incoming settings)
+ * @returns {Object} New merged object (inputs not mutated)
+ */
+const deepMerge = (target, source) => {
+  const output = { ...target };
+  for (const [key, value] of Object.entries(source)) {
+    output[key] =
+      isPlainObject(value) && isPlainObject(output[key]) ? deepMerge(output[key], value) : value;
+  }
+  return output;
+};
+
+/**
  * @swagger
  * /settings:
  *   put:
  *     summary: Update application settings
+ *     description: >-
+ *       Deep-merges the request body into the current configuration: nested objects
+ *       merge key-by-key (a partial section update keeps its sibling keys), while
+ *       arrays and scalar values replace wholesale. Some changes require a restart.
  *     tags: [Settings]
  *     security:
  *       - ApiKeyAuth: []
@@ -38,8 +66,9 @@ export const updateSettings = async (req, res) => {
     // 2. Read the current config file
     const currentConfig = yaml.load(await fs.readFile(configPath, 'utf8'));
 
-    // 3. Merge new settings into the current config (deep merge)
-    const updatedConfig = { ...currentConfig, ...newSettings };
+    // 3. Merge new settings into the current config (deep merge — a partial
+    //    section update keeps its sibling keys instead of replacing the section)
+    const updatedConfig = deepMerge(currentConfig, newSettings);
 
     // 4. Validate the new configuration (basic validation for now)
     if (!updatedConfig.server || !updatedConfig.server.http_port) {

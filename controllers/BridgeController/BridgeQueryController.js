@@ -59,6 +59,9 @@ import { fetchLiveBridgeDetails } from './utils/DataFetchHelper.js';
  *                 source:
  *                   type: string
  *                   enum: [database, live]
+ *                 extended:
+ *                   type: boolean
+ *                   description: Present in live mode; echoes whether extended bridge fields were requested
  *       500:
  *         description: Failed to get bridges
  */

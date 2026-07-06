@@ -46,7 +46,7 @@ import { log } from '../../lib/Logger.js';
  *         schema:
  *           type: boolean
  *           default: false
- *         description: Include per-core CPU utilization data
+ *         description: Include per-core CPU utilization data (adds a parsed `per_core_parsed` array to each item and the `latest` object, replacing the raw `per_core_data` column)
  *     responses:
  *       200:
  *         description: CPU statistics data
@@ -63,6 +63,39 @@ import { log } from '../../lib/Logger.js';
  *                   $ref: '#/components/schemas/CPUStats'
  *                 totalCount:
  *                   type: integer
+ *                 returnedCount:
+ *                   type: integer
+ *                   description: Number of records in this response
+ *                 sampling:
+ *                   type: object
+ *                   description: Time-series sampling metadata applied to the result set
+ *                   properties:
+ *                     applied:
+ *                       type: boolean
+ *                     strategy:
+ *                       type: string
+ *                     samplesRequested:
+ *                       type: integer
+ *                     samplesReturned:
+ *                       type: integer
+ *                 metadata:
+ *                   type: object
+ *                   description: Present on the historical (since) path
+ *                   properties:
+ *                     timeSpan:
+ *                       type: object
+ *                       properties:
+ *                         start:
+ *                           type: string
+ *                           format: date-time
+ *                         end:
+ *                           type: string
+ *                           format: date-time
+ *                         durationMinutes:
+ *                           type: integer
+ *                 queryTime:
+ *                   type: string
+ *                   description: Server-side query duration (e.g. "12ms")
  *       500:
  *         description: Failed to get CPU statistics
  */
@@ -226,6 +259,39 @@ export const getCPUStats = async (req, res) => {
  *                   $ref: '#/components/schemas/MemoryStats'
  *                 totalCount:
  *                   type: integer
+ *                 returnedCount:
+ *                   type: integer
+ *                   description: Number of records in this response
+ *                 sampling:
+ *                   type: object
+ *                   description: Time-series sampling metadata applied to the result set
+ *                   properties:
+ *                     applied:
+ *                       type: boolean
+ *                     strategy:
+ *                       type: string
+ *                     samplesRequested:
+ *                       type: integer
+ *                     samplesReturned:
+ *                       type: integer
+ *                 metadata:
+ *                   type: object
+ *                   description: Present on the historical (since) path
+ *                   properties:
+ *                     timeSpan:
+ *                       type: object
+ *                       properties:
+ *                         start:
+ *                           type: string
+ *                           format: date-time
+ *                         end:
+ *                           type: string
+ *                           format: date-time
+ *                         durationMinutes:
+ *                           type: integer
+ *                 queryTime:
+ *                   type: string
+ *                   description: Server-side query duration (e.g. "12ms")
  *       500:
  *         description: Failed to get memory statistics
  */
@@ -335,6 +401,71 @@ export const getMemoryStats = async (req, res) => {
  *     responses:
  *       200:
  *         description: System load metrics data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 load:
+ *                   type: array
+ *                   description: Load metrics reshaped for charting (NOT the raw CPUStats schema)
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       timestamp:
+ *                         type: string
+ *                         format: date-time
+ *                       load_averages:
+ *                         type: object
+ *                         properties:
+ *                           one_min:
+ *                             type: number
+ *                           five_min:
+ *                             type: number
+ *                           fifteen_min:
+ *                             type: number
+ *                       system_activity:
+ *                         type: object
+ *                         properties:
+ *                           context_switches_per_sec:
+ *                             type: number
+ *                           interrupts_per_sec:
+ *                             type: number
+ *                           system_calls_per_sec:
+ *                             type: number
+ *                           page_faults_per_sec:
+ *                             type: number
+ *                       memory_pressure:
+ *                         type: object
+ *                         properties:
+ *                           pages_in_per_sec:
+ *                             type: number
+ *                           pages_out_per_sec:
+ *                             type: number
+ *                       process_activity:
+ *                         type: object
+ *                         properties:
+ *                           running:
+ *                             type: integer
+ *                           blocked:
+ *                             type: integer
+ *                       cpu_count:
+ *                         type: integer
+ *                 totalCount:
+ *                   type: integer
+ *                 latest:
+ *                   type: object
+ *                   description: The most recent load-metrics entry (same shape as a load[] item), or null
+ *                   nullable: true
+ *                 metadata:
+ *                   type: object
+ *                   properties:
+ *                     description:
+ *                       type: string
+ *                     metrics_included:
+ *                       type: array
+ *                       items:
+ *                         type: string
  *       500:
  *         description: Failed to get system load metrics
  */

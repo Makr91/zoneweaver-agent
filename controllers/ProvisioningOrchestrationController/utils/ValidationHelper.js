@@ -7,8 +7,8 @@ import { validateZoneName } from '../../../lib/ZoneValidation.js';
 import { log } from '../../../lib/Logger.js';
 
 /**
- * Validate provisioning request and zone state
- * Supports both old structure (provisioning) and new Hosts.yml structure (provisioner + settings/networks)
+ * Validate provisioning request and zone state (Hosts.yml structure:
+ * provisioner + settings/networks)
  * @param {string} zoneName - Zone name
  * @param {Object} zone - Zone database record
  * @param {boolean} skipRecipe - Whether to skip recipe
@@ -33,59 +33,39 @@ export const validateProvisioningRequest = async (zoneName, zone, skipRecipe) =>
     }
   }
 
-  // NEW STRUCTURE: Read provisioner instead of provisioning
-  const provisioner = zoneConfig?.provisioner;
-  const provisioning = zoneConfig?.provisioning; // Fallback for old structure
-
-  const config = provisioner || provisioning;
+  const config = zoneConfig?.provisioner;
   if (!config) {
     return {
       valid: false,
       error:
-        'No provisioner configuration found. Set provisioner config via PUT /zones/:name first.',
+        'No provisioner configuration found. Set provisioner config via PUT /machines/:name first.',
     };
   }
 
-  // NEW STRUCTURE: Extract credentials from settings
+  if (!zoneConfig.settings) {
+    return {
+      valid: false,
+      error: 'Zone configuration has no settings section (Hosts.yml structure required)',
+    };
+  }
+
   const { extractCredentialsFromSettings, extractControlIP } =
     await import('../../../lib/ProvisionerConfigBuilder.js');
 
-  let credentials;
-  let zoneIP;
+  const credentials = extractCredentialsFromSettings(zoneConfig.settings);
+  if (!credentials.username) {
+    return {
+      valid: false,
+      error: 'Credentials missing: settings.vagrant_user is required',
+    };
+  }
 
-  if (zoneConfig.settings) {
-    // New Hosts.yml structure
-    credentials = extractCredentialsFromSettings(zoneConfig.settings);
-    if (!credentials.username) {
-      return {
-        valid: false,
-        error: 'Credentials missing: settings.vagrant_user is required',
-      };
-    }
-
-    // Extract IP from networks array
-    zoneIP = extractControlIP(zoneConfig.networks);
-    if (!zoneIP) {
-      return {
-        valid: false,
-        error: 'Zone IP address not found in networks array (set is_control: true on one network)',
-      };
-    }
-  } else {
-    // OLD STRUCTURE: Fallback to provisioning.credentials and provisioning.ip
-    const { credentials: configCredentials, ip: configIP, variables } = config;
-    credentials = configCredentials;
-    if (!credentials || !credentials.username) {
-      return {
-        valid: false,
-        error: 'Provisioning credentials are required (at minimum: username)',
-      };
-    }
-
-    zoneIP = configIP || variables?.ip;
-    if (!zoneIP) {
-      return { valid: false, error: 'Zone IP address not configured in provisioning metadata' };
-    }
+  const zoneIP = extractControlIP(zoneConfig.networks);
+  if (!zoneIP) {
+    return {
+      valid: false,
+      error: 'Zone IP address not found in networks array (set is_control: true on one network)',
+    };
   }
 
   // Validate recipe if specified

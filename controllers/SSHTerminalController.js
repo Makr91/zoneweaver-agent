@@ -207,18 +207,18 @@ const setupSSHPiping = (ws, session, stream) => {
  * @swagger
  * tags:
  *   name: SSH Terminal
- *   description: Interactive SSH terminal sessions to zones
- * /zones/{zoneName}/ssh/start:
+ *   description: Interactive SSH terminal sessions to machines
+ * /machines/{machineName}/ssh/start:
  *   post:
  *     summary: Start an SSH terminal session
- *     description: Creates an SSH terminal session for the specified zone.
+ *     description: Creates an SSH terminal session for the specified machine (zone).
  *                  Returns session ID for WebSocket connection at /ssh/{sessionId}.
  *     tags: [SSH Terminal]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
@@ -230,15 +230,15 @@ const setupSSHPiping = (ws, session, stream) => {
  *             schema:
  *               $ref: '#/components/schemas/SSHSession'
  *       400:
- *         description: Zone not running or SSH credentials not configured.
+ *         description: Machine not running or SSH credentials not configured.
  *       404:
- *         description: Zone not found.
+ *         description: Machine not found.
  *       500:
  *         description: Failed to start SSH session.
  */
 export const startSSHSession = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
     log.websocket.info('Starting SSH terminal session', { zone_name: zoneName });
 
     const zone = await Zones.findOne({ where: { name: zoneName } });

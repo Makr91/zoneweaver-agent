@@ -18,42 +18,50 @@ const { DataTypes } = Sequelize;
  *           type: string
  *           description: Host where the memory stats are collected
  *           example: "hv-04"
- *         total_memory:
+ *         total_memory_bytes:
  *           type: integer
  *           format: int64
  *           description: Total physical memory in bytes
  *           example: 17179869184
- *         available_memory:
+ *         available_memory_bytes:
  *           type: integer
  *           format: int64
- *           description: Available memory in bytes
+ *           description: Available memory in bytes (free + reclaimable)
  *           example: 8589934592
- *         used_memory:
+ *         used_memory_bytes:
  *           type: integer
  *           format: int64
  *           description: Used memory in bytes
  *           example: 8589934592
- *         free_memory:
+ *         free_memory_bytes:
  *           type: integer
  *           format: int64
  *           description: Free memory in bytes
  *           example: 4294967296
+ *         buffers_bytes:
+ *           type: integer
+ *           format: int64
+ *           description: Buffer memory in bytes
+ *         cached_bytes:
+ *           type: integer
+ *           format: int64
+ *           description: Cached memory in bytes
  *         memory_utilization_pct:
  *           type: number
  *           format: float
  *           description: Memory utilization percentage
  *           example: 50.0
- *         swap_total:
+ *         swap_total_bytes:
  *           type: integer
  *           format: int64
  *           description: Total swap space in bytes
  *           example: 4294967296
- *         swap_used:
+ *         swap_used_bytes:
  *           type: integer
  *           format: int64
  *           description: Used swap space in bytes
  *           example: 1073741824
- *         swap_free:
+ *         swap_free_bytes:
  *           type: integer
  *           format: int64
  *           description: Free swap space in bytes
@@ -63,6 +71,29 @@ const { DataTypes } = Sequelize;
  *           format: float
  *           description: Swap utilization percentage
  *           example: 25.0
+ *         arc_size_bytes:
+ *           type: integer
+ *           format: int64
+ *           description: ARC cache size in bytes
+ *         arc_target_bytes:
+ *           type: integer
+ *           format: int64
+ *           description: ARC target size in bytes
+ *         kernel_memory_bytes:
+ *           type: integer
+ *           format: int64
+ *           description: Kernel memory usage in bytes
+ *         page_size_bytes:
+ *           type: integer
+ *           description: System page size in bytes
+ *         pages_total:
+ *           type: integer
+ *           format: int64
+ *           description: Total pages available
+ *         pages_free:
+ *           type: integer
+ *           format: int64
+ *           description: Free pages available
  *         scan_timestamp:
  *           type: string
  *           format: date-time

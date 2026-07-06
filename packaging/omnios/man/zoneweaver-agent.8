@@ -1,5 +1,5 @@
 .Dd $Mdocdate$
-.Dt ZONEWEAVER-API 8
+.Dt ZONEWEAVER-AGENT 8
 .Os
 .Sh NAME
 .Nm zoneweaver-agent
@@ -69,25 +69,27 @@ is available at:
 .Dl https://localhost:5001/api-docs
 .Pp
 Key API endpoint categories include:
-.Bl -tag -width ".Pa /api/zones"
-.It Pa /api/zones
-Zone lifecycle and configuration management
-.It Pa /api/hosts
+.Bl -tag -width ".Pa /monitoring"
+.It Pa /machines
+Machine (zone) lifecycle and configuration management
+.It Pa /tasks
+Asynchronous task queue for machine and system operations
+.It Pa /monitoring
 Host system information and statistics
-.It Pa /api/network
+.It Pa /network
 Network interface and VLAN operations
-.It Pa /api/storage
+.It Pa /storage
 ZFS pool and dataset management
-.It Pa /api/packages
-System package management
-.It Pa /api/vnc
-VNC console access endpoints
+.It Pa /system
+System management (packages, updates, users, logs, host power)
+.It Pa /vnc , Pa /zlogin , Pa /ssh , Pa /terminal
+Console session endpoints (VNC, zlogin, SSH, host terminal)
 .El
 .Sh AUTHENTICATION
 API access requires authentication using API keys. The service supports
 bootstrap initialization for generating the first API key:
 .Pp
-.Dl # curl -X POST http://localhost:5000/bootstrap
+.Dl # curl -X POST http://localhost:5000/api-keys/bootstrap
 .Pp
 This endpoint is automatically disabled after the first successful use when
 .Cm bootstrap_auto_disable
@@ -114,14 +116,14 @@ Start the service manually for testing:
 # node index.js
 .Ed
 .Pp
-Check API server connectivity:
+Check API server connectivity (public identity/capabilities endpoint):
 .Bd -literal -offset indent
-# curl -k https://localhost:5001/api/health
+# curl -k https://localhost:5001/status
 .Ed
 .Pp
 Generate initial API key:
 .Bd -literal -offset indent
-# curl -X POST http://localhost:5000/bootstrap
+# curl -X POST http://localhost:5000/api-keys/bootstrap
 .Ed
 .Sh DIAGNOSTICS
 The service logs operational information to standard output when run manually,

@@ -25,6 +25,11 @@ const { DataTypes } = Sequelize;
  *           type: integer
  *           description: Process ID of the node-pty process
  *           example: 12345
+ *         machine_name:
+ *           type: string
+ *           nullable: true
+ *           description: Machine name this terminal session is associated with
+ *           example: "myzone"
  *         status:
  *           type: string
  *           description: Current session status
@@ -93,5 +98,12 @@ const TerminalSessions = db.define(
     comment: 'Terminal sessions for browser-based terminal access',
   }
 );
+
+// Agent API v1 wire vocabulary (architecture O1): session rows serialize with
+// machine_name; the zone_name attribute/column stays internal (OmniOS domain naming).
+TerminalSessions.prototype.toJSON = function toJSON() {
+  const { zone_name: machineName, ...values } = this.get({ plain: true });
+  return { ...values, machine_name: machineName };
+};
 
 export default TerminalSessions;

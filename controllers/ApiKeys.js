@@ -349,6 +349,8 @@ export const listApiKeys = async (req, res) => {
  *         description: API key deleted successfully
  *       404:
  *         description: API key not found
+ *       409:
+ *         description: Refused — this is the last active admin API key (lockout guard); create another admin key first
  *       500:
  *         description: Failed to delete API key
  */
@@ -407,6 +409,8 @@ export const deleteApiKey = async (req, res) => {
  *         description: API key revoked successfully
  *       404:
  *         description: API key not found
+ *       409:
+ *         description: Refused — this is the last active admin API key (lockout guard); create another admin key first
  *       500:
  *         description: Failed to revoke API key
  */

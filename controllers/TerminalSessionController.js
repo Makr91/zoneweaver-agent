@@ -208,9 +208,9 @@ setInterval(cleanupInactiveSessions, 10 * 60 * 1000);
  *                 type: string
  *                 description: Frontend-generated session identifier
  *                 example: "terminal_host1_5001_browser123_1234567890"
- *               zone_name:
+ *               machine_name:
  *                 type: string
- *                 description: Zone name for this terminal session
+ *                 description: Machine name this terminal session is associated with
  *                 example: "myzone"
  *     responses:
  *       200:
@@ -252,7 +252,7 @@ setInterval(cleanupInactiveSessions, 10 * 60 * 1000);
 export const startTerminalSession = async (req, res) => {
   const timer = createTimer('terminal_session_start');
   try {
-    const { zone_name, terminal_cookie } = req.body;
+    const { machine_name, terminal_cookie } = req.body;
 
     if (!terminal_cookie) {
       return res.status(400).json({
@@ -317,7 +317,7 @@ export const startTerminalSession = async (req, res) => {
     let session;
 
     try {
-      session = await createSessionRecord(terminal_cookie, zone_name);
+      session = await createSessionRecord(terminal_cookie, machine_name);
     } catch (error) {
       // Handle race condition if another request created the same cookie
       if (error.name === 'SequelizeUniqueConstraintError') {

@@ -67,8 +67,9 @@ const executeCommand = command => {
  *                   type: array
  *                   items:
  *                     type: object
- *                 total:
+ *                 returned:
  *                   type: integer
+ *                   description: Number of records in this response
  *                 source:
  *                   type: string
  *                   enum: [database, live]
@@ -266,6 +267,14 @@ export const getAggregateDetails = async (req, res) => {
  *                   type: string
  *                 aggregate_name:
  *                   type: string
+ *                 links:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   description: The aggregated links (echoed from the request)
+ *                 policy:
+ *                   type: string
+ *                   description: The load-balancing policy (echoed from the request)
  *       400:
  *         description: Invalid request parameters
  *       500:
@@ -442,6 +451,9 @@ export const createAggregate = async (req, res) => {
  *                   type: string
  *                 aggregate_name:
  *                   type: string
+ *                 temporary:
+ *                   type: boolean
+ *                   description: Whether only the temporary configuration was deleted (echoed from the request)
  *       404:
  *         description: Aggregate not found
  *       500:
@@ -711,6 +723,8 @@ export const modifyAggregateLinks = async (req, res) => {
  *                 statistics:
  *                   type: object
  *                   properties:
+ *                     link:
+ *                       type: string
  *                     ipackets:
  *                       type: integer
  *                     rbytes:
@@ -726,6 +740,9 @@ export const modifyAggregateLinks = async (req, res) => {
  *                 timestamp:
  *                   type: string
  *                   format: date-time
+ *                 interval:
+ *                   type: integer
+ *                   description: Sampling interval echoed from the request
  *       404:
  *         description: Aggregate not found
  *       500:

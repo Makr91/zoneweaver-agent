@@ -78,6 +78,22 @@ const getFileSizeOrZero = async filePath => {
  *                         type: string
  *                       row_count:
  *                         type: integer
+ *                 internal:
+ *                   type: object
+ *                   description: SQLite internals (PRAGMA page/freelist statistics)
+ *                   properties:
+ *                     page_size:
+ *                       type: integer
+ *                     page_count:
+ *                       type: integer
+ *                     freelist_count:
+ *                       type: integer
+ *                     freelist_bytes:
+ *                       type: integer
+ *                 total_tables:
+ *                   type: integer
+ *                 total_rows:
+ *                   type: integer
  *                 indexes:
  *                   type: array
  *                   items:
@@ -87,6 +103,10 @@ const getFileSizeOrZero = async filePath => {
  *                         type: string
  *                       table:
  *                         type: string
+ *                 total_indexes:
+ *                   type: integer
+ *       400:
+ *         description: Database stats only available for SQLite
  *       500:
  *         description: Failed to retrieve database statistics
  */

@@ -17,6 +17,35 @@ import { log } from '../../lib/Logger.js';
  *     responses:
  *       200:
  *         description: Pools retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 pools:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       size:
+ *                         type: string
+ *                       alloc:
+ *                         type: string
+ *                       free:
+ *                         type: string
+ *                       capacity_percent:
+ *                         type: string
+ *                       dedup_ratio:
+ *                         type: string
+ *                       health:
+ *                         type: string
+ *                       altroot:
+ *                         type: string
+ *                         nullable: true
+ *                 total:
+ *                   type: integer
  */
 export const listPools = async (req, res) => {
   void req;
@@ -84,6 +113,23 @@ export const listPools = async (req, res) => {
  *     responses:
  *       200:
  *         description: Pool details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 name:
+ *                   type: string
+ *                 properties:
+ *                   type: object
+ *                   description: Map of zpool property name to { value, source }
+ *                   additionalProperties:
+ *                     type: object
+ *                     properties:
+ *                       value:
+ *                         type: string
+ *                       source:
+ *                         type: string
  *       404:
  *         description: Pool not found
  */
@@ -149,6 +195,16 @@ export const getPoolDetails = async (req, res) => {
  *     responses:
  *       200:
  *         description: Pool status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 name:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                   description: Raw `zpool status` output (vdev tree, scan status, errors)
  *       404:
  *         description: Pool not found
  */

@@ -89,6 +89,12 @@ export const getHostInfo = async (req, res) => {
  *                 recordCounts:
  *                   type: object
  *                   description: Count of records in each table
+ *                 latestData:
+ *                   type: object
+ *                   description: Latest scan_timestamp per monitored table
+ *                 queryTime:
+ *                   type: string
+ *                   description: Server-side query duration (e.g. "12ms")
  *       500:
  *         description: Failed to get monitoring summary
  */

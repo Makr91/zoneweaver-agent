@@ -113,6 +113,45 @@ const parseDhcpdConf = async () => {
  *     responses:
  *       200:
  *         description: DHCP configuration retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 config_file:
+ *                   type: string
+ *                   example: /etc/dhcpd.conf
+ *                 subnets:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       subnet:
+ *                         type: string
+ *                       netmask:
+ *                         type: string
+ *                       range_start:
+ *                         type: string
+ *                       range_end:
+ *                         type: string
+ *                       options:
+ *                         type: object
+ *                         properties:
+ *                           routers:
+ *                             type: string
+ *                           dns:
+ *                             type: string
+ *                 hosts:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       hostname:
+ *                         type: string
+ *                       mac:
+ *                         type: string
+ *                       ip:
+ *                         type: string
  *       500:
  *         description: Failed to retrieve DHCP configuration
  */
@@ -237,6 +276,18 @@ export const updateDhcpConfig = async (req, res) => {
  *     responses:
  *       200:
  *         description: DHCP hosts retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 hosts:
+ *                   type: array
+ *                   description: Persisted DHCP static host entries (DhcpHost rows)
+ *                   items:
+ *                     type: object
+ *                 total:
+ *                   type: integer
  *       500:
  *         description: Failed to retrieve DHCP hosts
  */
@@ -407,6 +458,24 @@ export const removeDhcpHost = async (req, res) => {
  *     responses:
  *       200:
  *         description: DHCP service status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 service:
+ *                   type: string
+ *                   example: network/service/dhcp:ipv4
+ *                 state:
+ *                   type: string
+ *                   description: SMF service state (e.g. online, disabled, unknown)
+ *                 since:
+ *                   type: string
+ *                   nullable: true
+ *                 listen_interface:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Configured DHCP listen interface (config/listen_ifnames)
  *       500:
  *         description: Failed to get DHCP service status
  */

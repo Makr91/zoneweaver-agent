@@ -151,6 +151,8 @@ export const createConfigBackup = async (req, res) => {
  *     responses:
  *       200:
  *         description: Backup deleted successfully
+ *       400:
+ *         description: Invalid filename (path traversal rejected)
  *       404:
  *         description: Backup not found
  *       500:
@@ -205,6 +207,8 @@ export const deleteBackup = async (req, res) => {
  *     responses:
  *       200:
  *         description: Configuration restored successfully
+ *       400:
+ *         description: Invalid filename (path traversal rejected)
  *       500:
  *         description: Failed to restore backup
  */
@@ -212,6 +216,11 @@ export const restoreBackup = async (req, res) => {
   const { filename } = req.params;
 
   try {
+    // Basic security check to prevent path traversal (same guard as deleteBackup)
+    if (filename.includes('..')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
     const backupPath = path.join(backupDir, filename);
 
     // Check if backup file exists

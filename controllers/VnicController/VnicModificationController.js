@@ -82,6 +82,9 @@ import { executeCommand } from './utils/CommandHelper.js';
  *                   type: string
  *                 vnic_name:
  *                   type: string
+ *                 underlying_link:
+ *                   type: string
+ *                   description: The physical link/etherstub the VNIC is created over (echoed from the request)
  *       400:
  *         description: Invalid request parameters
  *       500:
@@ -256,6 +259,9 @@ export const createVNIC = async (req, res) => {
  *                   type: string
  *                 vnic_name:
  *                   type: string
+ *                 temporary:
+ *                   type: boolean
+ *                   description: Whether only the temporary configuration was deleted (echoed from the request)
  *       404:
  *         description: VNIC not found
  *       500:

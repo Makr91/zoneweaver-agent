@@ -28,10 +28,10 @@ export const getSystemZoneStatus = async zoneName => {
 
 /**
  * @swagger
- * /zones:
+ * /machines:
  *   get:
- *     summary: List all zones
- *     description: Retrieves a list of all zones with their current status and metadata
+ *     summary: List all machines
+ *     description: Retrieves a list of all machines (zones) with their current status and metadata
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -41,34 +41,34 @@ export const getSystemZoneStatus = async zoneName => {
  *         schema:
  *           type: string
  *           enum: [configured, incomplete, installed, ready, running, shutting_down, down]
- *         description: Filter zones by status
+ *         description: Filter machines by status
  *       - in: query
  *         name: tag
  *         schema:
  *           type: string
- *         description: Filter zones by tag (zones must contain this tag)
+ *         description: Filter machines by tag (machines must contain this tag)
  *       - in: query
  *         name: orphaned
  *         schema:
  *           type: boolean
- *         description: Include orphaned zones
+ *         description: Include orphaned machines
  *     responses:
  *       200:
- *         description: List of zones retrieved successfully
+ *         description: List of machines retrieved successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 zones:
+ *                 machines:
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Zone'
  *                 total:
  *                   type: integer
- *                   description: Total number of zones
+ *                   description: Total number of machines
  *       500:
- *         description: Failed to retrieve zones
+ *         description: Failed to retrieve machines
  */
 export const listZones = async (req, res) => {
   try {
@@ -96,7 +96,7 @@ export const listZones = async (req, res) => {
     }
 
     return res.json({
-      zones,
+      machines: zones,
       total: zones.length,
     });
   } catch (error) {
@@ -110,29 +110,29 @@ export const listZones = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{zoneName}:
+ * /machines/{machineName}:
  *   get:
- *     summary: Get zone details
- *     description: Retrieves detailed information about a specific zone including full configuration
+ *     summary: Get machine details
+ *     description: Retrieves detailed information about a specific machine (zone) including full configuration
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     responses:
  *       200:
- *         description: Zone details retrieved successfully
+ *         description: Machine details retrieved successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 zone_info:
+ *                 machine_info:
  *                   $ref: '#/components/schemas/Zone'
  *                 configuration:
  *                   type: object
@@ -150,7 +150,7 @@ export const listZones = async (req, res) => {
  */
 export const getZoneDetails = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -231,11 +231,11 @@ export const getZoneDetails = async (req, res) => {
     let activeVncSession = null;
     if (vncSession) {
       activeVncSession = vncSession.toJSON();
-      activeVncSession.console_url = `${req.protocol}://${req.get('host')}/zones/${zoneName}/vnc/console`;
+      activeVncSession.console_url = `${req.protocol}://${req.get('host')}/machines/${zoneName}/vnc/console`;
     }
 
     return res.json({
-      zone_info: zone.toJSON(),
+      machine_info: zone.toJSON(),
       configuration,
       active_vnc_session: activeVncSession,
       pending_tasks: pendingTasks,
@@ -244,7 +244,7 @@ export const getZoneDetails = async (req, res) => {
   } catch (error) {
     log.database.error('Database error getting zone details', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
     });
     return res.status(500).json({ error: 'Failed to retrieve zone details' });
   }
@@ -252,41 +252,41 @@ export const getZoneDetails = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{zoneName}/config:
+ * /machines/{machineName}/config:
  *   get:
- *     summary: Get zone configuration
- *     description: Retrieves the complete zone configuration using zadm show
+ *     summary: Get machine configuration
+ *     description: Retrieves the complete machine (zone) configuration using zadm show
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     responses:
  *       200:
- *         description: Zone configuration retrieved successfully
+ *         description: Machine configuration retrieved successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 zone_name:
+ *                 machine_name:
  *                   type: string
  *                 configuration:
  *                   type: object
  *                   description: Complete zone configuration from zadm
  *       404:
- *         description: Zone not found
+ *         description: Machine not found
  *       500:
- *         description: Failed to retrieve zone configuration
+ *         description: Failed to retrieve machine configuration
  */
 export const getZoneConfig = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
       return errorResponse(res, 400, 'Invalid zone name');
@@ -296,13 +296,13 @@ export const getZoneConfig = async (req, res) => {
     const zoneConfig = await fetchZoneConfig(zoneName);
 
     return res.json({
-      zone_name: zoneName,
+      machine_name: zoneName,
       configuration: zoneConfig,
     });
   } catch (error) {
     log.monitoring.error('Error getting zone config', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
     });
 
     // Check if it's a "zone does not exist" error

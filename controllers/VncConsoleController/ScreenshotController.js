@@ -47,20 +47,20 @@ const resolveVncSocketPath = async zoneName => {
 
 /**
  * @swagger
- * /zones/{zoneName}/vnc/screenshot:
+ * /machines/{machineName}/vnc/screenshot:
  *   get:
  *     summary: Capture a VNC console screenshot
- *     description: Captures a single frame from the zone's bhyve framebuffer and returns it as PNG. Works without an active VNC session as long as the zone is running.
+ *     description: Captures a single frame from the machine's bhyve framebuffer and returns it as PNG. Works without an active VNC session as long as the machine is running.
  *     tags: [VNC Console]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     responses:
  *       200:
  *         description: PNG screenshot
@@ -70,15 +70,15 @@ const resolveVncSocketPath = async zoneName => {
  *               type: string
  *               format: binary
  *       400:
- *         description: Invalid zone name
+ *         description: Invalid machine name
  *       404:
- *         description: Zone not found or zonepath unavailable
+ *         description: Machine not found or zonepath unavailable
  *       502:
  *         description: Failed to capture screenshot
  */
 export const getVncScreenshot = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
       return errorResponse(res, 400, 'Invalid zone name');
@@ -109,7 +109,7 @@ export const getVncScreenshot = async (req, res) => {
     return res.send(png);
   } catch (error) {
     log.websocket.error('VNC screenshot capture failed', {
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
       error: error.message,
     });
     return errorResponse(res, 502, 'Failed to capture VNC screenshot', error.message);

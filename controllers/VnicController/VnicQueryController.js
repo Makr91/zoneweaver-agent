@@ -51,8 +51,9 @@ import { executeCommand } from './utils/CommandHelper.js';
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/NetworkInterface'
- *                 total:
+ *                 returned:
  *                   type: integer
+ *                   description: Number of records in this response
  *                 source:
  *                   type: string
  *                   enum: [database, live]
@@ -221,6 +222,8 @@ export const getVNICDetails = async (req, res) => {
  *                 statistics:
  *                   type: object
  *                   properties:
+ *                     link:
+ *                       type: string
  *                     ipackets:
  *                       type: integer
  *                     rbytes:
@@ -236,6 +239,9 @@ export const getVNICDetails = async (req, res) => {
  *                 timestamp:
  *                   type: string
  *                   format: date-time
+ *                 interval:
+ *                   type: integer
+ *                   description: Sampling interval echoed from the request
  *       404:
  *         description: VNIC not found
  *       500:
@@ -333,6 +339,9 @@ export const getVNICStats = async (req, res) => {
  *                         type: string
  *                       possible:
  *                         type: string
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
  *       404:
  *         description: VNIC not found
  *       500:

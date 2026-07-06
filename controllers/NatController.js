@@ -47,6 +47,23 @@ const executeCommand = async command => {
  *     responses:
  *       200:
  *         description: NAT rules retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 active_rules:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Raw `ipnat -l` output of active kernel NAT rules
+ *                 configured_rules:
+ *                   type: array
+ *                   description: Persisted NAT rules from the database (each item has id, rule, and the NatRule columns)
+ *                   items:
+ *                     type: object
+ *                 config_file:
+ *                   type: string
+ *                   example: /etc/ipf/ipnat.conf
  *       500:
  *         description: Failed to retrieve NAT rules
  */
@@ -244,6 +261,25 @@ export const deleteNatRule = async (req, res) => {
  *     responses:
  *       200:
  *         description: ipfilter status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 service:
+ *                   type: string
+ *                   example: network/ipfilter
+ *                 state:
+ *                   type: string
+ *                   description: SMF service state (e.g. online, disabled, maintenance, unknown)
+ *                 since:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Service state timestamp (stime) from svcs
+ *                 raw:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Raw svcs output line
  *       500:
  *         description: Failed to get ipfilter status
  */
@@ -284,6 +320,43 @@ export const getNatStatus = async (req, res) => {
  *     responses:
  *       200:
  *         description: IP forwarding status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 forwarding:
+ *                   type: object
+ *                   properties:
+ *                     ipv4:
+ *                       type: object
+ *                       properties:
+ *                         current:
+ *                           type: string
+ *                         persistent:
+ *                           type: string
+ *                     ipv6:
+ *                       type: object
+ *                       properties:
+ *                         current:
+ *                           type: string
+ *                         persistent:
+ *                           type: string
+ *                 interfaces:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       interface:
+ *                         type: string
+ *                       current:
+ *                         type: string
+ *                       persistent:
+ *                         type: string
+ *                 raw:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Raw `routeadm -p` output
  *       500:
  *         description: Failed to get forwarding status
  */

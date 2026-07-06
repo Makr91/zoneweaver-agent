@@ -90,6 +90,8 @@ export const cancelTask = async (req, res) => {
  *                   type: integer
  *                 failed_tasks:
  *                   type: integer
+ *                 cancelled_tasks:
+ *                   type: integer
  *                 max_concurrent_tasks:
  *                   type: integer
  *                 task_processor_running:

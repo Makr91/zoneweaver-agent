@@ -54,11 +54,6 @@ import { log } from '../../lib/Logger.js';
  *           default: 0
  *         description: Number of records to skip
  *       - in: query
- *         name: host
- *         schema:
- *           type: string
- *         description: Filter by host name
- *       - in: query
  *         name: state
  *         schema:
  *           type: string
@@ -82,6 +77,15 @@ import { log } from '../../lib/Logger.js';
  *                     $ref: '#/components/schemas/NetworkInterface'
  *                 totalCount:
  *                   type: integer
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
+ *                     hasMore:
+ *                       type: boolean
  *       500:
  *         description: Failed to get network interfaces
  */
@@ -164,6 +168,34 @@ export const getNetworkInterfaces = async (req, res) => {
  *                     $ref: '#/components/schemas/NetworkUsage'
  *                 totalCount:
  *                   type: integer
+ *                 returnedCount:
+ *                   type: integer
+ *                   description: Number of records in this response
+ *                 sampling:
+ *                   type: object
+ *                   description: Time-series sampling metadata applied to the result set
+ *                   properties:
+ *                     applied:
+ *                       type: boolean
+ *                     strategy:
+ *                       type: string
+ *                     entityCount:
+ *                       type: integer
+ *                     samplesPerEntity:
+ *                       type: integer
+ *                 metadata:
+ *                   type: object
+ *                   description: Present on the latest-per-interface path
+ *                   properties:
+ *                     activeInterfacesCount:
+ *                       type: integer
+ *                     interfaceList:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                 queryTime:
+ *                   type: string
+ *                   description: Server-side query duration (e.g. "12ms")
  *       500:
  *         description: Failed to get network usage
  */
@@ -371,6 +403,13 @@ export const getNetworkUsage = async (req, res) => {
  *                     $ref: '#/components/schemas/IPAddress'
  *                 returned:
  *                   type: integer
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
  *       500:
  *         description: Failed to get IP addresses
  */
@@ -471,6 +510,13 @@ export const getIPAddresses = async (req, res) => {
  *                     $ref: '#/components/schemas/Route'
  *                 returned:
  *                   type: integer
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
  *       500:
  *         description: Failed to get routing table
  */

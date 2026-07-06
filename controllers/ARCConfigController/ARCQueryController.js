@@ -27,6 +27,8 @@ import {
  *             schema:
  *               type: object
  *               properties:
+ *                 host:
+ *                   type: string
  *                 current_config:
  *                   type: object
  *                   properties:
@@ -50,6 +52,10 @@ import {
  *                       type: integer
  *                       format: int64
  *                       description: Current ARC metadata limit in bytes
+ *                     arc_meta_min_bytes:
+ *                       type: integer
+ *                       format: int64
+ *                       description: Current ARC minimum metadata size in bytes
  *                 system_constraints:
  *                   type: object
  *                   properties:
@@ -74,6 +80,14 @@ import {
  *                 reboot_required:
  *                   type: boolean
  *                   description: Whether a reboot is required for persistent changes
+ *                 config_file_path:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Path to the persistent ARC config file (if any)
+ *                 last_collected:
+ *                   type: string
+ *                   format: date-time
+ *                   description: scan_timestamp of the ARC stats sample
  *       500:
  *         description: Failed to get ZFS ARC configuration
  */

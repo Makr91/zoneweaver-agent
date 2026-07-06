@@ -354,6 +354,12 @@ export const getVlanDetails = async (req, res) => {
  *                   type: string
  *                 vid:
  *                   type: integer
+ *                 over:
+ *                   type: string
+ *                   description: The underlying physical link the VLAN is created over
+ *                 temporary:
+ *                   type: boolean
+ *                   description: Whether the VLAN is temporary (echoed from the request)
  *       400:
  *         description: Invalid request parameters
  *       500:
@@ -516,6 +522,9 @@ export const createVlan = async (req, res) => {
  *                   type: string
  *                 vlan_name:
  *                   type: string
+ *                 temporary:
+ *                   type: boolean
+ *                   description: Whether only the temporary configuration was deleted (echoed from the request)
  *       404:
  *         description: VLAN not found
  *       500:

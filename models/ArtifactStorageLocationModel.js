@@ -30,8 +30,8 @@ const { DataTypes } = Sequelize;
  *           example: "/data/isos"
  *         type:
  *           type: string
- *           description: Type of artifacts stored
- *           enum: [iso, image]
+ *           description: Type of artifacts stored (iso, image, or provisioning)
+ *           enum: [iso, image, provisioning]
  *           example: "iso"
  *         enabled:
  *           type: boolean

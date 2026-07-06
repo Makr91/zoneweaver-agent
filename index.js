@@ -114,21 +114,10 @@ app.use(router);
 setupSwaggerDocs(app, config.getApiDocs(), specs, swaggerUi);
 
 /**
- * HTTP server instance
- * @type {import('http').Server}
- */
-const httpServer = http.createServer(app);
-
-/**
  * WebSocket server for handling VNC connections
  * @description Uses ws library WebSocket server for proper protocol handling
  */
 const wss = new WebSocketServer({ noServer: true });
-
-// Add WebSocket upgrade handler to HTTP server
-httpServer.on('upgrade', (request, socket, head) => {
-  handleWebSocketUpgrade(request, socket, head, wss);
-});
 
 /**
  * Setup HTTPS server
@@ -141,6 +130,61 @@ const httpsServer = setupHTTPSServer(
   handleWebSocketUpgrade,
   wss
 );
+
+/**
+ * TLS-everywhere (ruling 2026-07-05): with SSL enabled, certificates loaded, and
+ * ssl.force_secure (default true), ALL traffic rides TLS — the plain-HTTP port serves
+ * ONLY 308 redirects to the HTTPS counterpart (no API, no WebSocket upgrades).
+ * ssl.force_secure: false is the escape hatch — the HTTP port then dual-serves the
+ * full app alongside HTTPS. If certificates failed to load, HTTP keeps serving the
+ * full app (degraded, loudly logged) so a certificate problem never bricks the agent.
+ */
+const redirectToHttps = (req, res) => {
+  const rawHost = req.headers.host || 'localhost';
+  const hostname = rawHost.startsWith('[')
+    ? rawHost.slice(0, rawHost.indexOf(']') + 1)
+    : rawHost.split(':')[0];
+  res.writeHead(308, { Location: `https://${hostname}:${httpsPort}${req.url}` });
+  res.end();
+};
+
+const forceSecure = sslConfig?.force_secure !== false;
+const redirectMode = Boolean(httpsServer) && forceSecure;
+
+/**
+ * HTTP server instance — redirect-only when the TLS listener is up and force_secure holds
+ * @type {import('http').Server}
+ */
+const httpServer = redirectMode ? http.createServer(redirectToHttps) : http.createServer(app);
+
+if (redirectMode) {
+  // Redirect mode: no WS upgrade handler — upgrade attempts on the HTTP port are
+  // dropped; clients must speak wss:// against the HTTPS port.
+  log.app.info('TLS-everywhere active: HTTP port serves only 308 redirects to HTTPS', {
+    http_port: httpPort,
+    https_port: httpsPort,
+  });
+} else {
+  if (sslConfig?.enabled && !httpsServer) {
+    log.app.error(
+      'SSL is enabled but the HTTPS listener did not start — serving the full app over PLAIN HTTP (degraded)',
+      {
+        http_port: httpPort,
+        key_path: sslConfig.key_path,
+        cert_path: sslConfig.cert_path,
+      }
+    );
+  } else if (httpsServer && !forceSecure) {
+    log.app.info('ssl.force_secure is false: HTTP port dual-serves the full app alongside HTTPS', {
+      http_port: httpPort,
+      https_port: httpsPort,
+    });
+  }
+  // Full-app HTTP mode: WebSocket upgrades ride the HTTP port
+  httpServer.on('upgrade', (request, socket, head) => {
+    handleWebSocketUpgrade(request, socket, head, wss);
+  });
+}
 
 /**
  * Install graceful shutdown handlers

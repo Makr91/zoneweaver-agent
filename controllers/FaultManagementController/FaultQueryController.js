@@ -67,6 +67,11 @@ const execProm = util.promisify(exec);
  *                   type: boolean
  *                 last_updated:
  *                   type: string
+ *                 cache_age_seconds:
+ *                   type: integer
+ *                   description: Age of the cached data in seconds (0 when freshly fetched)
+ *       503:
+ *         description: Fault management is disabled in configuration
  *       500:
  *         description: Failed to get system faults
  */
@@ -191,8 +196,24 @@ export const getFaults = async (req, res) => {
  *     responses:
  *       200:
  *         description: Specific fault details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 fault:
+ *                   type: object
+ *                 raw_output:
+ *                   type: string
+ *                 uuid:
+ *                   type: string
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
  *       404:
  *         description: Fault not found
+ *       503:
+ *         description: Fault management is disabled in configuration
  *       500:
  *         description: Failed to get fault details
  */
@@ -256,6 +277,20 @@ export const getFaultDetails = async (req, res) => {
  *     responses:
  *       200:
  *         description: Fault manager configuration
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 config:
+ *                   type: object
+ *                 raw_output:
+ *                   type: string
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *       503:
+ *         description: Fault management is disabled in configuration
  *       500:
  *         description: Failed to get fault manager configuration
  */

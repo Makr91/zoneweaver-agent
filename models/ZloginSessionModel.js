@@ -16,9 +16,9 @@ const { DataTypes } = Sequelize;
  *           format: uuid
  *           description: Unique session identifier
  *           example: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
- *         zone_name:
+ *         machine_name:
  *           type: string
- *           description: Zone name for this zlogin session
+ *           description: Machine name for this zlogin session
  *           example: "web-server-01"
  *         pid:
  *           type: integer
@@ -95,5 +95,12 @@ const ZloginSessions = db.define(
     comment: 'Zlogin sessions for browser-based terminal access to zones',
   }
 );
+
+// Agent API v1 wire vocabulary (architecture O1): session rows serialize with
+// machine_name; the zone_name attribute/column stays internal (OmniOS domain naming).
+ZloginSessions.prototype.toJSON = function toJSON() {
+  const { zone_name: machineName, ...values } = this.get({ plain: true });
+  return { ...values, machine_name: machineName };
+};
 
 export default ZloginSessions;

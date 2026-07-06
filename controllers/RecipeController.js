@@ -377,10 +377,10 @@ const resolveVarsPreview = (str, vars) => {
  * @swagger
  * /provisioning/recipes/{id}/test:
  *   post:
- *     summary: Test a recipe against a zone (dry-run or live)
+ *     summary: Test a recipe against a machine (dry-run or live)
  *     description: |
- *       Executes a recipe against a running zone for testing.
- *       The zone must be running and accessible via zlogin.
+ *       Executes a recipe against a running machine (zone) for testing.
+ *       The machine must be running and accessible via zlogin.
  *       Use dry_run: true to validate the recipe without executing.
  *     tags: [Provisioning Recipes]
  *     security:
@@ -398,9 +398,9 @@ const resolveVarsPreview = (str, vars) => {
  *           schema:
  *             type: object
  *             required:
- *               - zone_name
+ *               - machine_name
  *             properties:
- *               zone_name:
+ *               machine_name:
  *                 type: string
  *               variables:
  *                 type: object
@@ -411,7 +411,7 @@ const resolveVarsPreview = (str, vars) => {
  *       200:
  *         description: Recipe test results
  *       400:
- *         description: Missing zone_name
+ *         description: Missing machine_name
  *       404:
  *         description: Recipe not found
  *       500:
@@ -420,10 +420,10 @@ const resolveVarsPreview = (str, vars) => {
 export const testRecipe = async (req, res) => {
   try {
     const { id } = req.params;
-    const { zone_name, variables = {}, dry_run = false } = req.body;
+    const { machine_name, variables = {}, dry_run = false } = req.body;
 
-    if (!zone_name) {
-      return res.status(400).json({ error: 'zone_name is required' });
+    if (!machine_name) {
+      return res.status(400).json({ error: 'machine_name is required' });
     }
 
     const recipe = await Recipes.findByPk(id);
@@ -465,7 +465,7 @@ export const testRecipe = async (req, res) => {
         success: true,
         dry_run: true,
         recipe_name: recipe.name,
-        zone_name,
+        machine_name,
         resolved_steps: resolvedSteps,
         unresolved_variables: [...unresolvedVars],
         variables_provided: Object.keys(variables),
@@ -474,7 +474,7 @@ export const testRecipe = async (req, res) => {
     }
 
     // Live execution
-    const automation = new ZloginAutomation(zone_name, {
+    const automation = new ZloginAutomation(machine_name, {
       globalTimeout: (recipe.timeout_seconds || 300) * 1000,
     });
 
@@ -484,7 +484,7 @@ export const testRecipe = async (req, res) => {
       return res.json({
         success: result.success,
         recipe_name: recipe.name,
-        zone_name,
+        machine_name,
         output: result.output,
         errors: result.errors,
         log: result.log,

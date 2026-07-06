@@ -10,6 +10,64 @@ import { log } from '../../../lib/Logger.js';
 import yj from 'yieldable-json';
 
 /**
+ * @swagger
+ * components:
+ *   schemas:
+ *     DirectSuccessEnvelope:
+ *       type: object
+ *       description: >-
+ *         Standard envelope for direct (synchronous) success responses produced by
+ *         directSuccessResponse(). Endpoint-specific data fields are spread at the
+ *         TOP LEVEL alongside these envelope fields — endpoints documenting only
+ *         their data fields implicitly include this envelope.
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           example: true
+ *         message:
+ *           type: string
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *     TaskCreatedEnvelope:
+ *       type: object
+ *       description: >-
+ *         Standard envelope for async-task (202 Accepted) responses produced by
+ *         taskCreatedResponse(). Endpoint-specific data fields are spread at the
+ *         TOP LEVEL alongside these envelope fields.
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           example: true
+ *         message:
+ *           type: string
+ *         task_id:
+ *           type: string
+ *           format: uuid
+ *         status:
+ *           type: string
+ *           example: pending
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *     ErrorEnvelope:
+ *       type: object
+ *       description: Standard error envelope produced by errorResponse().
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           example: false
+ *         error:
+ *           type: string
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *         details:
+ *           type: string
+ *           description: Present only when detailed error information is available
+ */
+
+/**
  * Create a system management task
  * @param {string} operation - Task operation name
  * @param {Object} metadata - Task metadata

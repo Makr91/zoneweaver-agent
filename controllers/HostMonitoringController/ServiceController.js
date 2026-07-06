@@ -35,9 +35,12 @@ import { log } from '../../lib/Logger.js';
  *                 stats:
  *                   type: object
  *                   description: Collection statistics and performance metrics
- *                 activeIntervals:
- *                   type: object
- *                   description: Status of collection intervals
+ *                 discoveryMode:
+ *                   type: string
+ *                   description: Discovery mechanism (e.g. "taskqueue")
+ *                 note:
+ *                   type: string
+ *                   description: Human-readable note about the discovery model
  *       500:
  *         description: Failed to get monitoring status
  */
@@ -76,8 +79,8 @@ export const getMonitoringStatus = (req, res) => {
  *               properties:
  *                 status:
  *                   type: string
- *                   enum: [healthy, stopped, error]
- *                   description: Overall health status
+ *                   enum: [healthy, stopped, critical, faulted, degraded, error]
+ *                   description: Overall health status (critical/faulted/degraded are derived from fault severity)
  *                 lastUpdate:
  *                   type: string
  *                   format: date-time
@@ -94,6 +97,50 @@ export const getMonitoringStatus = (req, res) => {
  *                 uptime:
  *                   type: integer
  *                   description: System uptime in seconds
+ *                 faultStatus:
+ *                   type: object
+ *                   description: Fault-management rollup driving the degraded/faulted/critical status
+ *                   properties:
+ *                     hasFaults:
+ *                       type: boolean
+ *                     faultCount:
+ *                       type: integer
+ *                     severityLevels:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                     lastCheck:
+ *                       type: string
+ *                       format: date-time
+ *                     faults:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     error:
+ *                       type: string
+ *                       nullable: true
+ *                 reboot_required:
+ *                   type: boolean
+ *                   description: Whether a reboot is pending
+ *                 reboot_info:
+ *                   type: object
+ *                   nullable: true
+ *                   description: Present only when reboot_required is true
+ *                   properties:
+ *                     timestamp:
+ *                       type: string
+ *                       format: date-time
+ *                     reasons:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                     age_minutes:
+ *                       type: number
+ *                     created_by:
+ *                       type: string
+ *                 service:
+ *                   type: object
+ *                   description: The full /monitoring/status payload embedded for convenience
  *       500:
  *         description: Failed to get health check
  */
@@ -144,6 +191,9 @@ export const getHealthCheck = async (req, res) => {
  *               properties:
  *                 success:
  *                   type: boolean
+ *                 type:
+ *                   type: string
+ *                   description: The collection type that was triggered (echoed from the request)
  *                 results:
  *                   type: object
  *                   description: Collection results

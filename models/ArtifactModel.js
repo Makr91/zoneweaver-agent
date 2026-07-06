@@ -41,8 +41,8 @@ const { DataTypes } = Sequelize;
  *           example: 3500000000
  *         file_type:
  *           type: string
- *           description: Type of artifact (iso, image)
- *           enum: [iso, image]
+ *           description: Type of artifact (iso, image, or provisioning)
+ *           enum: [iso, image, provisioning]
  *           example: "iso"
  *         extension:
  *           type: string

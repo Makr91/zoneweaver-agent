@@ -36,6 +36,9 @@ const ARCH_MAP = {
  * always advertised by this agent.
  */
 const PLATFORM_FEATURES = [
+  'machines',
+  'machine-create',
+  'services',
   'zfs',
   'vnics',
   'boot-environments',
@@ -43,7 +46,6 @@ const PLATFORM_FEATURES = [
   'repositories',
   'swap',
   'time-sync',
-  'syslog',
   'system-users',
   'processes',
   'zlogin',
@@ -62,6 +64,12 @@ const PLATFORM_FEATURES = [
 const CONFIG_GATED_FEATURES = [
   ['fault-management', 'fault_management.enabled'],
   ['devices', 'host_monitoring.enabled'],
+  ['monitoring', 'host_monitoring.enabled'],
+  // syslog + log-streaming share the system_logs kill switch: syslog = the
+  // /system/syslog/* config family, log-streaming = the /system/logs/* viewer
+  // and streaming family. Both 503 when system_logs is disabled, so neither
+  // token may be advertised in that state (D14: advertise only shipped surfaces).
+  ['syslog', 'system_logs.enabled'],
   ['log-streaming', 'system_logs.enabled'],
   ['file-browser', 'file_browser.enabled'],
   ['artifacts', 'artifact_storage.enabled'],
@@ -142,7 +150,7 @@ const buildFeatures = () => [
  *                     advertised. UIs must gate panels with features.includes(token).
  *                   items:
  *                     type: string
- *                   example: ["zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "syslog", "system-users", "processes", "zlogin", "ssh", "host-terminal", "tasks", "provisioning", "fault-management", "devices", "log-streaming", "file-browser", "artifacts", "templates"]
+ *                   example: ["machines", "machine-create", "services", "zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "syslog", "system-users", "processes", "zlogin", "ssh", "host-terminal", "tasks", "provisioning", "fault-management", "devices", "monitoring", "log-streaming", "file-browser", "artifacts", "templates"]
  *                 uptime:
  *                   type: integer
  *                   description: Process uptime in seconds

@@ -5,7 +5,35 @@
 import config from '../../config/ConfigLoader.js';
 import yj from 'yieldable-json';
 import { log } from '../../lib/Logger.js';
-import { SETTINGS_SCHEMA } from './utils/SettingsSchema.js';
+import { SETTINGS_SCHEMA, buildSchemaDefaults } from './utils/SettingsSchema.js';
+
+/**
+ * Deep-merge the config-file values over the schema defaults. File values win;
+ * arrays and scalars are taken wholesale from the file when present.
+ * @param {any} base - Defaults value
+ * @param {any} override - Config-file value
+ * @returns {any} Effective value
+ */
+const deepMerge = (base, override) => {
+  if (override === undefined) {
+    return base;
+  }
+  if (
+    base === null ||
+    typeof base !== 'object' ||
+    Array.isArray(base) ||
+    override === null ||
+    typeof override !== 'object' ||
+    Array.isArray(override)
+  ) {
+    return override;
+  }
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    merged[key] = key in merged ? deepMerge(merged[key], value) : value;
+  }
+  return merged;
+};
 
 /**
  * @swagger
@@ -96,12 +124,16 @@ import { SETTINGS_SCHEMA } from './utils/SettingsSchema.js';
  * /settings:
  *   get:
  *     summary: Get current application settings
+ *     description: |
+ *       Returns the complete effective configuration — every setting the agent honors,
+ *       with schema defaults filled in for keys absent from config.yaml (config-file
+ *       values always win).
  *     tags: [Settings]
  *     security:
  *       - ApiKeyAuth: []
  *     responses:
  *       200:
- *         description: Current application configuration
+ *         description: Current effective application configuration
  *         content:
  *           application/json:
  *             schema:
@@ -113,13 +145,16 @@ export const getSettings = async (req, res) => {
   void req;
   try {
     // Return a sanitized version of the config, omitting sensitive details
-    const currentConfig = config.getAll();
+    const fileConfig = config.getAll();
 
-    if (!currentConfig) {
+    if (!fileConfig) {
       return res
         .status(500)
         .json({ error: 'Failed to get settings', details: 'Configuration not loaded' });
     }
+
+    // Effective config: schema defaults filled in for keys the file omits
+    const currentConfig = deepMerge(buildSchemaDefaults(), fileConfig);
 
     const sanitizedConfig = await new Promise((resolve, reject) => {
       yj.stringifyAsync(currentConfig, (err, jsonString) => {
@@ -161,8 +196,12 @@ export const getSettings = async (req, res) => {
  *   get:
  *     summary: Get settings schema
  *     description: |
- *       Returns a JSON schema describing each configuration section, its properties,
- *       types, descriptions, defaults, valid ranges, and whether changes require a restart.
+ *       Returns the settings field metadata (AGREED schema contract, Go-agent
+ *       parity): a map of top-level SECTION name to
+ *       `{description, requires_restart, properties}`. Field descriptors inside
+ *       `properties` carry type, description, default, and optional min/max/enum;
+ *       object-typed fields nest `properties` recursively (same shape). Covers
+ *       every honored configuration key.
  *     tags: [Settings]
  *     security:
  *       - ApiKeyAuth: []
@@ -176,6 +215,8 @@ export const getSettings = async (req, res) => {
  *               additionalProperties:
  *                 type: object
  *                 properties:
+ *                   type:
+ *                     type: string
  *                   description:
  *                     type: string
  *                   requires_restart:

@@ -9,13 +9,13 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
 
 /**
  * @swagger
- * /zones/bulk/start:
+ * /machines/bulk/start:
  *   post:
- *     summary: Bulk start zones
+ *     summary: Bulk start machines
  *     description: |
- *       Queues start tasks for multiple zones. Accepts an array of zone names or `"all"` to start
- *       all stopped zones. Tasks are created respecting orchestration priority order.
- *       Zones that are already running are skipped.
+ *       Queues start tasks for multiple machines. Accepts an array of machine names or `"all"` to
+ *       start all stopped machines. Tasks are created respecting orchestration priority order.
+ *       Machines that are already running are skipped.
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -25,17 +25,17 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
  *         application/json:
  *           schema:
  *             type: object
- *             required: [zones]
+ *             required: [machines]
  *             properties:
- *               zones:
+ *               machines:
  *                 oneOf:
  *                   - type: string
  *                     enum: [all]
- *                     description: Start all stopped zones
+ *                     description: Start all stopped machines
  *                   - type: array
  *                     items:
  *                       type: string
- *                     description: Array of zone names to start
+ *                     description: Array of machine names to start
  *                 example: ["zone1.example.com", "zone2.example.com"]
  *     responses:
  *       200:
@@ -57,7 +57,7 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
  *                   items:
  *                     type: object
  *                     properties:
- *                       zone:
+ *                       machine:
  *                         type: string
  *                       reason:
  *                         type: string
@@ -72,27 +72,29 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
  */
 export const bulkStartZones = async (req, res) => {
   try {
-    const { zones } = req.body;
+    const { machines } = req.body;
 
-    if (!zones) {
-      return res.status(400).json({ error: 'zones field is required (array of names or "all")' });
+    if (!machines) {
+      return res
+        .status(400)
+        .json({ error: 'machines field is required (array of names or "all")' });
     }
 
     let targetZones;
 
-    if (zones === 'all') {
+    if (machines === 'all') {
       // Get all stopped (non-orphaned) zones
       targetZones = await Zones.findAll({
         where: { status: ['configured', 'installed'], is_orphaned: false },
         order: [['name', 'ASC']],
       });
-    } else if (Array.isArray(zones)) {
+    } else if (Array.isArray(machines)) {
       targetZones = await Zones.findAll({
-        where: { name: zones },
+        where: { name: machines },
         order: [['name', 'ASC']],
       });
     } else {
-      return res.status(400).json({ error: 'zones must be "all" or an array of zone names' });
+      return res.status(400).json({ error: 'machines must be "all" or an array of machine names' });
     }
 
     if (targetZones.length === 0) {
@@ -119,9 +121,9 @@ export const bulkStartZones = async (req, res) => {
 
     zoneStatuses.forEach(({ zone, currentStatus }) => {
       if (currentStatus === 'running') {
-        skipped.push({ zone: zone.name, reason: 'already_running' });
+        skipped.push({ machine: zone.name, reason: 'already_running' });
       } else if (currentStatus === 'not_found') {
-        skipped.push({ zone: zone.name, reason: 'not_found_on_system' });
+        skipped.push({ machine: zone.name, reason: 'not_found_on_system' });
       } else {
         toStart.push(zone);
       }
@@ -165,13 +167,13 @@ export const bulkStartZones = async (req, res) => {
 
 /**
  * @swagger
- * /zones/bulk/stop:
+ * /machines/bulk/stop:
  *   post:
- *     summary: Bulk stop zones
+ *     summary: Bulk stop machines
  *     description: |
- *       Queues stop tasks for multiple zones. Accepts an array of zone names or `"all"` to stop
- *       all running zones. Tasks are created with HIGH priority.
- *       Zones that are already stopped are skipped.
+ *       Queues stop tasks for multiple machines. Accepts an array of machine names or `"all"` to
+ *       stop all running machines. Tasks are created with HIGH priority.
+ *       Machines that are already stopped are skipped.
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -181,17 +183,17 @@ export const bulkStartZones = async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [zones]
+ *             required: [machines]
  *             properties:
- *               zones:
+ *               machines:
  *                 oneOf:
  *                   - type: string
  *                     enum: [all]
- *                     description: Stop all running zones
+ *                     description: Stop all running machines
  *                   - type: array
  *                     items:
  *                       type: string
- *                     description: Array of zone names to stop
+ *                     description: Array of machine names to stop
  *                 example: ["zone1.example.com", "zone2.example.com"]
  *     responses:
  *       200:
@@ -213,7 +215,7 @@ export const bulkStartZones = async (req, res) => {
  *                   items:
  *                     type: object
  *                     properties:
- *                       zone:
+ *                       machine:
  *                         type: string
  *                       reason:
  *                         type: string
@@ -228,27 +230,29 @@ export const bulkStartZones = async (req, res) => {
  */
 export const bulkStopZones = async (req, res) => {
   try {
-    const { zones } = req.body;
+    const { machines } = req.body;
 
-    if (!zones) {
-      return res.status(400).json({ error: 'zones field is required (array of names or "all")' });
+    if (!machines) {
+      return res
+        .status(400)
+        .json({ error: 'machines field is required (array of names or "all")' });
     }
 
     let targetZones;
 
-    if (zones === 'all') {
+    if (machines === 'all') {
       // Get all running (non-orphaned) zones
       targetZones = await Zones.findAll({
         where: { status: 'running', is_orphaned: false },
         order: [['name', 'ASC']],
       });
-    } else if (Array.isArray(zones)) {
+    } else if (Array.isArray(machines)) {
       targetZones = await Zones.findAll({
-        where: { name: zones },
+        where: { name: machines },
         order: [['name', 'ASC']],
       });
     } else {
-      return res.status(400).json({ error: 'zones must be "all" or an array of zone names' });
+      return res.status(400).json({ error: 'machines must be "all" or an array of machine names' });
     }
 
     if (targetZones.length === 0) {
@@ -275,9 +279,9 @@ export const bulkStopZones = async (req, res) => {
 
     zoneStatuses.forEach(({ zone, currentStatus }) => {
       if (currentStatus === 'configured' || currentStatus === 'installed') {
-        skipped.push({ zone: zone.name, reason: 'already_stopped' });
+        skipped.push({ machine: zone.name, reason: 'already_stopped' });
       } else if (currentStatus === 'not_found') {
-        skipped.push({ zone: zone.name, reason: 'not_found_on_system' });
+        skipped.push({ machine: zone.name, reason: 'not_found_on_system' });
       } else {
         toStop.push(zone);
       }

@@ -9,17 +9,17 @@ import { createTask, createSequentialPlaybookTasks } from './utils/TaskCreationH
 
 /**
  * @swagger
- * /zones/{name}/run-provisioners:
+ * /machines/{name}/run-provisioners:
  *   post:
- *     summary: Run zone provisioners ad-hoc
+ *     summary: Run machine provisioners ad-hoc
  *     description: |
  *       Creates a zone_provision task to execute provisioners (shell scripts, ansible, etc.)
- *       against the zone. This is independent of the full provisioning pipeline and can be
+ *       against the machine. This is independent of the full provisioning pipeline and can be
  *       called anytime after SSH is accessible.
  *
  *       Prerequisites:
- *       - Zone must be running
- *       - Zone must have provisioning config with provisioners
+ *       - Machine must be running
+ *       - Machine must have provisioning config with provisioners
  *       - SSH must be accessible
  *     tags: [Provisioning Tasks]
  *     security:
@@ -95,7 +95,7 @@ export const runProvisioners = async (req, res) => {
     return res.json({
       success: true,
       message: `Zone provisioners task chain created for ${zoneName}`,
-      zone_name: zoneName,
+      machine_name: zoneName,
       parent_task_id: provisionParentTask.id,
       playbook_count: playbooks.length,
     });

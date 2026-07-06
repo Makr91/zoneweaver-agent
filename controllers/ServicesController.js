@@ -144,8 +144,19 @@ export const getServiceDetailsController = async (req, res) => {
  *               options:
  *                 type: object
  *     responses:
- *       200:
- *         description: The result of the action
+ *       202:
+ *         description: Service action task created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 task_id:
+ *                   type: string
  *       500:
  *         description: Failed to perform action
  */
@@ -165,7 +176,8 @@ export const serviceAction = async (req, res) => {
       status: 'pending',
     });
 
-    return res.json({
+    // Async-task pattern: 202 Accepted like every other task-creating endpoint
+    return res.status(202).json({
       success: true,
       message: `Task created for action ${action} on service ${decodedFmri}`,
       task_id: task.id,

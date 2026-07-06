@@ -258,17 +258,17 @@ const createOrReuseZloginSession = async zoneName => {
  * @swagger
  * tags:
  *   name: Zlogin
- *   description: Manage zlogin sessions for zones
- * /zones/{zoneName}/zlogin/start:
+ *   description: Manage zlogin sessions for machines
+ * /machines/{machineName}/zlogin/start:
  *   post:
  *     summary: Start a new zlogin session
- *     description: Creates a new pseudo-terminal session for the specified zone.
+ *     description: Creates a new pseudo-terminal session for the specified machine (zone).
  *     tags: [Zlogin]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
@@ -280,13 +280,13 @@ const createOrReuseZloginSession = async zoneName => {
  *             schema:
  *               $ref: '#/components/schemas/ZloginSession'
  *       404:
- *         description: Zone not found.
+ *         description: Machine not found.
  *       500:
  *         description: Failed to start zlogin session.
  */
 export const startZloginSession = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
     log.websocket.info('Starting zlogin session', { zone_name: zoneName });
 
     const zone = await Zones.findOne({ where: { name: zoneName } });

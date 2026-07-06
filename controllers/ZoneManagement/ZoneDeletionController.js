@@ -10,7 +10,7 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
 
 export const deleteZone = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
     const { force = false, cleanup_datasets = false, cleanup_networking = false } = req.query;
 
     if (!validateZoneName(zoneName)) {
@@ -78,7 +78,7 @@ export const deleteZone = async (req, res) => {
     return res.json({
       success: true,
       delete_tasks: tasks.map(t => t.id),
-      zone_name: zoneName,
+      machine_name: zoneName,
       operation: 'delete',
       status: 'pending',
       message: 'Delete tasks queued successfully',
@@ -87,7 +87,7 @@ export const deleteZone = async (req, res) => {
   } catch (error) {
     log.database.error('Database error deleting zone task', {
       error: error.message,
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
       user: req.entity.name,
     });
     return res.status(500).json({ error: 'Failed to queue delete tasks' });

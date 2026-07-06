@@ -41,6 +41,10 @@ import { executeCommand } from './utils/CommandHelper.js';
  *                 matches:
  *                   type: boolean
  *                   description: Whether nodename file matches system hostname
+ *                 warning:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Set when /etc/nodename disagrees with the running hostname; null otherwise
  *       500:
  *         description: Failed to get hostname
  */
@@ -140,6 +144,10 @@ export const getHostname = async (req, res) => {
  *               properties:
  *                 addresses:
  *                   type: array
+ *                   description: >-
+ *                     In database mode (default) each item is a full IPAddress record. In live mode
+ *                     (live=true) each item is a reduced shape sourced directly from ipadm:
+ *                     { addrobj, interface, type, state, addr, ip_version, source }.
  *                   items:
  *                     $ref: '#/components/schemas/IPAddress'
  *                 total:

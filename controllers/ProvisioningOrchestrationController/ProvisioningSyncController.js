@@ -9,17 +9,17 @@ import { createTask, createSequentialFolderTasks } from './utils/TaskCreationHel
 
 /**
  * @swagger
- * /zones/{name}/sync:
+ * /machines/{name}/sync:
  *   post:
- *     summary: Sync zone files ad-hoc
+ *     summary: Sync machine files ad-hoc
  *     description: |
- *       Creates a zone_sync task to sync provisioning files to the zone.
+ *       Creates a zone_sync task to sync provisioning files to the machine.
  *       This is independent of the full provisioning pipeline and can be called
  *       anytime after SSH is accessible.
  *
  *       Prerequisites:
- *       - Zone must be running
- *       - Zone must have provisioning config with sync_folders
+ *       - Machine must be running
+ *       - Machine must have provisioning config with sync_folders
  *       - SSH must be accessible
  *     tags: [Provisioning Tasks]
  *     security:
@@ -93,7 +93,7 @@ export const syncZone = async (req, res) => {
     return res.json({
       success: true,
       message: `Zone sync task chain created for ${zoneName}`,
-      zone_name: zoneName,
+      machine_name: zoneName,
       parent_task_id: syncParentTask.id,
       folder_count: folders.length,
     });

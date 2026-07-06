@@ -20,19 +20,159 @@ const { DataTypes } = Sequelize;
  *           format: uuid
  *           description: Unique task identifier
  *           example: "123e4567-e89b-12d3-a456-426614174000"
- *         zone_name:
+ *         machine_name:
  *           type: string
- *           description: Target zone name for the operation
+ *           description: Target machine name for the operation
  *           example: "web-server-01"
  *         operation:
  *           type: string
- *           description: Type of operation to perform
- *           enum: [start, stop, restart, delete, console_start, console_stop, discover, service_enable, service_disable, service_restart, service_refresh, template_download, template_delete, template_upload, template_export]
+ *           description: >-
+ *             Type of operation to perform — the complete server-defined set dispatched by the
+ *             task executor (there is no console_start/console_stop; VNC auto-start is vnc_start).
+ *             Consumers should still tolerate unknown values for forward-compatibility.
+ *           enum:
+ *             - start
+ *             - stop
+ *             - restart
+ *             - delete
+ *             - discover
+ *             - vnc_start
+ *             - zone_create_orchestration
+ *             - zone_create_storage
+ *             - zone_create_config
+ *             - zone_create_install
+ *             - zone_create_finalize
+ *             - zone_modify
+ *             - zone_setup
+ *             - zone_provisioning_extract
+ *             - zone_wait_ssh
+ *             - zone_sync
+ *             - zone_sync_parent
+ *             - zone_provision
+ *             - zone_provision_parent
+ *             - zone_provision_orchestration
+ *             - zone_clone_orchestration
+ *             - service_enable
+ *             - service_disable
+ *             - service_restart
+ *             - service_refresh
+ *             - process_trace
+ *             - network_config_discovery
+ *             - network_usage_discovery
+ *             - storage_discovery
+ *             - storage_frequent_discovery
+ *             - device_discovery
+ *             - system_metrics_discovery
+ *             - set_hostname
+ *             - update_time_sync_config
+ *             - force_time_sync
+ *             - set_timezone
+ *             - switch_time_sync_system
+ *             - system_host_restart
+ *             - system_host_reboot
+ *             - system_host_reboot_fast
+ *             - system_host_shutdown
+ *             - system_host_poweroff
+ *             - system_host_halt
+ *             - system_host_runlevel_change
+ *             - create_ip_address
+ *             - delete_ip_address
+ *             - enable_ip_address
+ *             - disable_ip_address
+ *             - create_vnic
+ *             - delete_vnic
+ *             - set_vnic_properties
+ *             - create_aggregate
+ *             - delete_aggregate
+ *             - modify_aggregate_links
+ *             - create_etherstub
+ *             - delete_etherstub
+ *             - create_vlan
+ *             - delete_vlan
+ *             - create_bridge
+ *             - delete_bridge
+ *             - modify_bridge_links
+ *             - create_nat_rule
+ *             - delete_nat_rule
+ *             - configure_forwarding
+ *             - dhcp_update_config
+ *             - dhcp_add_host
+ *             - dhcp_remove_host
+ *             - dhcp_service_control
+ *             - provisioning_network_setup
+ *             - provisioning_network_teardown
+ *             - pkg_install
+ *             - pkg_uninstall
+ *             - pkg_update
+ *             - pkg_refresh
+ *             - beadm_create
+ *             - beadm_delete
+ *             - beadm_activate
+ *             - beadm_mount
+ *             - beadm_unmount
+ *             - repository_add
+ *             - repository_remove
+ *             - repository_modify
+ *             - repository_enable
+ *             - repository_disable
+ *             - user_create
+ *             - user_modify
+ *             - user_delete
+ *             - user_set_password
+ *             - user_lock
+ *             - user_unlock
+ *             - group_create
+ *             - group_modify
+ *             - group_delete
+ *             - role_create
+ *             - role_modify
+ *             - role_delete
+ *             - zfs_create_dataset
+ *             - zfs_destroy_dataset
+ *             - zfs_set_properties
+ *             - zfs_clone_dataset
+ *             - zfs_promote_dataset
+ *             - zfs_rename_dataset
+ *             - zfs_create_snapshot
+ *             - zfs_destroy_snapshot
+ *             - zfs_rollback_snapshot
+ *             - zfs_hold_snapshot
+ *             - zfs_release_snapshot
+ *             - zpool_create
+ *             - zpool_destroy
+ *             - zpool_set_properties
+ *             - zpool_add_vdev
+ *             - zpool_remove_vdev
+ *             - zpool_replace_device
+ *             - zpool_online_device
+ *             - zpool_offline_device
+ *             - zpool_scrub
+ *             - zpool_stop_scrub
+ *             - zpool_export
+ *             - zpool_import
+ *             - zpool_upgrade
+ *             - file_move
+ *             - file_copy
+ *             - file_archive_create
+ *             - file_archive_extract
+ *             - artifact_download_url
+ *             - artifact_scan_all
+ *             - artifact_scan_location
+ *             - artifact_delete_file
+ *             - artifact_delete_folder
+ *             - artifact_upload
+ *             - artifact_move
+ *             - artifact_copy
+ *             - template_download
+ *             - template_delete
+ *             - template_upload
+ *             - template_export
+ *             - template_move
  *           example: "start"
  *         status:
  *           type: string
  *           description: Current task status
- *           enum: [pending, running, completed, failed, cancelled]
+ *           enum: [pending, prepared, running, completed, completed_with_errors, failed, cancelled]
  *           example: "pending"
  *         priority:
  *           type: integer
@@ -63,6 +203,27 @@ const { DataTypes } = Sequelize;
  *           type: string
  *           format: date-time
  *           description: Task completion timestamp
+ *         parent_task_id:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *           description: Parent task ID for grouped operations (e.g. provisioning pipeline)
+ *         metadata:
+ *           type: string
+ *           nullable: true
+ *           description: JSON string of task execution parameters
+ *         progress_percent:
+ *           type: number
+ *           format: float
+ *           description: Task completion percentage (0.00–100.00)
+ *         progress_info:
+ *           type: object
+ *           nullable: true
+ *           description: Detailed progress information (transferred bytes, speed, ETA, etc.)
+ *         output:
+ *           type: string
+ *           nullable: true
+ *           description: Task output — JSON array of {stream, data, timestamp} entries
  */
 
 /**
@@ -208,5 +369,12 @@ const Tasks = db.define(
 Tasks.belongsTo(Tasks, { as: 'DependsOnTask', foreignKey: 'depends_on' });
 Tasks.belongsTo(Tasks, { as: 'ParentTask', foreignKey: 'parent_task_id' });
 Tasks.hasMany(Tasks, { as: 'SubTasks', foreignKey: 'parent_task_id' });
+
+// Agent API v1 wire vocabulary (architecture O1): task rows serialize with
+// machine_name; the zone_name attribute/column stays internal (OmniOS domain naming).
+Tasks.prototype.toJSON = function toJSON() {
+  const { zone_name: machineName, ...values } = this.get({ plain: true });
+  return { ...values, machine_name: machineName };
+};
 
 export default Tasks;

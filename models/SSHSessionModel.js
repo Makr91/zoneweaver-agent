@@ -16,9 +16,9 @@ const { DataTypes } = Sequelize;
  *           format: uuid
  *           description: Unique session identifier
  *           example: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
- *         zone_name:
+ *         machine_name:
  *           type: string
- *           description: Zone name for this SSH session
+ *           description: Machine name for this SSH session
  *           example: "web-server-01"
  *         status:
  *           type: string
@@ -106,5 +106,12 @@ const SSHSessions = db.define(
     comment: 'SSH terminal sessions for browser-based SSH access to zones',
   }
 );
+
+// Agent API v1 wire vocabulary (architecture O1): session rows serialize with
+// machine_name; the zone_name attribute/column stays internal (OmniOS domain naming).
+SSHSessions.prototype.toJSON = function toJSON() {
+  const { zone_name: machineName, ...values } = this.get({ plain: true });
+  return { ...values, machine_name: machineName };
+};
 
 export default SSHSessions;

@@ -38,7 +38,7 @@ const handleOrphanedProcessCheck = async (req, res, zoneName) => {
     return res.status(200).json({
       active_vnc_session: false,
       vnc_session_info: null,
-      zone_name: zoneName,
+      machine_name: zoneName,
       message: 'No active VNC session found',
     });
   }
@@ -93,7 +93,7 @@ const handleOrphanedProcessCheck = async (req, res, zoneName) => {
       return res.json({
         active_vnc_session: true,
         vnc_session_info: {
-          zone_name: zoneName,
+          machine_name: zoneName,
           web_port: port,
           host_ip: '127.0.0.1',
           process_id: parseInt(pid),
@@ -101,7 +101,7 @@ const handleOrphanedProcessCheck = async (req, res, zoneName) => {
           created_at: new Date().toISOString(),
           last_accessed: new Date().toISOString(),
           console_url: `http://${hostIP}:${port}/`,
-          proxy_url: `${req.protocol}://${req.get('host')}/zones/${zoneName}/vnc/console`,
+          proxy_url: `${req.protocol}://${req.get('host')}/machines/${zoneName}/vnc/console`,
           direct_access: true,
         },
       });
@@ -111,7 +111,7 @@ const handleOrphanedProcessCheck = async (req, res, zoneName) => {
   return res.status(200).json({
     active_vnc_session: false,
     vnc_session_info: null,
-    zone_name: zoneName,
+    machine_name: zoneName,
     message: 'No active VNC session found',
   });
 };
@@ -153,9 +153,9 @@ const handleExistingSession = async (req, res, zoneName, existingSessionInfo) =>
 
     // Return existing healthy session immediately
     return directSuccessResponse(res, 'Healthy VNC session reused - instant access!', {
-      zone_name: zoneName,
+      machine_name: zoneName,
       console_url: `http://${hostIP}:${existingSessionInfo.port}/`,
-      proxy_url: `${req.protocol}://${req.get('host')}/zones/${zoneName}/vnc/console`,
+      proxy_url: `${req.protocol}://${req.get('host')}/machines/${zoneName}/vnc/console`,
       session_id: existingSessionInfo.pid,
       status: 'active',
       web_port: existingSessionInfo.port,
@@ -264,9 +264,9 @@ const validateAndFinalizeSession = async (req, res, options) => {
   const [hostIP] = req.get('host').split(':');
 
   return directSuccessResponse(res, 'VNC session started successfully', {
-    zone_name: zoneName,
+    machine_name: zoneName,
     console_url: `http://${hostIP}:${webPort}/`,
-    proxy_url: `${req.protocol}://${req.get('host')}/zones/${zoneName}/vnc/console`,
+    proxy_url: `${req.protocol}://${req.get('host')}/machines/${zoneName}/vnc/console`,
     session_id: vncProcess.pid,
     status: 'active',
     web_port: webPort,
@@ -426,27 +426,27 @@ const handleVncSessionStart = async (req, res, zoneName) => {
 
 /**
  * @swagger
- * /zones/{zoneName}/vnc/start:
+ * /machines/{machineName}/vnc/start:
  *   post:
  *     summary: Start VNC console session
- *     description: Starts a VNC console session for the specified zone
+ *     description: Starts a VNC console session for the specified machine (zone)
  *     tags: [VNC Console]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     responses:
  *       200:
  *         description: VNC session started successfully
  *       400:
- *         description: Invalid zone name or zone not running
+ *         description: Invalid machine name or machine not running
  *       404:
- *         description: Zone not found
+ *         description: Machine not found
  *       409:
  *         description: VNC session already active
  *       500:
@@ -454,7 +454,7 @@ const handleVncSessionStart = async (req, res, zoneName) => {
  */
 export const startVncSession = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     log.websocket.info('START VNC REQUEST', { zone_name: zoneName });
 
@@ -476,7 +476,7 @@ export const startVncSession = async (req, res) => {
     return result;
   } catch (error) {
     log.websocket.error('VNC START ERROR', {
-      zone_name: req.params.zoneName,
+      zone_name: req.params.machineName,
       error: error.message,
       stack: error.stack,
     });
@@ -487,20 +487,20 @@ export const startVncSession = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{zoneName}/vnc/info:
+ * /machines/{machineName}/vnc/info:
  *   get:
  *     summary: Get VNC session information
- *     description: Retrieves information about the active VNC session for a zone
+ *     description: Retrieves information about the active VNC session for a machine (zone)
  *     tags: [VNC Console]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     responses:
  *       200:
  *         description: VNC session information retrieved successfully
@@ -509,7 +509,7 @@ export const startVncSession = async (req, res) => {
  */
 export const getVncSessionInfo = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     // Prevent caching for real-time VNC session data
     res.set({
@@ -555,7 +555,7 @@ export const getVncSessionInfo = async (req, res) => {
     return res.json({
       active_vnc_session: true,
       vnc_session_info: {
-        zone_name: zoneName,
+        machine_name: zoneName,
         web_port: sessionInfo.port,
         host_ip: '127.0.0.1',
         process_id: sessionInfo.pid,
@@ -563,7 +563,7 @@ export const getVncSessionInfo = async (req, res) => {
         created_at: sessionInfo.timestamp,
         last_accessed: new Date().toISOString(),
         console_url: `http://${hostIP}:${sessionInfo.port}/`,
-        proxy_url: `${req.protocol}://${req.get('host')}/zones/${zoneName}/vnc/console`,
+        proxy_url: `${req.protocol}://${req.get('host')}/machines/${zoneName}/vnc/console`,
         direct_access: true,
       },
     });
@@ -578,20 +578,20 @@ export const getVncSessionInfo = async (req, res) => {
 
 /**
  * @swagger
- * /zones/{zoneName}/vnc/stop:
+ * /machines/{machineName}/vnc/stop:
  *   delete:
  *     summary: Stop VNC console session
- *     description: Stops the active VNC console session for a zone
+ *     description: Stops the active VNC console session for a machine (zone)
  *     tags: [VNC Console]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
  *       - in: path
- *         name: zoneName
+ *         name: machineName
  *         required: true
  *         schema:
  *           type: string
- *         description: Name of the zone
+ *         description: Name of the machine
  *     responses:
  *       200:
  *         description: VNC session stopped successfully
@@ -602,7 +602,7 @@ export const getVncSessionInfo = async (req, res) => {
  */
 export const stopVncSession = async (req, res) => {
   try {
-    const { zoneName } = req.params;
+    const { machineName: zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
       return errorResponse(res, 400, 'Invalid zone name');
@@ -633,7 +633,7 @@ export const stopVncSession = async (req, res) => {
     });
 
     return directSuccessResponse(res, 'VNC session stopped successfully', {
-      zone_name: zoneName,
+      machine_name: zoneName,
     });
   } catch (error) {
     log.websocket.error('Error stopping VNC session', {

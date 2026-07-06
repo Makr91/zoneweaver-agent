@@ -78,8 +78,30 @@ const { DataTypes } = Sequelize;
  *         interrupts:
  *           type: integer
  *           format: int64
- *           description: Interrupts since boot
+ *           description: Interrupts per second
  *           example: 9876543
+ *         system_calls:
+ *           type: integer
+ *           format: int64
+ *           description: System calls per second
+ *         page_faults:
+ *           type: integer
+ *           format: int64
+ *           description: Page faults per second
+ *         page_ins:
+ *           type: integer
+ *           format: int64
+ *           description: Pages paged in per second
+ *         page_outs:
+ *           type: integer
+ *           format: int64
+ *           description: Pages paged out per second
+ *         per_core_data:
+ *           type: string
+ *           description: >-
+ *             Raw JSON string of per-core CPU utilization data. The /monitoring/system/cpu
+ *             endpoint exposes a parsed `per_core_parsed` array (replacing this raw field)
+ *             when include_cores=true.
  *         scan_timestamp:
  *           type: string
  *           format: date-time

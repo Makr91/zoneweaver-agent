@@ -26,10 +26,10 @@ import { runningTasks } from './TaskState.js';
  *           enum: [pending, running, completed, failed, cancelled]
  *         description: Filter by task status
  *       - in: query
- *         name: zone_name
+ *         name: machine_name
  *         schema:
  *           type: string
- *         description: Filter by zone name
+ *         description: Filter by machine name
  *       - in: query
  *         name: operation
  *         schema:
@@ -56,7 +56,7 @@ import { runningTasks } from './TaskState.js';
  *         name: sort
  *         schema:
  *           type: string
- *           enum: [created_at, priority, status, zone_name, operation, started_at, completed_at]
+ *           enum: [created_at, priority, status, machine_name, operation, started_at, completed_at]
  *           default: created_at
  *         description: Column to sort results by
  *       - in: query
@@ -90,7 +90,7 @@ export const listTasks = async (req, res) => {
     const {
       limit = defaultLimit,
       status,
-      zone_name,
+      machine_name,
       operation,
       operation_ne,
       since,
@@ -105,8 +105,8 @@ export const listTasks = async (req, res) => {
     if (status) {
       whereClause.status = status;
     }
-    if (zone_name) {
-      whereClause.zone_name = zone_name;
+    if (machine_name) {
+      whereClause.zone_name = machine_name;
     }
     if (operation) {
       whereClause.operation = operation;
@@ -129,12 +129,14 @@ export const listTasks = async (req, res) => {
       'created_at',
       'priority',
       'status',
-      'zone_name',
+      'machine_name',
       'operation',
       'started_at',
       'completed_at',
     ];
-    const sortColumn = validSortColumns.includes(sort) ? sort : 'created_at';
+    const requestedSort = validSortColumns.includes(sort) ? sort : 'created_at';
+    // Wire sort value machine_name maps to the internal zone_name column
+    const sortColumn = requestedSort === 'machine_name' ? 'zone_name' : requestedSort;
     const sortDirection = sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
     const tasks = await Tasks.findAll({

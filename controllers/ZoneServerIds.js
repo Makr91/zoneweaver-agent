@@ -29,12 +29,12 @@ const generateNextServerId = async () => {
 
 /**
  * @swagger
- * /zones/ids:
+ * /machines/ids:
  *   get:
  *     summary: Get server ID usage information
  *     description: |
  *       Returns information about used server IDs, constraints, and next available ID.
- *       Used by clients to discover available server IDs before creating zones.
+ *       Used by clients to discover available server IDs before creating machines.
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -54,7 +54,7 @@ const generateNextServerId = async () => {
  *                       server_id:
  *                         type: string
  *                         example: "0001"
- *                       zone_name:
+ *                       machine_name:
  *                         type: string
  *                         example: "0001--web.example.com"
  *                       status:
@@ -98,7 +98,7 @@ export const getServerIds = async (req, res) => {
 
     const used = zones.map(zone => ({
       server_id: zone.server_id,
-      zone_name: zone.name,
+      machine_name: zone.name,
       status: zone.status,
     }));
 
@@ -127,11 +127,11 @@ export const getServerIds = async (req, res) => {
 
 /**
  * @swagger
- * /zones/ids/next:
+ * /machines/ids/next:
  *   get:
  *     summary: Get next available server ID
  *     description: |
- *       Returns the next available server ID for zone creation.
+ *       Returns the next available server ID for machine creation.
  *       Useful for automation scripts that need to quickly allocate a server ID.
  *     tags: [Zone Management]
  *     security:

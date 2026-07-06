@@ -204,23 +204,48 @@ export const importPool = async (req, res) => {
  *     responses:
  *       200:
  *         description: Importable pools listed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 pools:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   description: Names of pools available for import (parsed from `zpool import`)
+ *                 total:
+ *                   type: integer
+ *                 output:
+ *                   type: string
+ *                   description: Raw `zpool import` output
+ *                 message:
+ *                   type: string
+ *                   description: Present only when no pools are available for import
  */
 export const listImportablePools = async (req, res) => {
   void req;
   try {
     const result = await executeCommand('pfexec zpool import');
+    const output = result.output || '';
 
-    if (!result.success && !result.output) {
+    // Every `zpool import` block begins with "pool: <name>" — parse the names so the
+    // response always carries a structured pools[] regardless of whether any exist.
+    const pools = [...output.matchAll(/^\s*pool:\s*(?<name>\S+)/gm)].map(m => m.groups.name);
+
+    if (!result.success && !output) {
       return res.json({
         pools: [],
         total: 0,
+        output: '',
         message: 'No pools available for import',
       });
     }
 
     return res.json({
-      output: result.output || result.error,
-      total: result.output ? result.output.split('pool:').length - 1 : 0,
+      pools,
+      total: pools.length,
+      output,
     });
   } catch (error) {
     log.api.error('Error listing importable pools', {

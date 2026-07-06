@@ -15,7 +15,7 @@ import { log } from '../lib/Logger.js';
 
 /**
  * @swagger
- * /zones/orchestration/status:
+ * /machines/orchestration/status:
  *   get:
  *     summary: Get zone orchestration status
  *     description: Check who is currently controlling zone lifecycle management
@@ -68,7 +68,7 @@ export const getZoneOrchestrationStatus = async (req, res) => {
 
 /**
  * @swagger
- * /zones/orchestration/enable:
+ * /machines/orchestration/enable:
  *   post:
  *     summary: Enable zone orchestration
  *     description: |
@@ -142,7 +142,7 @@ export const enableOrchestration = async (req, res) => {
 
 /**
  * @swagger
- * /zones/orchestration/disable:
+ * /machines/orchestration/disable:
  *   post:
  *     summary: Disable zone orchestration
  *     description: Return zone lifecycle control to the native system zones service
@@ -191,22 +191,22 @@ export const disableOrchestration = async (req, res) => {
 
 /**
  * @swagger
- * /zones/priorities:
+ * /machines/priorities:
  *   get:
- *     summary: List all zones with their priorities
- *     description: Returns all zones with their current priorities from zonecfg attributes
+ *     summary: List all machines with their priorities
+ *     description: Returns all machines (zones) with their current priorities from zonecfg attributes
  *     tags: [Zone Orchestration]
  *     security:
  *       - ApiKeyAuth: []
  *     responses:
  *       200:
- *         description: Zone priorities retrieved successfully
+ *         description: Machine priorities retrieved successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 zones:
+ *                 machines:
  *                   type: array
  *                   items:
  *                     type: object
@@ -215,19 +215,19 @@ export const disableOrchestration = async (req, res) => {
  *                         type: string
  *                       priority:
  *                         type: integer
- *                         description: Zone priority (1-100)
+ *                         description: Machine priority (1-100)
  *                       state:
  *                         type: string
  *                       has_custom_priority:
  *                         type: boolean
- *                         description: Whether zone has custom boot_priority attribute
- *                 total_zones:
+ *                         description: Whether machine has custom boot_priority attribute
+ *                 total_machines:
  *                   type: integer
  *                 priority_groups:
  *                   type: object
- *                   description: Zones grouped by priority ranges
+ *                   description: Machines grouped by priority ranges
  *       500:
- *         description: Failed to retrieve zone priorities
+ *         description: Failed to retrieve machine priorities
  */
 export const getZonePriorities = async (req, res) => {
   void req;
@@ -260,13 +260,13 @@ export const getZonePriorities = async (req, res) => {
     return res.json({
       success: true,
       message: 'Zone priorities retrieved successfully',
-      zones: zonesResult.zones.map(zone => ({
+      machines: zonesResult.zones.map(zone => ({
         name: zone.name,
         priority: zone.priority,
         state: zone.state,
         has_custom_priority: zone.priority !== 95,
       })),
-      total_zones: zonesResult.zones.length,
+      total_machines: zonesResult.zones.length,
       priority_groups: priorityGroups,
     });
   } catch (error) {
@@ -284,12 +284,12 @@ export const getZonePriorities = async (req, res) => {
 
 /**
  * @swagger
- * /zones/orchestration/test:
+ * /machines/orchestration/test:
  *   post:
  *     summary: Test zone orchestration without executing
  *     description: |
  *       Performs a dry run of zone orchestration to show what would happen.
- *       No zones are actually stopped - this just calculates and returns the execution plan.
+ *       No machines are actually stopped - this just calculates and returns the execution plan.
  *     tags: [Zone Orchestration]
  *     security:
  *       - ApiKeyAuth: []
@@ -320,11 +320,11 @@ export const getZonePriorities = async (req, res) => {
  *                     properties:
  *                       priority_range:
  *                         type: integer
- *                       zones:
+ *                       machines:
  *                         type: array
  *                         items:
  *                           type: object
- *                 total_zones:
+ *                 total_machines:
  *                   type: integer
  *                 estimated_duration:
  *                   type: integer
@@ -351,7 +351,7 @@ export const testOrchestration = async (req, res) => {
         success: true,
         message: 'No running zones found - nothing to orchestrate',
         execution_plan: [],
-        total_zones: 0,
+        total_machines: 0,
         estimated_duration: 0,
       });
     }
@@ -376,8 +376,9 @@ export const testOrchestration = async (req, res) => {
     return res.json({
       success: true,
       message: `Zone orchestration test completed - ${zonesResult.zones.length} zones would be orchestrated`,
-      execution_plan: executionPlan,
-      total_zones: zonesResult.zones.length,
+      // Wire vocabulary: the internal plan groups machines under `zones` — rename per group
+      execution_plan: executionPlan.map(({ zones, ...group }) => ({ ...group, machines: zones })),
+      total_machines: zonesResult.zones.length,
       estimated_duration: estimatedDuration,
       strategy,
     });

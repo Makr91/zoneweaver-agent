@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.7](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.6...v0.3.7) (2026-07-06)
+
+
+### Bug Fixes
+
+* UI, API, Docs OIDC CHnages ([974d3f4](https://github.com/Makr91/zoneweaver-agent/commit/974d3f403b85c92343fe5778e4e97ecc6bdc8da8))
+* v1 spec audit corrections (Task enums, MemoryStats/CPUStats/Artifact schemas, envelopes, role-model + config-gated-503 docs, ~45 endpoint fixes), settings deep-merge, restore path-traversal guard, importable-pools shape, services-action 202, monitoring token + syslog token gating, unshadow GET /artifacts/stats, split SettingsSchema/routes/LogStream/Syslog, regen openapi.json ([610ebb7](https://github.com/Makr91/zoneweaver-agent/commit/610ebb706d7391a5c3ae1cee79736932af79f55b))
+
 ## [0.3.6](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.5...v0.3.6) (2026-07-04)
 
 

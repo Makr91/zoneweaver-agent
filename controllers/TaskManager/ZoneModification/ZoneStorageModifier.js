@@ -1,0 +1,299 @@
+/**
+ * @fileoverview Zone Storage Modifier for Zone Configuration Changes
+ * @description Handles adding and removing disks and CD-ROMs from zone configurations via zonecfg
+ */
+
+import { executeCommand } from '../../../lib/CommandManager.js';
+import { log } from '../../../lib/Logger.js';
+import { checkZvolInUse } from '../ZoneCreationManager/index.js';
+import { syncZoneToDatabase } from '../../../lib/ZoneConfigUtils.js';
+import { updateTaskProgress } from '../../../lib/TaskProgressHelper.js';
+
+/**
+ * Find the next available disk number in zone config
+ * @param {Object} zoneConfig - Zone configuration
+ * @returns {number} Next available disk number
+ */
+const getNextDiskNumber = zoneConfig => {
+  let maxNum = -1;
+
+  if (Array.isArray(zoneConfig.attr)) {
+    for (const attr of zoneConfig.attr) {
+      const match = /^disk(?<num>\d+)$/u.exec(attr.name);
+      if (match) {
+        const num = parseInt(match.groups.num, 10);
+        if (num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+
+  return maxNum + 1;
+};
+
+/**
+ * Find the next available cdrom number in zone config
+ * @param {Object} zoneConfig - Zone configuration
+ * @returns {number} Next available cdrom number
+ */
+const getNextCdromNumber = zoneConfig => {
+  let maxNum = -1;
+  let hasBareAttr = false;
+
+  if (Array.isArray(zoneConfig.attr)) {
+    for (const attr of zoneConfig.attr) {
+      if (attr.name === 'cdrom') {
+        hasBareAttr = true;
+      }
+      const match = /^cdrom(?<num>\d+)$/u.exec(attr.name);
+      if (match) {
+        const num = parseInt(match.groups.num, 10);
+        if (num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+
+  // If bare 'cdrom' exists, start numbering from 0
+  if (hasBareAttr && maxNum === -1) {
+    return 0;
+  }
+
+  return maxNum + 1;
+};
+
+/**
+ * Add disks to zone configuration
+ * @param {string} zoneName - Zone name
+ * @param {Object} zoneConfig - Current zone configuration
+ * @param {Array} disks - Array of disk configurations
+ * @param {boolean} force - Whether to force attach in-use datasets
+ */
+const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
+  let nextNum = getNextDiskNumber(zoneConfig);
+  const zfsPromises = [];
+  const zonecfgCmds = [];
+
+  for (const disk of disks) {
+    let diskPath = null;
+
+    if (disk.create_new) {
+      const pool = disk.pool || 'rpool';
+      const dset = disk.dataset || 'zones';
+      const volName = disk.volume_name || `disk${nextNum}`;
+      const size = disk.size || '50G';
+      diskPath = `${pool}/${dset}/${zoneName}/${volName}`;
+
+      const sparseFlag = disk.sparse !== false ? '-s' : '';
+      zfsPromises.push(
+        executeCommand(
+          `pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`,
+          undefined,
+          onData
+        ).then(res => {
+          if (!res.success) {
+            throw new Error(`Failed to create disk volume: ${res.error}`);
+          }
+          return diskPath;
+        })
+      );
+    } else if (disk.existing_dataset) {
+      diskPath = disk.existing_dataset;
+
+      zfsPromises.push(
+        checkZvolInUse(diskPath, zoneName).then(usageCheck => {
+          if (usageCheck.inUse && !force) {
+            throw new Error(`Disk ${diskPath} is already in use by zone ${usageCheck.usedBy}`);
+          }
+          return diskPath;
+        })
+      );
+    }
+
+    if (diskPath) {
+      zonecfgCmds.push(
+        `add attr; set name=disk${nextNum}; set value=\\"${diskPath}\\"; set type=string; end; add device; set match=/dev/zvol/rdsk/${diskPath}; end;`
+      );
+      nextNum++;
+    }
+  }
+
+  // Wait for ZFS operations
+  await Promise.all(zfsPromises);
+
+  // Apply zonecfg
+  if (zonecfgCmds.length > 0) {
+    const diskResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${zonecfgCmds.join(' ')}"`,
+      undefined,
+      onData
+    );
+    if (!diskResult.success) {
+      throw new Error(`Failed to add disks to zone: ${diskResult.error}`);
+    }
+    log.task.info('Added disks to zone', {
+      zone_name: zoneName,
+      count: disks.length,
+    });
+  }
+};
+
+/**
+ * Remove disks from zone configuration
+ * @param {string} zoneName - Zone name
+ * @param {Object} zoneConfig - Current zone configuration
+ * @param {Array} diskNames - Array of disk attribute names to remove (e.g., 'disk0')
+ */
+const removeDisks = async (zoneName, zoneConfig, diskNames, onData = null) => {
+  const cmds = [];
+
+  for (const diskName of diskNames) {
+    // Find the disk path from current config to remove the device block
+    let diskPath = null;
+    if (Array.isArray(zoneConfig.attr)) {
+      const attr = zoneConfig.attr.find(a => a.name === diskName);
+      if (attr) {
+        diskPath = attr.value;
+      }
+    }
+
+    // Remove the attribute
+    cmds.push(`remove attr name=${diskName}`);
+
+    // Remove the device block if we found the path
+    if (diskPath) {
+      cmds.push(`remove device match=/dev/zvol/rdsk/${diskPath}`);
+    }
+  }
+
+  if (cmds.length > 0) {
+    const removeResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`,
+      undefined,
+      onData
+    );
+    if (!removeResult.success) {
+      throw new Error(`Failed to remove disks: ${removeResult.error}`);
+    }
+    log.task.info('Removed disks from zone', { zone_name: zoneName, count: diskNames.length });
+  }
+};
+
+/**
+ * Add CD-ROMs to zone configuration
+ * @param {string} zoneName - Zone name
+ * @param {Object} zoneConfig - Current zone configuration
+ * @param {Array} cdroms - Array of CDROM configurations
+ */
+const addCdroms = async (zoneName, zoneConfig, cdroms, onData = null) => {
+  let nextNum = getNextCdromNumber(zoneConfig);
+  const cmds = [];
+
+  for (const cdrom of cdroms) {
+    const attrName = `cdrom${nextNum}`;
+    cmds.push(
+      `add attr; set name=${attrName}; set value=\\"${cdrom.path}\\"; set type=string; end; add fs; set dir=${cdrom.path}; set special=${cdrom.path}; set type=lofs; add options ro; add options nodevices; end;`
+    );
+    nextNum++;
+  }
+
+  if (cmds.length > 0) {
+    const cdromResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`,
+      undefined,
+      onData
+    );
+    if (!cdromResult.success) {
+      throw new Error(`Failed to add CDROMs to zone: ${cdromResult.error}`);
+    }
+    log.task.info('Added CDROMs to zone', { zone_name: zoneName, count: cdroms.length });
+  }
+};
+
+/**
+ * Remove CD-ROMs from zone configuration
+ * @param {string} zoneName - Zone name
+ * @param {Object} zoneConfig - Current zone configuration
+ * @param {Array} cdromNames - Array of cdrom attribute names to remove (e.g., 'cdrom0')
+ */
+const removeCdroms = async (zoneName, zoneConfig, cdromNames, onData = null) => {
+  const cmds = [];
+
+  for (const cdromName of cdromNames) {
+    // Find the cdrom path from current config to remove the fs block
+    let cdromPath = null;
+    if (Array.isArray(zoneConfig.attr)) {
+      const attr = zoneConfig.attr.find(a => a.name === cdromName);
+      if (attr) {
+        cdromPath = attr.value;
+      }
+    }
+
+    // Remove the attribute
+    cmds.push(`remove attr name=${cdromName}`);
+
+    // Remove the fs block if we found the path
+    if (cdromPath) {
+      cmds.push(`remove fs dir=${cdromPath}`);
+    }
+  }
+
+  if (cmds.length > 0) {
+    const removeResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`,
+      undefined,
+      onData
+    );
+    if (!removeResult.success) {
+      throw new Error(`Failed to remove CDROMs: ${removeResult.error}`);
+    }
+    log.task.info('Removed CDROMs from zone', { zone_name: zoneName, count: cdromNames.length });
+  }
+};
+
+/**
+ * Handle storage modifications
+ * @param {string} zoneName - Zone name
+ * @param {Object} zoneConfig - Zone configuration
+ * @param {Object} metadata - Modification metadata
+ * @param {Object} task - Task object
+ * @param {Array} changes - Changes array
+ */
+export const handleStorageModifications = async (
+  zoneName,
+  zoneConfig,
+  metadata,
+  task,
+  changes,
+  onData = null
+) => {
+  if (metadata.add_disks?.length > 0) {
+    await updateTaskProgress(task, 60, { status: 'adding_disks' });
+    await addDisks(zoneName, zoneConfig, metadata.add_disks, metadata.force, onData);
+    changes.push('add_disks');
+    await syncZoneToDatabase(zoneName);
+  }
+
+  if (metadata.remove_disks?.length > 0) {
+    await updateTaskProgress(task, 70, { status: 'removing_disks' });
+    await removeDisks(zoneName, zoneConfig, metadata.remove_disks, onData);
+    changes.push('remove_disks');
+    await syncZoneToDatabase(zoneName);
+  }
+
+  if (metadata.add_cdroms?.length > 0) {
+    await updateTaskProgress(task, 75, { status: 'adding_cdroms' });
+    await addCdroms(zoneName, zoneConfig, metadata.add_cdroms, onData);
+    changes.push('add_cdroms');
+    await syncZoneToDatabase(zoneName);
+  }
+
+  if (metadata.remove_cdroms?.length > 0) {
+    await updateTaskProgress(task, 80, { status: 'removing_cdroms' });
+    await removeCdroms(zoneName, zoneConfig, metadata.remove_cdroms, onData);
+    changes.push('remove_cdroms');
+    await syncZoneToDatabase(zoneName);
+  }
+};

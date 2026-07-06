@@ -27,6 +27,9 @@
           <envvar name='NODE_ENV' value='production'/>
           <envvar name='CONFIG_PATH' value='/etc/zoneweaver-agent/config.yaml'/>
           <envvar name='HOME' value='/var/lib/zoneweaver-agent'/>
+          <!-- bcrypt and node-sqlite3 share the libuv threadpool (default 4
+               threads); widen it so auth hashing never starves database IO -->
+          <envvar name='UV_THREADPOOL_SIZE' value='16'/>
         </method_environment>
       </method_context>
     </exec_method>

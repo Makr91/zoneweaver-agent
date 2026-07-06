@@ -13,7 +13,6 @@ import SystemMetricsCollector from './SystemMetricsCollector.js';
 import { cleanupOldTasks } from './TaskQueue/index.js';
 import CleanupService from './CleanupService.js';
 import HostInfo from '../models/HostInfoModel.js';
-import db from '../config/Database.js';
 import DatabaseMigrations from '../config/DatabaseMigrations.js';
 import { getRebootStatus, checkAndClearAfterReboot } from '../lib/RebootManager.js';
 import { getFaultStatusForHealth } from './FaultManagementController/index.js';
@@ -132,27 +131,8 @@ class HostMonitoringService {
     }
 
     try {
-      // Initialize database schema and run migrations
-      try {
-        // Run database migrations first
-        await DatabaseMigrations.setupDatabase();
-      } catch (error) {
-        log.database.warn('Database migration warning', {
-          error: error.message,
-          hostname: this.hostname,
-        });
-        // Try basic sync as fallback
-        try {
-          await db.sync({ alter: false, force: false });
-        } catch (syncError) {
-          log.database.error('Database initialization failed', {
-            error: syncError.message,
-            stack: syncError.stack,
-            hostname: this.hostname,
-          });
-          throw syncError;
-        }
-      }
+      // Initialize database schema (idempotent — also runs at startup in index.js)
+      await DatabaseMigrations.setupDatabase();
 
       // Initialize host info record
       await HostInfo.upsert({

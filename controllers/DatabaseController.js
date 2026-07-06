@@ -1,12 +1,13 @@
 /**
  * @fileoverview Database Management Controller
  * @description Endpoints for database maintenance operations (stats, vacuum, analyze, cleanup)
+ * across the per-datatype SQLite database files.
  * @author Mark Gilbert
  * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
 import { stat } from 'fs/promises';
-import db from '../config/Database.js';
+import { allDatabases } from '../config/Database.js';
 import config from '../config/ConfigLoader.js';
 import CleanupService from './CleanupService.js';
 import { log } from '../lib/Logger.js';
@@ -36,8 +37,9 @@ const getFileSizeOrZero = async filePath => {
  *   get:
  *     summary: Get database statistics
  *     description: |
- *       Returns database file sizes (main DB, WAL, SHM), table row counts, and index statistics.
- *       Only available for SQLite databases.
+ *       Returns statistics for every per-datatype database file: file sizes
+ *       (main DB, WAL, SHM), table row counts, index inventory, and SQLite
+ *       page/freelist internals. Only available for SQLite databases.
  *     tags: [Database Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -52,58 +54,73 @@ const getFileSizeOrZero = async filePath => {
  *                 dialect:
  *                   type: string
  *                   example: "sqlite"
- *                 storage_path:
- *                   type: string
- *                 files:
- *                   type: object
- *                   properties:
- *                     database:
- *                       type: integer
- *                       description: Main database file size in bytes
- *                     wal:
- *                       type: integer
- *                       description: WAL file size in bytes
- *                     shm:
- *                       type: integer
- *                       description: SHM file size in bytes
- *                     total:
- *                       type: integer
- *                       description: Total size in bytes
- *                 tables:
+ *                 databases:
  *                   type: array
  *                   items:
  *                     type: object
  *                     properties:
  *                       name:
  *                         type: string
- *                       row_count:
+ *                         description: Database domain (core, metricsNetwork, metricsStorage, metricsSystem)
+ *                       storage_path:
+ *                         type: string
+ *                       files:
+ *                         type: object
+ *                         properties:
+ *                           database:
+ *                             type: integer
+ *                             description: Main database file size in bytes
+ *                           wal:
+ *                             type: integer
+ *                             description: WAL file size in bytes
+ *                           shm:
+ *                             type: integer
+ *                             description: SHM file size in bytes
+ *                           total:
+ *                             type: integer
+ *                             description: Total size in bytes
+ *                       internal:
+ *                         type: object
+ *                         description: SQLite internals (PRAGMA page/freelist statistics)
+ *                         properties:
+ *                           page_size:
+ *                             type: integer
+ *                           page_count:
+ *                             type: integer
+ *                           freelist_count:
+ *                             type: integer
+ *                           freelist_bytes:
+ *                             type: integer
+ *                       tables:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             name:
+ *                               type: string
+ *                             row_count:
+ *                               type: integer
+ *                       total_tables:
  *                         type: integer
- *                 internal:
- *                   type: object
- *                   description: SQLite internals (PRAGMA page/freelist statistics)
- *                   properties:
- *                     page_size:
- *                       type: integer
- *                     page_count:
- *                       type: integer
- *                     freelist_count:
- *                       type: integer
- *                     freelist_bytes:
- *                       type: integer
+ *                       total_rows:
+ *                         type: integer
+ *                       indexes:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             name:
+ *                               type: string
+ *                             table:
+ *                               type: string
+ *                       total_indexes:
+ *                         type: integer
+ *                 total_size:
+ *                   type: integer
+ *                   description: Combined size of every database file in bytes
  *                 total_tables:
  *                   type: integer
  *                 total_rows:
- *                   type: integer
- *                 indexes:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       name:
- *                         type: string
- *                       table:
- *                         type: string
- *                 total_indexes:
  *                   type: integer
  *       400:
  *         description: Database stats only available for SQLite
@@ -119,63 +136,68 @@ export const getDatabaseStats = async (req, res) => {
       return errorResponse(res, 400, 'Database stats only available for SQLite');
     }
 
-    const storagePath = dbConfig.storage;
-    const walPath = `${storagePath}-wal`;
-    const shmPath = `${storagePath}-shm`;
+    const databases = await Promise.all(
+      allDatabases.map(async ({ name, file, instance }) => {
+        const [dbSize, walSize, shmSize] = await Promise.all([
+          getFileSizeOrZero(file),
+          getFileSizeOrZero(`${file}-wal`),
+          getFileSizeOrZero(`${file}-shm`),
+        ]);
 
-    // Get file sizes in parallel
-    const [dbSize, walSize, shmSize] = await Promise.all([
-      getFileSizeOrZero(storagePath),
-      getFileSizeOrZero(walPath),
-      getFileSizeOrZero(shmPath),
-    ]);
+        const [tables] = await instance.query(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        );
 
-    // Get table list
-    const [tables] = await db.query(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    );
+        const tableStats = await Promise.all(
+          tables.map(async table => {
+            const [[countResult]] = await instance.query(
+              `SELECT COUNT(*) as count FROM "${table.name}"`
+            );
+            return {
+              name: table.name,
+              row_count: countResult.count,
+            };
+          })
+        );
 
-    // Get row counts for all tables in parallel
-    const tableStats = await Promise.all(
-      tables.map(async table => {
-        const [[countResult]] = await db.query(`SELECT COUNT(*) as count FROM "${table.name}"`);
+        const [indexes] = await instance.query(
+          "SELECT name, tbl_name as 'table' FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY tbl_name, name"
+        );
+
+        const [[pageCount]] = await instance.query('PRAGMA page_count');
+        const [[pageSize]] = await instance.query('PRAGMA page_size');
+        const [[freelistCount]] = await instance.query('PRAGMA freelist_count');
+
         return {
-          name: table.name,
-          row_count: countResult.count,
+          name,
+          storage_path: file,
+          files: {
+            database: dbSize,
+            wal: walSize,
+            shm: shmSize,
+            total: dbSize + walSize + shmSize,
+          },
+          internal: {
+            page_size: pageSize.page_size,
+            page_count: pageCount.page_count,
+            freelist_count: freelistCount.freelist_count,
+            freelist_bytes: freelistCount.freelist_count * pageSize.page_size,
+          },
+          tables: tableStats,
+          total_tables: tableStats.length,
+          total_rows: tableStats.reduce((sum, t) => sum + t.row_count, 0),
+          indexes: indexes.map(idx => ({ name: idx.name, table: idx.table })),
+          total_indexes: indexes.length,
         };
       })
     );
 
-    // Get indexes
-    const [indexes] = await db.query(
-      "SELECT name, tbl_name as 'table' FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY tbl_name, name"
-    );
-
-    // Get page count and page size for internal stats
-    const [[pageCount]] = await db.query('PRAGMA page_count');
-    const [[pageSize]] = await db.query('PRAGMA page_size');
-    const [[freelistCount]] = await db.query('PRAGMA freelist_count');
-
     return directSuccessResponse(res, 'Database statistics retrieved successfully', {
       dialect: dbConfig.dialect,
-      storage_path: storagePath,
-      files: {
-        database: dbSize,
-        wal: walSize,
-        shm: shmSize,
-        total: dbSize + walSize + shmSize,
-      },
-      internal: {
-        page_size: pageSize.page_size,
-        page_count: pageCount.page_count,
-        freelist_count: freelistCount.freelist_count,
-        freelist_bytes: freelistCount.freelist_count * pageSize.page_size,
-      },
-      tables: tableStats,
-      total_tables: tableStats.length,
-      total_rows: tableStats.reduce((sum, t) => sum + t.row_count, 0),
-      indexes: indexes.map(idx => ({ name: idx.name, table: idx.table })),
-      total_indexes: indexes.length,
+      databases,
+      total_size: databases.reduce((sum, d) => sum + d.files.total, 0),
+      total_tables: databases.reduce((sum, d) => sum + d.total_tables, 0),
+      total_rows: databases.reduce((sum, d) => sum + d.total_rows, 0),
     });
   } catch (error) {
     log.database.error('Error getting database stats', {
@@ -192,9 +214,9 @@ export const getDatabaseStats = async (req, res) => {
  *   post:
  *     summary: Run SQLite VACUUM
  *     description: |
- *       Reclaims disk space from deleted rows by rebuilding the database file.
- *       This operation may take a while for large databases and temporarily doubles disk usage.
- *       Only available for SQLite databases.
+ *       Reclaims disk space from deleted rows by rebuilding every per-datatype
+ *       database file. This operation may take a while for large databases and
+ *       temporarily doubles disk usage. Only available for SQLite databases.
  *     tags: [Database Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -206,11 +228,20 @@ export const getDatabaseStats = async (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 size_before:
- *                   type: integer
- *                 size_after:
- *                   type: integer
- *                 space_reclaimed:
+ *                 databases:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       size_before:
+ *                         type: integer
+ *                       size_after:
+ *                         type: integer
+ *                       space_reclaimed:
+ *                         type: integer
+ *                 total_reclaimed:
  *                   type: integer
  *       500:
  *         description: Failed to run VACUUM
@@ -223,29 +254,35 @@ export const vacuumDatabase = async (req, res) => {
       return errorResponse(res, 400, 'VACUUM only available for SQLite');
     }
 
-    const storagePath = dbConfig.storage;
-    const sizeBefore = await getFileSizeOrZero(storagePath);
-
     log.database.info('Starting database VACUUM', {
       triggered_by: req.entity.name,
-      size_before: sizeBefore,
+      databases: allDatabases.map(d => d.name),
     });
 
-    await db.query('VACUUM');
+    const databases = await Promise.all(
+      allDatabases.map(async ({ name, file, instance }) => {
+        const sizeBefore = await getFileSizeOrZero(file);
+        await instance.query('VACUUM');
+        const sizeAfter = await getFileSizeOrZero(file);
+        return {
+          name,
+          size_before: sizeBefore,
+          size_after: sizeAfter,
+          space_reclaimed: sizeBefore - sizeAfter,
+        };
+      })
+    );
 
-    const sizeAfter = await getFileSizeOrZero(storagePath);
+    const totalReclaimed = databases.reduce((sum, d) => sum + d.space_reclaimed, 0);
 
     log.database.info('Database VACUUM completed', {
       triggered_by: req.entity.name,
-      size_before: sizeBefore,
-      size_after: sizeAfter,
-      space_reclaimed: sizeBefore - sizeAfter,
+      total_reclaimed: totalReclaimed,
     });
 
     return directSuccessResponse(res, 'Database VACUUM completed successfully', {
-      size_before: sizeBefore,
-      size_after: sizeAfter,
-      space_reclaimed: sizeBefore - sizeAfter,
+      databases,
+      total_reclaimed: totalReclaimed,
     });
   } catch (error) {
     log.database.error('Error running VACUUM', {
@@ -262,7 +299,7 @@ export const vacuumDatabase = async (req, res) => {
  *   post:
  *     summary: Run SQLite ANALYZE
  *     description: |
- *       Refreshes query planner statistics for optimal query performance.
+ *       Refreshes query planner statistics on every per-datatype database file.
  *       This is a lightweight operation and safe to run at any time.
  *       Only available for SQLite databases.
  *     tags: [Database Management]
@@ -284,9 +321,10 @@ export const analyzeDatabase = async (req, res) => {
 
     log.database.info('Starting database ANALYZE', {
       triggered_by: req.entity.name,
+      databases: allDatabases.map(d => d.name),
     });
 
-    await db.query('ANALYZE');
+    await Promise.all(allDatabases.map(({ instance }) => instance.query('ANALYZE')));
 
     log.database.info('Database ANALYZE completed', {
       triggered_by: req.entity.name,

@@ -1,5 +1,5 @@
 import { Sequelize } from 'sequelize';
-import db from '../config/Database.js';
+import { coreDb as db } from '../config/Database.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const { DataTypes } = Sequelize;

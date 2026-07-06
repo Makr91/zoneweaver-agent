@@ -1,5 +1,5 @@
 import { Sequelize } from 'sequelize';
-import db from '../config/Database.js';
+import { metricsStorageDb as db } from '../config/Database.js';
 
 const { DataTypes } = Sequelize;
 

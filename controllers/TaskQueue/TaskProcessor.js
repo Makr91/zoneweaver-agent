@@ -25,21 +25,31 @@ const processNextTask = async () => {
       return;
     }
 
-    // Check for failed dependencies and cancel dependent tasks
-    const failedDependencies = await Tasks.findAll({
-      where: {
-        status: { [Op.in]: ['failed', 'cancelled'] },
-      },
-      attributes: ['id'],
+    // Resolve dependency gating from the small PENDING set instead of scanning
+    // the month of completed/failed history the tasks table retains — this
+    // runs every 2 seconds, so it must stay bounded by queue depth, not by
+    // table size.
+    const pendingWithDeps = await Tasks.findAll({
+      where: { status: 'pending', depends_on: { [Op.ne]: null } },
+      attributes: ['id', 'depends_on', 'parent_task_id'],
+      raw: true,
     });
 
-    if (failedDependencies.length > 0) {
-      const failedIds = failedDependencies.map(t => t.id);
+    let completedDepIds = [];
+    if (pendingWithDeps.length > 0) {
+      const depIds = [...new Set(pendingWithDeps.map(t => t.depends_on))];
+      const deps = await Tasks.findAll({
+        where: { id: { [Op.in]: depIds } },
+        attributes: ['id', 'status'],
+        raw: true,
+      });
+      const depStatus = new Map(deps.map(d => [d.id, d.status]));
 
-      // Get tasks to cancel (need parent_task_id before bulk update)
-      const tasksToCancel = await Tasks.findAll({
-        where: { depends_on: { [Op.in]: failedIds }, status: 'pending' },
-        attributes: ['id', 'parent_task_id'],
+      // A dependency that failed, was cancelled, or no longer exists (cleaned
+      // up) can never complete — cancel its dependents.
+      const tasksToCancel = pendingWithDeps.filter(t => {
+        const status = depStatus.get(t.depends_on);
+        return status === 'failed' || status === 'cancelled' || status === undefined;
       });
 
       if (tasksToCancel.length > 0) {
@@ -62,23 +72,15 @@ const processNextTask = async () => {
           )
         );
       }
+
+      completedDepIds = depIds.filter(id => depStatus.get(id) === 'completed');
     }
 
     // Find highest priority pending task that's not blocked by dependencies
     const task = await Tasks.findOne({
       where: {
         status: 'pending',
-        [Op.or]: [
-          { depends_on: null },
-          {
-            depends_on: {
-              [Op.in]: await Tasks.findAll({
-                where: { status: 'completed' },
-                attributes: ['id'],
-              }).then(tasks => tasks.map(t => t.id)),
-            },
-          },
-        ],
+        [Op.or]: [{ depends_on: null }, { depends_on: { [Op.in]: completedDepIds } }],
       },
       order: [
         ['priority', 'DESC'],

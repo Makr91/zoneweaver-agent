@@ -10,6 +10,9 @@ export PATH="/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/bin:/usr/sbin
 export NODE_ENV="${NODE_ENV:-production}"
 export CONFIG_PATH="${CONFIG_PATH:-/etc/zoneweaver-agent/config.yaml}"
 export HOME="${HOME:-/var/lib/zoneweaver-agent}"
+# bcrypt and node-sqlite3 share the libuv threadpool (default 4 threads);
+# widen it so auth hashing never starves database IO
+export UV_THREADPOOL_SIZE="${UV_THREADPOOL_SIZE:-16}"
 
 cd /opt/zoneweaver-agent
 

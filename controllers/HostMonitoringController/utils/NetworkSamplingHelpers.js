@@ -6,7 +6,7 @@
  */
 
 import { QueryTypes, Op } from 'sequelize';
-import db from '../../../config/Database.js';
+import { metricsNetworkDb as db } from '../../../config/Database.js';
 import NetworkUsage from '../../../models/NetworkUsageModel.js';
 import { NETWORK_USAGE_ATTRIBUTES } from './QueryHelpers.js';
 import { log } from '../../../lib/Logger.js';

@@ -5,6 +5,7 @@ import { Op } from 'sequelize';
 import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';
 import { verifySetupToken } from '../lib/SetupToken.js';
+import { purgeApiKeyCacheEntry } from '../middleware/VerifyApiKey.js';
 
 // Agent API v1 direct-mode role model (enforced in middleware/VerifyApiKey.js)
 const VALID_ROLES = ['admin', 'operator', 'viewer'];
@@ -29,13 +30,15 @@ const isLastActiveAdmin = async entity => {
   return otherAdmins === 0;
 };
 
-// Generate a secure API key with hw_ (Hyperweaver) prefix. The prefix is a human
-// label only — verifyApiKey bcrypt-compares the whole string, so pre-existing wh_
-// keys keep validating unchanged.
-const generateApiKeyString = () => {
+// Generate secure API key credentials: hw_<key_id>.<secret>. The key_id (16
+// base64url chars, stored plaintext) lets verifyApiKey select the entity row
+// directly and run exactly ONE bcrypt compare; the bcrypt hash covers the full
+// key string.
+const generateApiKeyCredentials = () => {
   const apiKeyConfig = config.get('api_keys') || { key_length: 64 };
-  const randomBytes = crypto.randomBytes(apiKeyConfig.key_length || 64);
-  return `hw_${randomBytes.toString('base64url')}`;
+  const keyId = crypto.randomBytes(12).toString('base64url');
+  const secret = crypto.randomBytes(apiKeyConfig.key_length || 64).toString('base64url');
+  return { keyId, apiKey: `hw_${keyId}.${secret}` };
 };
 
 /**
@@ -116,12 +119,13 @@ export const bootstrapFirstApiKey = async (req, res) => {
     }
 
     // Generate bootstrap API key
-    const apiKey = generateApiKeyString();
+    const { keyId, apiKey } = generateApiKeyCredentials();
     const hashRounds = apiKeyConfig.hash_rounds || 12;
     const hashedKey = await bcrypt.hash(apiKey, hashRounds);
 
     await Entities.create({
       name: req.body.name || 'Bootstrap-Key',
+      key_id: keyId,
       api_key_hash: hashedKey,
       description: req.body.description || 'Initial bootstrap API key',
       role: 'admin', // First key is always the admin key (Agent API v1 role model)
@@ -229,13 +233,14 @@ export const generateApiKey = async (req, res) => {
     }
 
     // Generate new API key
-    const apiKey = generateApiKeyString();
+    const { keyId, apiKey } = generateApiKeyCredentials();
     const apiKeyConfig = config.get('api_keys') || {};
     const hashRounds = apiKeyConfig.hash_rounds || 12;
     const hashedKey = await bcrypt.hash(apiKey, hashRounds);
 
     const entity = await Entities.create({
       name,
+      key_id: keyId,
       api_key_hash: hashedKey,
       description: description || null,
       role: entityRole,
@@ -310,7 +315,16 @@ export const listApiKeys = async (req, res) => {
   void req;
   try {
     const entities = await Entities.findAll({
-      attributes: ['id', 'name', 'description', 'role', 'is_active', 'created_at', 'last_used'],
+      attributes: [
+        'id',
+        'name',
+        'key_id',
+        'description',
+        'role',
+        'is_active',
+        'created_at',
+        'last_used',
+      ],
       order: [['created_at', 'DESC']],
     });
 
@@ -371,6 +385,7 @@ export const deleteApiKey = async (req, res) => {
     }
 
     await entity.destroy();
+    purgeApiKeyCacheEntry(entity.id);
 
     return res.json({
       message: 'API key deleted successfully',
@@ -431,6 +446,7 @@ export const revokeApiKey = async (req, res) => {
     }
 
     await entity.update({ is_active: false });
+    purgeApiKeyCacheEntry(entity.id);
 
     return res.json({
       message: 'API key revoked successfully',

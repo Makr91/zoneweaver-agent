@@ -1,13 +1,52 @@
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import Entities from '../models/EntityModel.js';
 import { log } from '../lib/Logger.js';
 
 /**
  * @fileoverview API Key verification middleware for Zoneweaver Agent
- * @description Validates API keys provided in Authorization header, adds entity
- * information to the request, and enforces the Agent API v1 direct-mode role
- * model (viewer < operator < admin) via a central method+path policy.
+ * @description Validates API keys of the form `hw_<key_id>.<secret>`: the key_id
+ * selects the entity row directly, so verification costs exactly ONE bcrypt
+ * compare — never a compare against every stored hash. Verified keys are cached
+ * in memory (sha256 of the presented key), so repeat requests skip bcrypt and
+ * the database entirely. Also enforces the Agent API v1 direct-mode role model
+ * (viewer < operator < admin) via a central method+path policy.
  */
+
+/**
+ * API key shape: hw_ prefix, 16-char base64url key_id, dot, base64url secret.
+ * @type {RegExp}
+ */
+const API_KEY_PATTERN = /^hw_(?<keyId>[A-Za-z0-9_-]{16})\.[A-Za-z0-9_-]+$/;
+
+/**
+ * How long a cached verification may satisfy requests before the entity's
+ * last_used column is refreshed in the database.
+ * @type {number}
+ */
+const LAST_USED_FLUSH_MS = 60000;
+
+/**
+ * Verified-key cache: sha256(presented key) → {id, name, description, role,
+ * lastUsedFlush}. Only SUCCESSFUL verifications are cached (a flood of bogus
+ * keys cannot grow it), and every mutation path (revoke/delete) purges through
+ * purgeApiKeyCacheEntry, so entries never outlive their entity's validity.
+ * @type {Map<string, {id: number, name: string, description: string|null, role: string, lastUsedFlush: number}>}
+ */
+const verifiedKeyCache = new Map();
+
+/**
+ * Remove any cached verifications for an entity (call on revoke/delete).
+ * @param {number} entityId - Entity whose cached keys must be dropped
+ * @returns {void}
+ */
+export const purgeApiKeyCacheEntry = entityId => {
+  for (const [hash, entry] of verifiedKeyCache) {
+    if (entry.id === entityId) {
+      verifiedKeyCache.delete(hash);
+    }
+  }
+};
 
 /**
  * Role hierarchy for the direct-mode authorization model (Agent API v1).
@@ -77,8 +116,42 @@ const requiredRole = (method, path) => {
 };
 
 /**
+ * Verify the presented key against the entity selected by its key_id.
+ * @param {string} apiKey - Full presented API key
+ * @returns {Promise<Object|null>} Cache entry for a valid key, null otherwise
+ */
+const verifyAgainstDatabase = async apiKey => {
+  const match = API_KEY_PATTERN.exec(apiKey);
+  if (!match) {
+    return null;
+  }
+
+  const entity = await Entities.findOne({
+    where: { key_id: match.groups.keyId, is_active: true },
+  });
+  if (!entity) {
+    return null;
+  }
+
+  const isValid = await bcrypt.compare(apiKey, entity.api_key_hash);
+  if (!isValid) {
+    return null;
+  }
+
+  return {
+    id: entity.id,
+    name: entity.name,
+    description: entity.description,
+    role: entity.role || 'admin',
+    lastUsedFlush: 0,
+  };
+};
+
+/**
  * Middleware to verify API key authentication
- * @description Validates API key from Authorization header, updates last_used timestamp, and adds entity info to request
+ * @description Validates the API key from the X-API-Key or Authorization: Bearer
+ * header (cache-first, one bcrypt compare on a miss), refreshes last_used at
+ * most once per minute per key, and adds entity information to the request.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
@@ -93,7 +166,7 @@ const requiredRole = (method, path) => {
  *
  * @example
  * // Expected Authorization header format
- * Authorization: Bearer wh_abc123def456...
+ * Authorization: Bearer hw_<key_id>.<secret>
  */
 export const verifyApiKey = async (req, res, next) => {
   // Support both X-API-Key and Authorization: Bearer formats
@@ -111,50 +184,51 @@ export const verifyApiKey = async (req, res, next) => {
       });
     }
 
-    // Find entity with matching API key hash (parallel execution for performance)
-    const entities = await Entities.findAll({
-      where: { is_active: true },
-    });
+    const cacheKey = crypto.createHash('sha256').update(apiKey).digest('hex');
+    let entry = verifiedKeyCache.get(cacheKey);
 
-    // Use Promise.all for parallel password checking (10x performance improvement)
-    const validationPromises = entities.map(async entity => {
-      const isValid = await bcrypt.compare(apiKey, entity.api_key_hash);
-      return isValid ? entity : null;
-    });
-
-    const validationResults = await Promise.all(validationPromises);
-    const validEntity = validationResults.find(entity => entity !== null);
-
-    if (!validEntity) {
-      return res.status(403).json({ msg: 'Invalid API key' });
+    if (!entry) {
+      entry = await verifyAgainstDatabase(apiKey);
+      if (!entry) {
+        return res.status(403).json({ msg: 'Invalid API key' });
+      }
+      verifiedKeyCache.set(cacheKey, entry);
     }
 
-    // Enforce the direct-mode role model (Agent API v1). Legacy rows without a
-    // role are admin — the flat super-admin behavior they were created under.
-    const role = validEntity.role || 'admin';
+    // Enforce the direct-mode role model (Agent API v1).
     const needed = requiredRole(req.method, req.path);
-    if ((ROLE_LEVELS[role] || 0) < ROLE_LEVELS[needed]) {
+    if ((ROLE_LEVELS[entry.role] || 0) < ROLE_LEVELS[needed]) {
       log.auth.warn('API key role insufficient for request', {
-        entity_name: validEntity.name,
-        role,
+        entity_name: entry.name,
+        role: entry.role,
         required_role: needed,
         request_path: req.path,
         request_method: req.method,
       });
       return res.status(403).json({
-        msg: `Insufficient role: this operation requires '${needed}' (key role: '${role}')`,
+        msg: `Insufficient role: this operation requires '${needed}' (key role: '${entry.role}')`,
       });
     }
 
-    // Update last_used timestamp
-    await validEntity.update({ last_used: new Date() });
+    // Refresh last_used lazily — at most one write per key per flush window,
+    // instead of a database write on every authenticated request.
+    const now = Date.now();
+    if (now - entry.lastUsedFlush > LAST_USED_FLUSH_MS) {
+      entry.lastUsedFlush = now;
+      Entities.update({ last_used: new Date() }, { where: { id: entry.id } }).catch(error => {
+        log.auth.warn('Failed to refresh last_used', {
+          entity_id: entry.id,
+          error: error.message,
+        });
+      });
+    }
 
     // Add entity info to request for logging/audit
     req.entity = {
-      id: validEntity.id,
-      name: validEntity.name,
-      description: validEntity.description,
-      role,
+      id: entry.id,
+      name: entry.name,
+      description: entry.description,
+      role: entry.role,
     };
 
     return next();

@@ -17,7 +17,7 @@ cors:
     - https://localhost:5001
 database:
   dialect: sqlite
-  storage: /var/lib/zoneweaver-agent/database/database.sqlite
+  directory: /var/lib/zoneweaver-agent/database
   logging: false
   sqlite_options:
     journal_mode: WAL

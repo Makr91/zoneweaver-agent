@@ -6,7 +6,7 @@
  */
 
 import { DataTypes } from 'sequelize';
-import sequelize from '../config/Database.js';
+import { coreDb as sequelize } from '../config/Database.js';
 
 /**
  * @swagger

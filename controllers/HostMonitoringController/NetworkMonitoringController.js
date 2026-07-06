@@ -9,7 +9,7 @@ import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkUsage from '../../models/NetworkUsageModel.js';
 import IPAddresses from '../../models/IPAddressModel.js';
 import Routes from '../../models/RoutingTableModel.js';
-import db from '../../config/Database.js';
+import { metricsNetworkDb as db } from '../../config/Database.js';
 import {
   buildNetworkWhereClause,
   buildPagination,

@@ -132,7 +132,7 @@ class ConfigLoader {
    * @description Returns database connection configuration
    * @returns {Object} Database configuration object
    * @returns {string} returns.dialect - Database dialect (sqlite, postgres, mysql, mariadb)
-   * @returns {string} [returns.storage] - SQLite database file path
+   * @returns {string} [returns.directory] - Directory holding the per-datatype SQLite files
    * @returns {string} [returns.host] - Database host (for non-SQLite)
    * @returns {number} [returns.port] - Database port (for non-SQLite)
    * @returns {string} [returns.database] - Database name (for non-SQLite)

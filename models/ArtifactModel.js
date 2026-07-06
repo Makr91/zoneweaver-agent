@@ -1,5 +1,5 @@
 import { Sequelize } from 'sequelize';
-import db from '../config/Database.js';
+import { coreDb as db } from '../config/Database.js';
 import ArtifactStorageLocation from './ArtifactStorageLocationModel.js';
 
 const { DataTypes } = Sequelize;

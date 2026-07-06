@@ -86,15 +86,17 @@ export const CORE_SCHEMA = {
         default: 'sqlite',
         enum: ['sqlite'],
       },
-      storage: {
+      directory: {
         type: 'string',
-        description: 'SQLite database file path',
-        default: '/var/lib/zoneweaver-agent/database/database.sqlite',
+        description:
+          'Directory holding the per-datatype SQLite files (core.sqlite, metrics-network.sqlite, metrics-storage.sqlite, metrics-system.sqlite)',
+        default: '/var/lib/zoneweaver-agent/database',
       },
       logging: { type: 'boolean', description: 'Enable SQL query logging', default: false },
       sqlite_options: {
         type: 'object',
-        description: 'SQLite performance tuning (pragmas, pool, busy retry)',
+        description:
+          'SQLite performance tuning applied to every database file (pragmas, pool, busy retry)',
         properties: {
           journal_mode: {
             type: 'string',

@@ -1,5 +1,5 @@
 import { Sequelize } from 'sequelize';
-import db from '../config/Database.js';
+import { coreDb as db } from '../config/Database.js';
 
 const { DataTypes } = Sequelize;
 
@@ -24,6 +24,10 @@ const { DataTypes } = Sequelize;
  *           type: string
  *           description: Human-readable name for the API key
  *           example: "Zoneweaver-Production"
+ *         key_id:
+ *           type: string
+ *           description: Public key identifier embedded in the API key (hw_<key_id>.<secret>) for O(1) lookup
+ *           example: "5aX2kQ9vB3nR7wLm"
  *         api_key_hash:
  *           type: string
  *           description: Bcrypt hash of the API key (never exposed in API responses)
@@ -70,6 +74,13 @@ const Entities = db.define(
       type: DataTypes.STRING,
       allowNull: false,
       comment: 'Human-readable name for the API key entity',
+    },
+    key_id: {
+      type: DataTypes.STRING(16),
+      allowNull: false,
+      unique: true,
+      comment:
+        'Public key identifier embedded in the API key (hw_<key_id>.<secret>) for O(1) lookup',
     },
     api_key_hash: {
       type: DataTypes.STRING,

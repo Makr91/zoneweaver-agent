@@ -5,7 +5,7 @@ import { moveItem, copyItem } from '../../../lib/FileSystemManager.js';
 import Artifact from '../../../models/ArtifactModel.js';
 import ArtifactStorageLocation from '../../../models/ArtifactStorageLocationModel.js';
 import Tasks from '../../../models/TaskModel.js';
-import db from '../../../config/Database.js';
+import { coreDb as db } from '../../../config/Database.js';
 
 /**
  * Transfer Manager for Artifacts

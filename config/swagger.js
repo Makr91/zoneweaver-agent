@@ -10,7 +10,7 @@ const options = {
       // deliberately NOT release-please-stamped. Both host-agents (zoneweaver-agent
       // Node/Bhyve and hyperweaver-agent Go/VirtualBox) implement this contract.
       version: '1.0.0',
-      'x-app-version': '0.3.7', // x-release-please-version
+      'x-app-version': '0.3.8', // x-release-please-version
       description:
         'Hyperweaver Agent API v1 — the shared host-agent contract (architecture D1). ' +
         'Reference implementation: zoneweaver-agent (Bhyve/OmniOS, Node). ' +

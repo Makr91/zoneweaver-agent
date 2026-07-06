@@ -51,6 +51,10 @@ const PLATFORM_FEATURES = [
   'zlogin',
   'ssh',
   'host-terminal',
+  // host-power gates the /system/host/* power surface (status/uptime +
+  // shutdown/restart/poweroff/halt/runlevel). Always served here (no config
+  // kill switch) → platform token; the Go agent config-gates its equivalent.
+  'host-power',
   'tasks',
   'provisioning',
 ];
@@ -150,7 +154,7 @@ const buildFeatures = () => [
  *                     advertised. UIs must gate panels with features.includes(token).
  *                   items:
  *                     type: string
- *                   example: ["machines", "machine-create", "services", "zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "syslog", "system-users", "processes", "zlogin", "ssh", "host-terminal", "tasks", "provisioning", "fault-management", "devices", "monitoring", "log-streaming", "file-browser", "artifacts", "templates"]
+ *                   example: ["machines", "machine-create", "services", "zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "system-users", "processes", "zlogin", "ssh", "host-terminal", "host-power", "tasks", "provisioning", "fault-management", "devices", "monitoring", "syslog", "log-streaming", "file-browser", "artifacts", "templates"]
  *                 uptime:
  *                   type: integer
  *                   description: Process uptime in seconds

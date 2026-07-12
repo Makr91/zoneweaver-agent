@@ -10,6 +10,7 @@ import NetworkCollector from './NetworkCollectorController/index.js';
 import StorageCollector from './StorageController/index.js';
 import DeviceCollector from './DeviceCollector.js';
 import SystemMetricsCollector from './SystemMetricsCollector.js';
+import ZvolIoCollector from './ZvolIoCollector.js';
 import { cleanupOldTasks } from './TaskQueue/index.js';
 import CleanupService from './CleanupService.js';
 import HostInfo from '../models/HostInfoModel.js';
@@ -31,6 +32,9 @@ class HostMonitoringService {
     this.storageCollector = new StorageCollector();
     this.deviceCollector = new DeviceCollector();
     this.systemMetricsCollector = new SystemMetricsCollector();
+    // Per-zvol disk I/O rides a long-lived DTrace consumer rather than the
+    // interval timers — it is stream-driven (see ZvolIoCollector).
+    this.zvolIoCollector = new ZvolIoCollector();
 
     this.isRunning = false;
     this.isInitialized = false;
@@ -93,6 +97,15 @@ class HostMonitoringService {
         },
       });
 
+      // Register per-zvol disk I/O cleanup
+      CleanupService.registerTask({
+        name: 'zvol_io_cleanup',
+        description: 'Clean up old per-machine, per-zvol disk I/O data',
+        handler: async () => {
+          await this.zvolIoCollector.cleanupOldData();
+        },
+      });
+
       // Register task cleanup
       CleanupService.registerTask({
         name: 'task_cleanup',
@@ -103,7 +116,7 @@ class HostMonitoringService {
       });
 
       log.monitoring.info('Cleanup tasks registration completed', {
-        tasks_registered: 5,
+        tasks_registered: 6,
         cleanup_service_started: true,
       });
 
@@ -238,6 +251,9 @@ class HostMonitoringService {
 
     try {
       this.isRunning = true;
+      // Stream-driven collector: the DTrace consumer runs continuously and
+      // emits its own intervals (per-zvol disk I/O has no pollable source).
+      this.zvolIoCollector.start();
       log.monitoring.info('Host monitoring service started (TaskQueue-based discovery)', {
         hostname: this.hostname,
       });
@@ -258,6 +274,7 @@ class HostMonitoringService {
    */
   stop() {
     this.isRunning = false;
+    this.zvolIoCollector.stop();
     log.monitoring.info('Host monitoring service stopped', {
       hostname: this.hostname,
     });

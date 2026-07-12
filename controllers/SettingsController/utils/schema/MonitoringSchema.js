@@ -140,6 +140,25 @@ export const MONITORING_SCHEMA = {
           },
         },
       },
+      zvol_io: {
+        type: 'object',
+        description:
+          'Per-machine, per-zvol disk I/O (the only source on this platform: a long-lived DTrace consumer on the guests’ pread/pwrite syscalls, keyed by zone + zvol path). No kstat exposes it — zone_vfs counts only the zone’s own filesystem chatter, never bhyve’s raw-zvol traffic.',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            description:
+              'Run the DTrace disk-I/O consumer. Needs dtrace privileges (pfexec); the collector disables itself and logs loudly when the probe cannot start.',
+            default: true,
+          },
+          interval_seconds: {
+            type: 'integer',
+            description: 'How often DTrace emits an aggregation interval',
+            default: 10,
+            min: 5,
+          },
+        },
+      },
     },
   },
   logging: {

@@ -20,6 +20,7 @@ import TerminalSessions from '../models/TerminalSessionModel.js';
 import LogStreamSession from '../models/LogStreamSessionModel.js';
 import Disks from '../models/DiskModel.js';
 import '../models/ZoneMetricsModel.js';
+import '../models/ZvolIoStatsModel.js';
 
 /**
  * Database Migration Helper Class

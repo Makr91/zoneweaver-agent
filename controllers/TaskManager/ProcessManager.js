@@ -10,9 +10,12 @@ import { log } from '../../lib/Logger.js';
 /**
  * Execute process trace task
  * @param {string} metadataJson - Task metadata as JSON string
+ * @param {Function} [onData] - Task output stream — the FULL truss output
+ *   rides the task's output column (unbounded, list-excluded, read via
+ *   GET /tasks/{id}/output), never a truncated copy in the result object
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeProcessTraceTask = async metadataJson => {
+export const executeProcessTraceTask = async (metadataJson, onData = null) => {
   log.task.debug('Process trace task starting');
 
   try {
@@ -37,7 +40,7 @@ export const executeProcessTraceTask = async metadataJson => {
     log.task.debug('Executing trace command', { command });
 
     // Start tracing for the specified duration
-    const traceResult = await executeCommand(command, duration * 1000);
+    const traceResult = await executeCommand(command, duration * 1000, onData);
 
     if (traceResult.success || traceResult.output) {
       // truss may exit with non-zero when the process ends, but still provide useful output
@@ -50,8 +53,7 @@ export const executeProcessTraceTask = async metadataJson => {
 
       return {
         success: true,
-        message: `Process trace completed for PID ${pid} over ${duration} seconds (${outputLength} characters captured)`,
-        trace_output: traceResult.output?.substring(0, 10000) || '', // Limit output size # DO NOT LIMIT ITS OUTPUT!!
+        message: `Process trace completed for PID ${pid} over ${duration} seconds (${outputLength} characters captured — read via GET /tasks/{id}/output)`,
         duration_seconds: duration,
         pid: parseInt(pid),
       };

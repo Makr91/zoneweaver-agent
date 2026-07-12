@@ -1,7 +1,9 @@
 import https from 'https';
 import fs from 'fs';
 import config from '../../../../config/ConfigLoader.js';
+import { isTaskCancelled } from '../../../../lib/TaskContext.js';
 import { log } from '../../../../lib/Logger.js';
+import { buildRegistryCA } from '../../../../lib/TemplateRegistryUtils.js';
 import { updateTaskProgress } from './ProgressHelper.js';
 
 /**
@@ -109,17 +111,12 @@ export const uploadRegistryArtifact = async (
     total_chunks: totalChunks,
   });
 
-  // Determine auth headers based on token type
   const authHeaders = {};
   if (token) {
-    const isJWT = token.includes('.') && token.split('.').length === 3;
-    if (isJWT) {
-      authHeaders['x-access-token'] = token;
-      authHeaders.Authorization = `Bearer ${token}`;
-    } else {
-      authHeaders.Authorization = `Bearer ${token}`;
-    }
+    authHeaders.Authorization = `Bearer ${token}`;
   }
+
+  const registryCA = buildRegistryCA(sourceConfig);
 
   // Parse registry URL
   const url = new URL(sourceConfig.url);
@@ -152,7 +149,7 @@ export const uploadRegistryArtifact = async (
             ...authHeaders,
           },
           timeout: uploadTimeout,
-          rejectUnauthorized: sourceConfig.verify_ssl !== false,
+          ...(registryCA ? { ca: registryCA } : {}),
         };
 
         const req = https.request(options, res => {
@@ -227,6 +224,12 @@ export const uploadRegistryArtifact = async (
     const uploadNextChunk = async chunkIndex => {
       if (chunkIndex >= totalChunks) {
         return;
+      }
+
+      // Cooperative cancel: a running-task cancel stops between chunks
+      // instead of pushing the whole artifact.
+      if (isTaskCancelled(task?.id)) {
+        throw new Error(`Upload cancelled at chunk ${chunkIndex}/${totalChunks}`);
       }
 
       const offset = chunkIndex * chunkSize;

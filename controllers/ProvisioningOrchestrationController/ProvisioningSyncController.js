@@ -4,8 +4,14 @@
 
 import Zones from '../../models/ZoneModel.js';
 import { log } from '../../lib/Logger.js';
+import { extractFolders } from '../../lib/ProvisionerConfigBuilder.js';
 import { validateProvisioningRequest } from './utils/ValidationHelper.js';
-import { createTask, createSequentialFolderTasks } from './utils/TaskCreationHelper.js';
+import {
+  createTask,
+  createSequentialFolderTasks,
+  createSequentialSyncbackTasks,
+  syncbackEligibleFolders,
+} from './utils/TaskCreationHelper.js';
 
 /**
  * @swagger
@@ -13,14 +19,12 @@ import { createTask, createSequentialFolderTasks } from './utils/TaskCreationHel
  *   post:
  *     summary: Sync machine files ad-hoc
  *     description: |
- *       Creates a zone_sync task to sync provisioning files to the machine.
- *       This is independent of the full provisioning pipeline and can be called
+ *       Creates a zone_sync task chain to sync provisioning files to the
+ *       machine (host → guest, all folders). Body {"syncback": true} reverses
+ *       it: ONLY folders flagged syncback: true pull back guest → host
+ *       (folder.to → folder.map; delete never honored, files stay
+ *       agent-owned). Independent of the full provisioning pipeline; callable
  *       anytime after SSH is accessible.
- *
- *       Prerequisites:
- *       - Machine must be running
- *       - Machine must have provisioning config with sync_folders
- *       - SSH must be accessible
  *     tags: [Provisioning Tasks]
  *     security:
  *       - ApiKeyAuth: []
@@ -30,11 +34,22 @@ import { createTask, createSequentialFolderTasks } from './utils/TaskCreationHel
  *         required: true
  *         schema:
  *           type: string
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               syncback:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Pull ONLY syncback-flagged folders guest → host instead of pushing
  *     responses:
  *       200:
- *         description: Sync task created
+ *         description: Sync task chain created
  *       400:
- *         description: Invalid request or missing provisioning config
+ *         description: Invalid request, missing provisioning config, or no eligible folders
  *       404:
  *         description: Zone not found
  *       500:
@@ -43,6 +58,7 @@ import { createTask, createSequentialFolderTasks } from './utils/TaskCreationHel
 export const syncZone = async (req, res) => {
   try {
     const zoneName = req.params.name;
+    const syncback = req.body?.syncback === true;
 
     // Validate request
     const zone = await Zones.findOne({ where: { name: zoneName } });
@@ -55,47 +71,69 @@ export const syncZone = async (req, res) => {
 
     const { provisioning, zoneIP, credentials } = validation;
 
-    // Check if there are folders configured
-    const folders = provisioning.folders || provisioning.sync_folders || [];
+    const folders = extractFolders(provisioning);
     if (folders.length === 0) {
       return res.status(400).json({
         error: 'No folders configured in provisioner metadata',
       });
     }
 
-    // Create parent task for folder sync
-    const syncParentTask = await createTask({
+    const targetFolders = syncback ? syncbackEligibleFolders(folders) : folders;
+    if (targetFolders.length === 0) {
+      return res.status(400).json({
+        error: 'No folders flagged syncback: true in provisioner metadata',
+      });
+    }
+
+    // The parent is a pure anchor (born running, never dispatched);
+    // its children start immediately and drive its completion.
+    const parentTask = await createTask({
       zone_name: zoneName,
-      operation: 'zone_sync_parent',
-      metadata: { total_folders: folders.length },
-      depends_on: null,
+      operation: syncback ? 'zone_syncback_parent' : 'zone_sync_parent',
+      metadata: { total_folders: targetFolders.length },
+      parent: true,
       parent_task_id: null,
       created_by: req.entity.name,
     });
 
-    // Create individual sync tasks sequentially (each depends on previous)
-    await createSequentialFolderTasks(
-      folders,
-      zoneName,
-      zoneIP,
-      credentials,
-      provisioning,
-      syncParentTask.id,
-      req.entity.name
-    );
+    if (syncback) {
+      await createSequentialSyncbackTasks(
+        targetFolders,
+        zoneName,
+        zoneIP,
+        credentials,
+        provisioning,
+        parentTask.id,
+        null,
+        req.entity.name
+      );
+    } else {
+      await createSequentialFolderTasks(
+        targetFolders,
+        zoneName,
+        zoneIP,
+        credentials,
+        provisioning,
+        parentTask.id,
+        null,
+        req.entity.name
+      );
+    }
 
     log.api.info('Zone sync task chain created', {
       zone_name: zoneName,
-      parent_task_id: syncParentTask.id,
-      folder_count: folders.length,
+      parent_task_id: parentTask.id,
+      folder_count: targetFolders.length,
+      syncback,
     });
 
     return res.json({
       success: true,
-      message: `Zone sync task chain created for ${zoneName}`,
+      message: `Zone ${syncback ? 'syncback' : 'sync'} task chain created for ${zoneName}`,
       machine_name: zoneName,
-      parent_task_id: syncParentTask.id,
-      folder_count: folders.length,
+      parent_task_id: parentTask.id,
+      folder_count: targetFolders.length,
+      syncback,
     });
   } catch (error) {
     log.api.error('Failed to create zone sync task', { error: error.message });

@@ -9,6 +9,7 @@ import {
   processorState,
   MAX_CONCURRENT_TASKS,
 } from './TaskState.js';
+import { taskControls, EXCLUSIVITY_EXEMPT_SCOPES } from '../../lib/TaskContext.js';
 import { executeAndHandleTask, updateParentTaskProgress } from './TaskExecutor.js';
 import { executeDiscoverTask } from '../TaskManager/ZoneManager.js';
 import { getHostMonitoringService } from '../HostMonitoringService.js';
@@ -78,12 +79,32 @@ const processNextTask = async () => {
       completedDepIds = depIds.filter(id => depStatus.get(id) === 'completed');
     }
 
+    // One running task per zone (the Go queue's per-machine exclusivity):
+    // zones with a task in flight are excluded from the pick IN THE QUERY, so
+    // a busy zone never head-of-line blocks the rest of the fleet. The busy
+    // set comes from the in-flight map, NOT the tasks table — parent anchors
+    // sit in the table as running rows and must never block their own
+    // children. Pseudo-scopes (system/artifact/filesystem) are exempt; their
+    // category locks govern them.
+    const busyZones = [
+      ...new Set(
+        [...runningTasks.values()]
+          .map(running => running.zone_name)
+          .filter(zone => zone && !EXCLUSIVITY_EXEMPT_SCOPES.has(zone))
+      ),
+    ];
+
     // Find highest priority pending task that's not blocked by dependencies
+    // or by its zone being busy
+    const pickWhere = {
+      status: 'pending',
+      [Op.or]: [{ depends_on: null }, { depends_on: { [Op.in]: completedDepIds } }],
+    };
+    if (busyZones.length > 0) {
+      pickWhere.zone_name = { [Op.notIn]: busyZones };
+    }
     const task = await Tasks.findOne({
-      where: {
-        status: 'pending',
-        [Op.or]: [{ depends_on: null }, { depends_on: { [Op.in]: completedDepIds } }],
-      },
+      where: pickWhere,
       order: [
         ['priority', 'DESC'],
         ['created_at', 'ASC'],
@@ -106,13 +127,23 @@ const processNextTask = async () => {
       return; // Cannot start this task due to category conflict
     }
 
-    // Mark task as running
-    await task.update({
-      status: 'running',
-      started_at: new Date(),
-    });
-
+    // The run control and in-flight entry exist BEFORE the row goes running,
+    // so a cancel arriving mid-transition always finds the control instead of
+    // misreading a live task as a parent anchor.
+    taskControls.set(task.id, { cancelled: false, children: new Set() });
     runningTasks.set(task.id, task);
+
+    try {
+      // Mark task as running
+      await task.update({
+        status: 'running',
+        started_at: new Date(),
+      });
+    } catch (markError) {
+      taskControls.delete(task.id);
+      runningTasks.delete(task.id);
+      throw markError;
+    }
 
     // Add operation category to running set if it has one
     if (operationCategory) {
@@ -216,13 +247,14 @@ export const startTaskProcessor = () => {
 
   log.task.info('Starting task processor');
 
-  // Process tasks every 2 seconds ## THIS SHOULD BE CONFIGURABLE!!
-  processorState.taskProcessor = setInterval(async () => {
-    await processNextTask();
-  }, 2000);
-
-  // Get zones configuration for discovery settings
   const zonesConfig = config.getZones();
+
+  processorState.taskProcessor = setInterval(
+    async () => {
+      await processNextTask();
+    },
+    (zonesConfig.task_poll_interval || 2) * 1000
+  );
 
   // Start periodic discovery if enabled
   if (zonesConfig.auto_discovery && zonesConfig.discovery_interval) {

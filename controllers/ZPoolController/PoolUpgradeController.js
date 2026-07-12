@@ -22,14 +22,6 @@ import { log } from '../../lib/Logger.js';
  *         required: true
  *         schema:
  *           type: string
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Upgrade task created
@@ -38,7 +30,6 @@ import { log } from '../../lib/Logger.js';
  */
 export const upgradePool = async (req, res) => {
   const { pool } = req.params;
-  const { created_by = 'api' } = req.body || {};
 
   try {
     if (!pool) {
@@ -57,7 +48,7 @@ export const upgradePool = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_upgrade',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

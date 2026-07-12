@@ -37,8 +37,6 @@ import { log } from '../../lib/Logger.js';
  *                 type: boolean
  *               mount_point:
  *                 type: string
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Pool creation task created
@@ -46,14 +44,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Invalid request
  */
 export const createPool = async (req, res) => {
-  const {
-    pool_name,
-    vdevs,
-    properties = {},
-    force = false,
-    mount_point,
-    created_by = 'api',
-  } = req.body;
+  const { pool_name, vdevs, properties = {}, force = false, mount_point } = req.body;
 
   try {
     if (!pool_name) {
@@ -68,7 +59,7 @@ export const createPool = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_create',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -133,8 +124,6 @@ export const createPool = async (req, res) => {
  *             properties:
  *               force:
  *                 type: boolean
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Pool destruction task created
@@ -143,7 +132,7 @@ export const createPool = async (req, res) => {
  */
 export const destroyPool = async (req, res) => {
   const { pool } = req.params;
-  const { force = false, created_by = 'api' } = req.body || {};
+  const { force = false } = req.body || {};
 
   try {
     if (!pool) {
@@ -162,7 +151,7 @@ export const destroyPool = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_destroy',
       priority: TaskPriority.CRITICAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -226,8 +215,6 @@ export const destroyPool = async (req, res) => {
  *             properties:
  *               properties:
  *                 type: object
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Property update task created
@@ -236,7 +223,7 @@ export const destroyPool = async (req, res) => {
  */
 export const setPoolProperties = async (req, res) => {
   const { pool } = req.params;
-  const { properties, created_by = 'api' } = req.body;
+  const { properties } = req.body;
 
   try {
     if (!pool) {
@@ -259,7 +246,7 @@ export const setPoolProperties = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_set_properties',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

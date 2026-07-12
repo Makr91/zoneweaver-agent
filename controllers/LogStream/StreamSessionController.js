@@ -130,12 +130,10 @@ export const startLogStream = async (req, res) => {
     }
 
     const sessionId = uuidv4();
-    const cookie = `logstream_${Date.now()}_${sessionId}`;
 
-    // Create session record
+    // Create session record (WS auth rides the ticket, not a cookie)
     await LogStreamSession.create({
       session_id: sessionId,
-      cookie,
       logname,
       log_path: logPath,
       follow_lines,

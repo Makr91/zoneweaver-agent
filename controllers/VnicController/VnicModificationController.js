@@ -5,7 +5,7 @@
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import yj from 'yieldable-json';
 import { log } from '../../lib/Logger.js';
-import { executeCommand } from './utils/CommandHelper.js';
+import { executeCommand } from '../../lib/CommandManager.js';
 
 /**
  * @swagger
@@ -62,10 +62,6 @@ import { executeCommand } from './utils/CommandHelper.js';
  *                 type: object
  *                 description: Additional link properties to set
  *                 example: {"maxbw": "100M", "priority": "high"}
- *               created_by:
- *                 type: string
- *                 description: User creating this VNIC
- *                 default: "api"
  *     responses:
  *       202:
  *         description: VNIC creation task created successfully
@@ -100,7 +96,6 @@ export const createVNIC = async (req, res) => {
     vlan_id,
     temporary = false,
     properties = {},
-    created_by = 'api',
   } = req.body;
 
   try {
@@ -186,7 +181,7 @@ export const createVNIC = async (req, res) => {
       zone_name: 'system',
       operation: 'create_vnic',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: metadataJson,
     });
@@ -237,12 +232,6 @@ export const createVNIC = async (req, res) => {
  *           type: boolean
  *           default: false
  *         description: Delete only temporary configuration
- *       - in: query
- *         name: created_by
- *         schema:
- *           type: string
- *           default: "api"
- *         description: User deleting this VNIC
  *     responses:
  *       202:
  *         description: VNIC deletion task created successfully
@@ -269,7 +258,7 @@ export const createVNIC = async (req, res) => {
  */
 export const deleteVNIC = async (req, res) => {
   const { vnic } = req.params;
-  const { temporary = false, created_by = 'api' } = req.query;
+  const { temporary = false } = req.query;
 
   log.api.debug('VNIC deletion request starting', {
     vnic,
@@ -280,7 +269,6 @@ export const deleteVNIC = async (req, res) => {
     log.api.debug('VNIC deletion - parsed parameters', {
       vnic,
       temporary,
-      created_by,
     });
 
     // Check if VNIC exists
@@ -309,7 +297,7 @@ export const deleteVNIC = async (req, res) => {
       zone_name: 'system',
       operation: 'delete_vnic',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -389,10 +377,6 @@ export const deleteVNIC = async (req, res) => {
  *                 type: boolean
  *                 description: Set properties temporarily (not persistent)
  *                 default: false
- *               created_by:
- *                 type: string
- *                 description: User setting these properties
- *                 default: "api"
  *     responses:
  *       202:
  *         description: VNIC property update task created successfully
@@ -405,7 +389,7 @@ export const deleteVNIC = async (req, res) => {
  */
 export const setVNICProperties = async (req, res) => {
   const { vnic } = req.params;
-  const { properties, temporary = false, created_by = 'api' } = req.body;
+  const { properties, temporary = false } = req.body;
 
   try {
     if (!properties || typeof properties !== 'object' || Object.keys(properties).length === 0) {
@@ -428,7 +412,7 @@ export const setVNICProperties = async (req, res) => {
       zone_name: 'system',
       operation: 'set_vnic_properties',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

@@ -35,8 +35,6 @@ import { log } from '../../lib/Logger.js';
  *                 type: array
  *               force:
  *                 type: boolean
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Add vdev task created
@@ -45,7 +43,7 @@ import { log } from '../../lib/Logger.js';
  */
 export const addVdev = async (req, res) => {
   const { pool } = req.params;
-  const { vdevs, force = false, created_by = 'api' } = req.body;
+  const { vdevs, force = false } = req.body;
 
   try {
     if (!pool) {
@@ -68,7 +66,7 @@ export const addVdev = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_add_vdev',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -133,8 +131,6 @@ export const addVdev = async (req, res) => {
  *             properties:
  *               device:
  *                 type: string
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Remove vdev task created
@@ -143,7 +139,7 @@ export const addVdev = async (req, res) => {
  */
 export const removeVdev = async (req, res) => {
   const { pool } = req.params;
-  const { device, created_by = 'api' } = req.body;
+  const { device } = req.body;
 
   try {
     if (!pool) {
@@ -166,7 +162,7 @@ export const removeVdev = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_remove_vdev',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

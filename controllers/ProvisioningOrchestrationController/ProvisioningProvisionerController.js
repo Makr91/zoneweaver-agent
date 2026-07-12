@@ -4,8 +4,14 @@
 
 import Zones from '../../models/ZoneModel.js';
 import { log } from '../../lib/Logger.js';
+import { extractPlaybooks } from '../../lib/ProvisionerConfigBuilder.js';
 import { validateProvisioningRequest } from './utils/ValidationHelper.js';
-import { createTask, createSequentialPlaybookTasks } from './utils/TaskCreationHelper.js';
+import {
+  createTask,
+  createSequentialPlaybookTasks,
+  filterPlaybooksByRun,
+  hasZoneProvisionedBefore,
+} from './utils/TaskCreationHelper.js';
 
 /**
  * @swagger
@@ -21,6 +27,12 @@ import { createTask, createSequentialPlaybookTasks } from './utils/TaskCreationH
  *       - Machine must be running
  *       - Machine must have provisioning config with provisioners
  *       - SSH must be accessible
+ *
+ *       Playbooks honor their `run` directive against the machine's provision
+ *       history (`always` = every run; `once`/unset = only when never
+ *       provisioned; `not_first` = only after a prior successful provision).
+ *       When every configured playbook is filtered out, the call succeeds
+ *       without creating tasks and reports the skipped playbooks.
  *     tags: [Provisioning Tasks]
  *     security:
  *       - ApiKeyAuth: []
@@ -56,12 +68,30 @@ export const runProvisioners = async (req, res) => {
     const { provisioning, zoneIP, credentials } = validation;
 
     // Check if there are playbooks configured
-    const playbooks =
-      provisioning.provisioning?.ansible?.playbooks?.local || provisioning.provisioners || [];
+    const configuredPlaybooks = extractPlaybooks(provisioning);
 
-    if (playbooks.length === 0) {
+    if (configuredPlaybooks.length === 0) {
       return res.status(400).json({
         error: 'No playbooks configured in provisioner metadata',
+      });
+    }
+
+    const { included: playbooks, skipped } = filterPlaybooksByRun(
+      configuredPlaybooks,
+      hasZoneProvisionedBefore(zone)
+    );
+
+    if (playbooks.length === 0) {
+      log.api.info('All playbooks skipped by run directives', {
+        zone_name: zoneName,
+        skipped,
+      });
+      return res.json({
+        success: true,
+        message: `All ${configuredPlaybooks.length} playbooks skipped by their run directives`,
+        machine_name: zoneName,
+        playbook_count: 0,
+        playbooks_skipped: skipped,
       });
     }
 
@@ -98,6 +128,7 @@ export const runProvisioners = async (req, res) => {
       machine_name: zoneName,
       parent_task_id: provisionParentTask.id,
       playbook_count: playbooks.length,
+      playbooks_skipped: skipped,
     });
   } catch (error) {
     log.api.error('Failed to create zone provisioners task', { error: error.message });

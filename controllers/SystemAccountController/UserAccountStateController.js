@@ -41,12 +41,6 @@ import { log } from '../../lib/Logger.js';
  *           type: boolean
  *           default: false
  *         description: Also delete personal group if it exists
- *       - in: query
- *         name: created_by
- *         schema:
- *           type: string
- *           default: "api"
- *         description: User performing this deletion
  *     responses:
  *       202:
  *         description: User deletion task created successfully
@@ -56,13 +50,14 @@ import { log } from '../../lib/Logger.js';
 export const deleteSystemUser = async (req, res) => {
   try {
     const { username } = req.params;
-    const { remove_home = false, delete_personal_group = false, created_by = 'api' } = req.query;
+    const { remove_home = false, delete_personal_group = false } = req.query;
+    const createdBy = req.entity.name;
 
     log.api.info('User deletion request received', {
       username,
       remove_home: remove_home === 'true' || remove_home === true,
       delete_personal_group: delete_personal_group === 'true' || delete_personal_group === true,
-      created_by,
+      created_by: createdBy,
     });
 
     // Create task using ResponseHelpers
@@ -73,14 +68,14 @@ export const deleteSystemUser = async (req, res) => {
         remove_home: remove_home === 'true' || remove_home === true,
         delete_personal_group: delete_personal_group === 'true' || delete_personal_group === true,
       },
-      created_by,
+      createdBy,
       TaskPriority.CRITICAL // User deletion is critical priority
     );
 
     log.api.info('User deletion task created', {
       task_id: task.id,
       username,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `User deletion task created for ${username}`, task, {
@@ -93,7 +88,6 @@ export const deleteSystemUser = async (req, res) => {
       error: error.message,
       stack: error.stack,
       username: req.params?.username,
-      created_by: req.query?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create user deletion task', error.message);
   }
@@ -136,10 +130,6 @@ export const deleteSystemUser = async (req, res) => {
  *                 type: boolean
  *                 default: true
  *                 description: Unlock account after setting password
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User performing this operation
  *     responses:
  *       202:
  *         description: Password setting task created successfully
@@ -151,7 +141,8 @@ export const deleteSystemUser = async (req, res) => {
 export const setUserPassword = async (req, res) => {
   try {
     const { username } = req.params;
-    const { password, force_change = false, unlock_account = true, created_by = 'api' } = req.body;
+    const { password, force_change = false, unlock_account = true } = req.body;
+    const createdBy = req.entity.name;
 
     if (!password) {
       return errorResponse(res, 400, 'password is required');
@@ -161,7 +152,7 @@ export const setUserPassword = async (req, res) => {
       username,
       force_change,
       unlock_account,
-      created_by,
+      created_by: createdBy,
     });
 
     // Create task using ResponseHelpers
@@ -173,7 +164,7 @@ export const setUserPassword = async (req, res) => {
         force_change,
         unlock_account,
       },
-      created_by,
+      createdBy,
       TaskPriority.HIGH // Password operations are high priority
     );
 
@@ -181,7 +172,7 @@ export const setUserPassword = async (req, res) => {
       task_id: task.id,
       username,
       force_change,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `Password setting task created for ${username}`, task, {
@@ -194,7 +185,6 @@ export const setUserPassword = async (req, res) => {
       error: error.message,
       stack: error.stack,
       username: req.params?.username,
-      created_by: req.body?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create password setting task', error.message);
   }
@@ -216,16 +206,6 @@ export const setUserPassword = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Username to lock
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User performing this operation
  *     responses:
  *       202:
  *         description: Account locking task created successfully
@@ -235,20 +215,20 @@ export const setUserPassword = async (req, res) => {
 export const lockUserAccount = async (req, res) => {
   try {
     const { username } = req.params;
-    const { created_by = 'api' } = req.body || {};
+    const createdBy = req.entity.name;
 
     log.api.info('Account locking request received', {
       username,
-      created_by,
+      created_by: createdBy,
     });
 
     // Create task using ResponseHelpers
-    const task = await createSystemTask('user_lock', { username }, created_by, TaskPriority.HIGH);
+    const task = await createSystemTask('user_lock', { username }, createdBy, TaskPriority.HIGH);
 
     log.api.info('Account locking task created', {
       task_id: task.id,
       username,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `Account locking task created for ${username}`, task, {
@@ -259,7 +239,6 @@ export const lockUserAccount = async (req, res) => {
       error: error.message,
       stack: error.stack,
       username: req.params?.username,
-      created_by: req.body?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create account locking task', error.message);
   }
@@ -281,16 +260,6 @@ export const lockUserAccount = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Username to unlock
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User performing this operation
  *     responses:
  *       202:
  *         description: Account unlocking task created successfully
@@ -300,20 +269,20 @@ export const lockUserAccount = async (req, res) => {
 export const unlockUserAccount = async (req, res) => {
   try {
     const { username } = req.params;
-    const { created_by = 'api' } = req.body || {};
+    const createdBy = req.entity.name;
 
     log.api.info('Account unlocking request received', {
       username,
-      created_by,
+      created_by: createdBy,
     });
 
     // Create task using ResponseHelpers
-    const task = await createSystemTask('user_unlock', { username }, created_by, TaskPriority.HIGH);
+    const task = await createSystemTask('user_unlock', { username }, createdBy, TaskPriority.HIGH);
 
     log.api.info('Account unlocking task created', {
       task_id: task.id,
       username,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `Account unlocking task created for ${username}`, task, {
@@ -324,7 +293,6 @@ export const unlockUserAccount = async (req, res) => {
       error: error.message,
       stack: error.stack,
       username: req.params?.username,
-      created_by: req.body?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create account unlocking task', error.message);
   }

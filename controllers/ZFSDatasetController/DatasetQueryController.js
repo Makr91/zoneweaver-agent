@@ -168,7 +168,9 @@ export const getDatasetDetails = async (req, res) => {
       return res.status(400).json({ error: 'Dataset name is required' });
     }
 
-    const result = await executeCommand(`pfexec zfs get all -H -p ${name}`);
+    // Flags MUST precede the property operand — `zfs get all -H -p <name>`
+    // parses -H as a dataset name and fails (same class as the zpool-get 404).
+    const result = await executeCommand(`pfexec zfs get -H -p all ${name}`);
 
     if (!result.success) {
       return res.status(404).json({

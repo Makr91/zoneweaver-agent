@@ -44,26 +44,28 @@ const buildSetAttrCommand = (zoneConfig, attrName, value) => {
 /**
  * Build CPU configuration value for bhyve (simple or complex topology)
  * Format: [[cpus=]numcpus][,sockets=n][,cores=n][,threads=n]
+ * The modify wire carries cpu_configuration/complex_cpu_conf at the TOP level
+ * (PUT /machines/{name} contract) — not under a zones section.
  * @param {Object} metadata - Modification metadata
  * @returns {string|number|undefined} CPU configuration value
  */
 const buildCpuValue = metadata => {
-  const zones = metadata.zones || {};
-  const vcpus = metadata.vcpus || metadata.settings?.vcpus;
+  const cpuConfiguration = metadata.cpu_configuration;
+  const { vcpus } = metadata;
 
   // No vcpu change requested
-  if (!vcpus && !zones.cpu_configuration) {
+  if (!vcpus && !cpuConfiguration) {
     return undefined;
   }
 
   // Simple mode (default)
-  if (!zones.cpu_configuration || zones.cpu_configuration === 'simple') {
+  if (!cpuConfiguration || cpuConfiguration === 'simple') {
     return vcpus;
   }
 
   // Complex mode - build topology string
-  if (zones.cpu_configuration === 'complex') {
-    const cpuConf = zones.complex_cpu_conf;
+  if (cpuConfiguration === 'complex') {
+    const cpuConf = metadata.complex_cpu_conf;
 
     if (!cpuConf || cpuConf.length === 0) {
       throw new Error('complex_cpu_conf required when cpu_configuration is "complex"');
@@ -103,9 +105,7 @@ const buildCpuValue = metadata => {
   }
 
   // Invalid configuration
-  throw new Error(
-    `Invalid cpu_configuration: ${zones.cpu_configuration}. Must be "simple" or "complex"`
-  );
+  throw new Error(`Invalid cpu_configuration: ${cpuConfiguration}. Must be "simple" or "complex"`);
 };
 
 /**
@@ -126,6 +126,10 @@ const applyAttributeChanges = async (zoneName, zoneConfig, metadata, onData = nu
     vnc: metadata.vnc,
     acpi: metadata.acpi,
     xhci: metadata.xhci,
+    uefivars: metadata.uefivars,
+    rng: metadata.rng,
+    bootorder: metadata.bootorder,
+    bootnext: metadata.bootnext,
   };
 
   const commands = Object.entries(attrMap)
@@ -223,6 +227,7 @@ export const applyAttributeChangesIfNeeded = async (
   const hasAttrChanges = [
     'ram',
     'vcpus',
+    'cpu_configuration',
     'bootrom',
     'hostbridge',
     'diskif',
@@ -231,6 +236,10 @@ export const applyAttributeChangesIfNeeded = async (
     'vnc',
     'acpi',
     'xhci',
+    'uefivars',
+    'rng',
+    'bootorder',
+    'bootnext',
   ].some(key => metadata[key] !== undefined);
 
   if (hasAttrChanges) {

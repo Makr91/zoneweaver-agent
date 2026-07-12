@@ -5,7 +5,7 @@
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import yj from 'yieldable-json';
 import { log } from '../../lib/Logger.js';
-import { executeCommand } from './utils/CommandHelper.js';
+import { executeCommand } from '../../lib/CommandManager.js';
 import { validateBridgeParams } from './utils/ValidationHelper.js';
 
 /**
@@ -70,10 +70,6 @@ import { validateBridgeParams } from './utils/ValidationHelper.js';
  *                   type: string
  *                 description: Links to add to the bridge
  *                 example: ["e1000g0", "e1000g1"]
- *               created_by:
- *                 type: string
- *                 description: User creating this bridge
- *                 default: "api"
  *     responses:
  *       202:
  *         description: Bridge creation task created successfully
@@ -105,7 +101,6 @@ export const createBridge = async (req, res) => {
     forward_delay = 15,
     force_protocol = 3,
     links = [],
-    created_by = 'api',
   } = req.body;
 
   try {
@@ -140,7 +135,7 @@ export const createBridge = async (req, res) => {
       zone_name: 'system',
       operation: 'create_bridge',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -209,12 +204,6 @@ export const createBridge = async (req, res) => {
  *           type: boolean
  *           default: false
  *         description: Force deletion even if links are attached
- *       - in: query
- *         name: created_by
- *         schema:
- *           type: string
- *           default: "api"
- *         description: User deleting this bridge
  *     responses:
  *       202:
  *         description: Bridge deletion task created successfully
@@ -238,7 +227,7 @@ export const createBridge = async (req, res) => {
  */
 export const deleteBridge = async (req, res) => {
   const { bridge } = req.params;
-  const { force = false, created_by = 'api' } = req.query;
+  const { force = false } = req.query;
 
   try {
     // Check if bridge exists
@@ -270,7 +259,7 @@ export const deleteBridge = async (req, res) => {
       zone_name: 'system',
       operation: 'delete_bridge',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -293,7 +282,7 @@ export const deleteBridge = async (req, res) => {
       task_id: task.id,
       bridge,
       force: forceParam,
-      created_by,
+      created_by: req.entity.name,
     });
 
     return res.status(202).json({
@@ -352,10 +341,6 @@ export const deleteBridge = async (req, res) => {
  *                   type: string
  *                 description: Links to add or remove
  *                 example: ["e1000g2", "e1000g3"]
- *               created_by:
- *                 type: string
- *                 description: User making this modification
- *                 default: "api"
  *     responses:
  *       202:
  *         description: Bridge link modification task created successfully
@@ -368,7 +353,7 @@ export const deleteBridge = async (req, res) => {
  */
 export const modifyBridgeLinks = async (req, res) => {
   const { bridge } = req.params;
-  const { operation, links, created_by = 'api' } = req.body;
+  const { operation, links } = req.body;
 
   try {
     // Validate required fields
@@ -412,7 +397,7 @@ export const modifyBridgeLinks = async (req, res) => {
       zone_name: 'system',
       operation: 'modify_bridge_links',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

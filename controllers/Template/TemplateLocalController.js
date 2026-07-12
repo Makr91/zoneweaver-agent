@@ -8,7 +8,7 @@ import { log } from '../../lib/Logger.js';
 
 /**
  * @swagger
- * /templates/local:
+ * /templates:
  *   get:
  *     summary: List local templates
  *     description: Lists all templates downloaded and available locally
@@ -38,7 +38,7 @@ export const listLocalTemplates = async (req, res) => {
 
 /**
  * @swagger
- * /templates/local/{templateId}:
+ * /templates/{templateId}:
  *   get:
  *     summary: Get local template details
  *     tags: [Template Management]

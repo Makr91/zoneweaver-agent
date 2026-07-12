@@ -9,9 +9,21 @@ export {
   getZoneDetails,
   getZoneConfig,
 } from './ZoneQueryController.js';
-export { startZone, stopZone, restartZone } from './ZonePowerController.js';
+export {
+  startZone,
+  stopZone,
+  restartZone,
+  resetZone,
+  suspendZone,
+  resumeZone,
+  injectNmi,
+} from './ZonePowerController.js';
 export { createZone } from './ZoneCreationController.js';
-export { modifyZone } from './ZoneModificationController.js';
+export {
+  modifyZone,
+  clearZonePendingChanges,
+  applyZonePendingChanges,
+} from './ZoneModificationController.js';
 export { deleteZone } from './ZoneDeletionController.js';
 export {
   getZoneNotes,
@@ -21,3 +33,9 @@ export {
 } from './ZoneMetadataController.js';
 export { bulkStartZones, bulkStopZones } from './ZoneBulkController.js';
 export { cloneZone } from './ZoneCloneController.js';
+export {
+  listMachineSnapshots,
+  takeMachineSnapshot,
+  restoreMachineSnapshot,
+  deleteMachineSnapshot,
+} from './ZoneSnapshotController.js';

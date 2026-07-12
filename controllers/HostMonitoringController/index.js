@@ -29,6 +29,9 @@ import {
 // Import system metrics functions
 import { getCPUStats, getMemoryStats, getSystemLoadMetrics } from './SystemMetricsController.js';
 
+// Import zone metrics functions
+import { getZoneUsageMetrics } from './ZoneMetricsController.js';
+
 // Import summary functions
 import { getHostInfo, getMonitoringSummary } from './SummaryController.js';
 
@@ -57,6 +60,7 @@ export {
   getCPUStats,
   getMemoryStats,
   getSystemLoadMetrics,
+  getZoneUsageMetrics,
 
   // Summary and host info
   getHostInfo,
@@ -88,6 +92,7 @@ export default {
   getCPUStats,
   getMemoryStats,
   getSystemLoadMetrics,
+  getZoneUsageMetrics,
 
   // Summary and host info
   getHostInfo,

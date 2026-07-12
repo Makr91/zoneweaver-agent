@@ -46,10 +46,6 @@ import { log } from '../../lib/Logger.js';
  *                 items:
  *                   type: string
  *                 description: Package patterns to reject during update
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: System update task created successfully
@@ -79,7 +75,6 @@ export const installUpdates = async (req, res) => {
       be_name,
       backup_be = true,
       reject_packages = [],
-      created_by = 'api',
     } = req.body || {};
 
     // Create task for system update
@@ -87,7 +82,7 @@ export const installUpdates = async (req, res) => {
       zone_name: 'system',
       operation: 'pkg_update',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -126,7 +121,6 @@ export const installUpdates = async (req, res) => {
       stack: error.stack,
       packages: req.body?.packages,
       backup_be: req.body?.backup_be,
-      created_by: req.body?.created_by,
     });
     return res.status(500).json({
       error: 'Failed to create system update task',
@@ -160,10 +154,6 @@ export const installUpdates = async (req, res) => {
  *                 items:
  *                   type: string
  *                 description: Specific publishers to refresh (optional)
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Metadata refresh task created successfully
@@ -183,14 +173,14 @@ export const installUpdates = async (req, res) => {
  */
 export const refreshMetadata = async (req, res) => {
   try {
-    const { full = false, publishers = [], created_by = 'api' } = req.body || {};
+    const { full = false, publishers = [] } = req.body || {};
 
     // Create task for metadata refresh
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'pkg_refresh',
       priority: TaskPriority.LOW,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -225,7 +215,6 @@ export const refreshMetadata = async (req, res) => {
       stack: error.stack,
       full: req.body?.full,
       publishers: req.body?.publishers,
-      created_by: req.body?.created_by,
     });
     return res.status(500).json({
       error: 'Failed to create metadata refresh task',

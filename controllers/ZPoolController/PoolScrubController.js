@@ -22,14 +22,6 @@ import { log } from '../../lib/Logger.js';
  *         required: true
  *         schema:
  *           type: string
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Scrub task created
@@ -38,7 +30,6 @@ import { log } from '../../lib/Logger.js';
  */
 export const scrubPool = async (req, res) => {
   const { pool } = req.params;
-  const { created_by = 'api' } = req.body || {};
 
   try {
     if (!pool) {
@@ -57,7 +48,7 @@ export const scrubPool = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_scrub',
       priority: TaskPriority.LOW,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -117,7 +108,6 @@ export const scrubPool = async (req, res) => {
  */
 export const stopScrub = async (req, res) => {
   const { pool } = req.params;
-  const { created_by = 'api' } = req.body || {};
 
   try {
     if (!pool) {
@@ -136,7 +126,7 @@ export const stopScrub = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_stop_scrub',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

@@ -51,6 +51,8 @@ zones:
   auto_discovery: true
   max_concurrent_tasks: 5
   task_timeout: 300
+  task_poll_interval: 2
+  resume_pending_tasks_on_start: false
   orphan_retention: 7
   default_pagination_limit: 50
   server_id_start: 1
@@ -89,9 +91,24 @@ zones:
       thresholds:
         warning: 150
         critical: 300
+guest_agent:
+  enabled: true
+snapshots:
+  enabled: true
+  interval_minutes: 60
+  default_policy:
+    type: rotation
+    quiesce: false
+    tiers:
+      hourly:
+        keep: 24
+      daily:
+        keep: 8
+      weekly:
+        keep: 5
 provisioning:
-  install_tools: true
   staging_path: /var/lib/zoneweaver-agent/provisioning
+  provisioners_path: /var/lib/zoneweaver-agent/provisioners
   playbook_timeout_seconds: 21600
   ansible_install_timeout_seconds: 300
   ssh:
@@ -182,6 +199,18 @@ api_docs:
 ui:
   enabled: false
   path: /opt/zoneweaver-agent/ui
+ticket_system:
+  enabled: true
+  base_url: https://xd.prominic.net/app/apprequest.nsf/router?openagent
+  req_type: sso
+  context: https://github.com/Makr91/zoneweaver-agent
+experimental:
+  enabled: false
+packages:
+  install_timeout_seconds: 600
+  update_timeout_seconds: 1800
+system_host:
+  command_timeout_seconds: 300
 fault_management:
   enabled: true
   cache_interval: 3600
@@ -287,13 +316,11 @@ template_sources:
   local_storage_path: rpool/templates
   sources:
     - name: Default Registry
-      type: vagrant
       url: https://boxvault.startcloud.com
-      username: ''
-      api_key: ''
-      organization: ''
+      auth_token: ''
       enabled: true
-      verify_ssl: true
+      default: true
+      ca_file: ''
   download:
     timeout_seconds: 3600
     progress_update_seconds: 10
@@ -301,3 +328,6 @@ template_sources:
   upload:
     timeout_seconds: 7200
     chunk_size_mb: 100
+updates:
+  versioninfo_url: https://github.com/Makr91/zoneweaver-agent/releases/latest/download/update-info.json
+  check_interval: 0

@@ -2,7 +2,7 @@ import yj from 'yieldable-json';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
 import Template from '../../../models/TemplateModel.js';
-import { findRunningTask, updateTaskProgress } from './utils/ProgressHelper.js';
+import { updateTaskProgress } from './utils/ProgressHelper.js';
 
 /**
  * @fileoverview Template move task executor
@@ -240,9 +240,10 @@ const executeCrossPoolMove = async (template, sourcePath, targetPath, forcePromo
  * Cross-pool: zfs send/recv + destroy original. Blocks if dependent clones exist
  * unless force_promote is true (auto-promotes one clone to free the template).
  * @param {string} metadataJson - Task metadata as JSON string
+ * @param {Object} task - The task row (progress updates write it directly)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeTemplateMoveTask = async metadataJson => {
+export const executeTemplateMoveTask = async (metadataJson, task) => {
   log.task.debug('Template move task starting');
 
   try {
@@ -273,7 +274,6 @@ export const executeTemplateMoveTask = async metadataJson => {
       force_promote,
     });
 
-    const task = await findRunningTask('template_move', template_id);
     await updateTaskProgress(task, 5, { status: 'validating' });
 
     // Extract pool names (everything before first '/')

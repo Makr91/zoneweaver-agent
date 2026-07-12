@@ -152,17 +152,19 @@ const registerZfsRoutes = router => {
  * @param {import('express').Router} router - Application router
  */
 const registerTemplateArtifactRoutes = router => {
-  // Template Management Routes
+  // Template Management Routes — bare /templates wire (D14, the Go agent's
+  // exact paths). Literal paths MUST register before the :templateId wildcards
+  // or POST /templates/pull would be eaten as templateId="pull".
   router.get('/templates/sources', verifyApiKey, listSources);
   router.get('/templates/remote/:sourceName', verifyApiKey, listRemoteTemplates);
   router.get('/templates/remote/:sourceName/:org/:boxName', verifyApiKey, getRemoteTemplateDetails);
-  router.get('/templates/local', verifyApiKey, listLocalTemplates);
-  router.get('/templates/local/:templateId', verifyApiKey, getLocalTemplate);
   router.post('/templates/pull', verifyApiKey, downloadTemplate);
-  router.delete('/templates/local/:templateId', verifyApiKey, deleteLocalTemplate);
   router.post('/templates/publish', verifyApiKey, publishTemplate);
   router.post('/templates/export', verifyApiKey, exportTemplate);
-  router.post('/templates/local/:templateId/move', verifyApiKey, moveTemplate);
+  router.get('/templates', verifyApiKey, listLocalTemplates);
+  router.get('/templates/:templateId', verifyApiKey, getLocalTemplate);
+  router.delete('/templates/:templateId', verifyApiKey, deleteLocalTemplate);
+  router.post('/templates/:templateId/move', verifyApiKey, moveTemplate);
 
   // Artifact Storage Management Routes
   router.get('/artifacts/storage/paths', verifyApiKey, listStoragePaths); // List storage paths

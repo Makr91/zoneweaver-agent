@@ -3,6 +3,13 @@ import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
 import { validateZoneName } from '../../lib/ZoneValidation.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
+import { getPackageVersion } from '../../lib/ProvisionerRegistry.js';
+import {
+  renderHostsTemplate,
+  parseHostsDocument,
+  splitHostsDocument,
+  findLegacyMarkers,
+} from '../../lib/HostsTemplateRenderer.js';
 import { getSystemZoneStatus } from './ZoneQueryController.js';
 import {
   resolveBoxToTemplate,
@@ -10,6 +17,100 @@ import {
   createZoneCreationSubTasks,
   handleAutoDownload,
 } from './ZoneCreationHelpers.js';
+
+const renderPackageDocument = body => {
+  const ref = body.provisioner;
+  if (!ref) {
+    return null;
+  }
+  if (
+    !ref.name ||
+    !ref.version ||
+    typeof ref.name !== 'string' ||
+    typeof ref.version !== 'string'
+  ) {
+    return {
+      error: 'provisioner needs both name and version — or neither: provisioning is optional',
+    };
+  }
+  const pkg = getPackageVersion(ref.name, ref.version);
+  if (!pkg) {
+    return { error: `provisioner ${ref.name}/${ref.version} is not in the registry` };
+  }
+
+  const settings = { ...(body.settings || {}) };
+  if (!settings.sync_method) {
+    settings.sync_method = 'rsync';
+  }
+  const rendered = renderHostsTemplate({
+    version: pkg,
+    settings,
+    networks: body.networks || [],
+    roles: body.roles || [],
+    properties: body.properties || {},
+    advanced_properties: body.advanced_properties || {},
+  });
+  const markers = findLegacyMarkers(rendered);
+  const { infra, provisioner } = splitHostsDocument(parseHostsDocument(rendered));
+
+  body.settings = infra.settings || settings;
+  if (infra.networks) {
+    body.networks = infra.networks;
+  }
+  if (infra.disks) {
+    body.disks = infra.disks;
+  }
+  if (infra.zones) {
+    body.zones = { ...(body.zones || {}), ...infra.zones };
+  }
+  if (infra.cloud_init) {
+    body.cloud_init = infra.cloud_init;
+  }
+  if (!provisioner.provisioner_name) {
+    provisioner.provisioner_name = ref.name;
+  }
+  if (!provisioner.provisioner_version) {
+    provisioner.provisioner_version = pkg.version;
+  }
+  body.provisioner = provisioner;
+  body.provisioner_ref = { name: ref.name, version: pkg.version };
+  return { markers };
+};
+
+const packageRenderProblem = body => {
+  if (!body.provisioner) {
+    return null;
+  }
+  try {
+    const result = renderPackageDocument(body);
+    if (result?.error) {
+      return result.error;
+    }
+    if (result?.markers?.length > 0) {
+      log.api.warn('Rendered document still contains ::TOKEN:: markers', {
+        markers: result.markers,
+      });
+    }
+    return null;
+  } catch (renderError) {
+    return `Template render failed: ${renderError.message}`;
+  }
+};
+
+export const findExistingZoneConflict = async finalZoneName => {
+  const existingZone = await Zones.findOne({ where: { name: finalZoneName } });
+  if (existingZone) {
+    return { error: `Zone ${finalZoneName} already exists in database` };
+  }
+  const systemStatus = await getSystemZoneStatus(finalZoneName);
+  if (systemStatus !== 'not_found') {
+    return {
+      error: `Zone ${finalZoneName} already exists on the system`,
+      system_status: systemStatus,
+    };
+  }
+  return null;
+};
 
 /**
  * @fileoverview Zone creation controller
@@ -172,6 +273,22 @@ import {
  *                   autostart:
  *                     type: boolean
  *                     description: Auto-boot zone on system startup
+ *                     default: false
+ *                   bootorder:
+ *                     type: string
+ *                     description: bhyve boot order (path[N]/bootdisk/disk[N]/cdrom[N]/net[N]/shell tokens)
+ *                     example: "cdrom0,bootdisk"
+ *                   bootnext:
+ *                     type: string
+ *                     description: One-shot boot order for the NEXT boot only
+ *                     example: "cdrom0"
+ *                   guest_agent:
+ *                     type: boolean
+ *                     description: |
+ *                       Wire the QEMU guest-agent channel (virtio-console qga socket) into this
+ *                       machine — per-machine option, default off (not every template ships
+ *                       qemu-ga). Requires the agent-level guest_agent.enabled config gate.
+ *                       Windows guests need hostbridge=q35.
  *                     default: false
  *                   cpu_configuration:
  *                     type: string
@@ -352,7 +469,7 @@ import {
  *                       example: "192.168.1.10/24"
  *               cdroms:
  *                 type: array
- *                 description: ISO images to attach as CD-ROMs
+ *                 description: ISO images to attach as CD-ROMs (each entry carries a lofs mount automatically)
  *                 items:
  *                   type: object
  *                   properties:
@@ -360,6 +477,34 @@ import {
  *                       type: string
  *                       description: Path to ISO file
  *                       example: "/iso/omnios-r151050.iso"
+ *                     iso:
+ *                       type: string
+ *                       description: Cached ISO filename resolved through the artifact registry
+ *                       example: "debian-12.5.0-amd64-netinst.iso"
+ *               filesystems:
+ *                 type: array
+ *                 description: Filesystem mounts into the zone (generic lofs shares)
+ *                 items:
+ *                   type: object
+ *                   required: [special]
+ *                   properties:
+ *                     special:
+ *                       type: string
+ *                       description: Host path to mount
+ *                       example: "/data/wipelogs"
+ *                     dir:
+ *                       type: string
+ *                       description: In-zone mount point (defaults to special)
+ *                       example: "/data/wipelogs"
+ *                     type:
+ *                       type: string
+ *                       default: "lofs"
+ *                     options:
+ *                       type: array
+ *                       description: Mount options (default [nodevices]; add ro for read-only)
+ *                       items:
+ *                         type: string
+ *                       example: ["ro", "nodevices"]
  *               cloud_init:
  *                 type: object
  *                 description: Cloud-init provisioning attributes
@@ -382,6 +527,39 @@ import {
  *                     type: string
  *                     description: SSH public key for root access
  *                     example: "ssh-rsa AAAA..."
+ *               provisioner:
+ *                 type: object
+ *                 description: |
+ *                   OPTIONAL provisioner package reference — when present, the package's
+ *                   templates/Hosts.template.yml renders the machine document (settings/
+ *                   networks/disks and the provisioner sections) from these inputs, and the
+ *                   package stages onto the zone's provisioning dataset at provision time.
+ *                   Provisioning is optional — without a reference the request body IS the document.
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                     example: "startcloud_generic_provisioner"
+ *                   version:
+ *                     type: string
+ *                     example: "0.1.27"
+ *               roles:
+ *                 type: array
+ *                 description: Role selections for the package render (boolean enable flags)
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                     enabled:
+ *                       type: boolean
+ *                     files:
+ *                       type: object
+ *               properties:
+ *                 type: object
+ *                 description: Package basicFields entries, keyed by exact field name
+ *               advanced_properties:
+ *                 type: object
+ *                 description: Package advancedFields entries, keyed by exact field name
  *               notes:
  *                 type: string
  *                 nullable: true
@@ -617,6 +795,11 @@ import {
  */
 export const createZone = async (req, res) => {
   try {
+    const renderProblem = packageRenderProblem(req.body);
+    if (renderProblem) {
+      return res.status(400).json({ error: renderProblem });
+    }
+
     // NEW HOSTS.YML STRUCTURE ONLY
     const { settings, zones, start_after_create } = req.body;
 
@@ -641,19 +824,9 @@ export const createZone = async (req, res) => {
     }
     const { finalZoneName } = nameResult;
 
-    // Check zone doesn't exist in DB (using final name)
-    const existingZone = await Zones.findOne({ where: { name: finalZoneName } });
-    if (existingZone) {
-      return res.status(409).json({ error: `Zone ${finalZoneName} already exists in database` });
-    }
-
-    // Check zone doesn't exist on system (using final name)
-    const systemStatus = await getSystemZoneStatus(finalZoneName);
-    if (systemStatus !== 'not_found') {
-      return res.status(409).json({
-        error: `Zone ${finalZoneName} already exists on the system`,
-        system_status: systemStatus,
-      });
+    const conflict = await findExistingZoneConflict(finalZoneName);
+    if (conflict) {
+      return res.status(409).json(conflict);
     }
 
     // Box resolution: convert settings.box reference to template_dataset path
@@ -702,14 +875,18 @@ export const createZone = async (req, res) => {
       return res.status(boxResolution.error.status).json(boxResolution.error);
     }
 
-    // Template available - create orchestration with sub-tasks (no download)
+    // Template available - create orchestration with sub-tasks (no download).
+    // The orchestration parent is a pure anchor: born running, never
+    // dispatched (the queue picks only pending rows); the child rollup
+    // drives its state (the Go queue's model).
     const parentTask = await Tasks.create({
       zone_name: finalZoneName,
       operation: 'zone_create_orchestration',
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       metadata: JSON.stringify(req.body),
-      status: 'pending',
+      status: 'running',
+      started_at: new Date(),
     });
 
     // Create zone creation sub-tasks (no download dependency)
@@ -722,6 +899,8 @@ export const createZone = async (req, res) => {
       req.entity.name
     );
 
+    // Wire status describes the QUEUED WORK (the children) — Go answers the
+    // same way; the parent row itself is a running anchor from birth.
     const createResponse = {
       success: true,
       parent_task_id: parentTask.id,
@@ -742,6 +921,8 @@ export const createZone = async (req, res) => {
       zone_name: req.body.name,
       user: req.entity.name,
     });
-    return res.status(500).json({ error: 'Failed to queue zone creation task' });
+    return res
+      .status(500)
+      .json({ error: 'Failed to queue zone creation task', details: error.message });
   }
 };

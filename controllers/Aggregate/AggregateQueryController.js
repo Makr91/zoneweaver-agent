@@ -5,31 +5,10 @@
  * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
-import { execSync } from 'child_process';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import os from 'os';
 import { log } from '../../lib/Logger.js';
-
-/**
- * Execute command safely with proper error handling
- * @param {string} command - Command to execute
- * @returns {{success: boolean, output?: string, error?: string}}
- */
-const executeCommand = command => {
-  try {
-    const output = execSync(command, {
-      encoding: 'utf8',
-      timeout: 30000, // 30 second timeout
-    });
-    return { success: true, output: output.trim() };
-  } catch (error) {
-    return {
-      success: false,
-      error: error.message,
-      output: error.stdout || '',
-    };
-  }
-};
+import { executeCommand } from '../../lib/CommandManager.js';
 
 /**
  * @swagger
@@ -253,13 +232,13 @@ export const getAggregateDetails = async (req, res) => {
  *       500:
  *         description: Failed to get aggregate statistics
  */
-export const getAggregateStats = (req, res) => {
+export const getAggregateStats = async (req, res) => {
   try {
     const { aggregate } = req.params;
     const { interval = 1 } = req.query;
 
     // Get live statistics from dladm
-    const result = executeCommand(
+    const result = await executeCommand(
       `pfexec dladm show-aggr ${aggregate} -s -p -o link,ipackets,rbytes,ierrors,opackets,obytes,oerrors`
     );
 

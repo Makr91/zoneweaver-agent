@@ -126,13 +126,13 @@ export const executeUserSetPasswordTask = async metadataJson => {
       password_length: password ? password.length : 0,
     });
 
-    // Set password using passwd command with echo
-    const command = `echo "${password}" | pfexec passwd --stdin ${username}`;
-    log.task.debug('Executing password setting command', {
-      command: command.replace(password, '[REDACTED]'),
-    });
+    // The password rides the child's stdin — never the command line, so it is
+    // never shell-parsed (quotes/$/backticks can't break or inject) and never
+    // visible in ps.
+    const command = `pfexec passwd --stdin ${username}`;
+    log.task.debug('Executing password setting command', { command });
 
-    const result = await executeCommand(command);
+    const result = await executeCommand(command, undefined, null, `${password}\n`);
 
     if (result.success) {
       log.task.info('Password set successfully', {

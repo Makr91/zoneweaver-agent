@@ -38,6 +38,15 @@ const ARCH_MAP = {
 const PLATFORM_FEATURES = [
   'machines',
   'machine-create',
+  // machine-modify: PUT /machines/{name} (zonecfg modify pipeline) — the UI's
+  // Edit modal gates on it. machine-screenshot: GET
+  // /machines/{name}/vnc/screenshot (bhyve framebuffer PNG). Token names
+  // shared with the Go agent's platformFeatures.
+  'machine-modify',
+  'machine-screenshot',
+  // machine-snapshots: the ZFS-native snapshot family
+  // (/machines/{name}/snapshots — list/take/restore/delete + rotation).
+  'machine-snapshots',
   'services',
   'zfs',
   'vnics',
@@ -48,7 +57,9 @@ const PLATFORM_FEATURES = [
   'time-sync',
   'system-users',
   'processes',
-  'zlogin',
+  // ssh (the machine SSH terminal) is a FEATURE — it rides the guest's own
+  // network/credentials. Emergency consoles (vnc, zlogin) live in console[]
+  // (Mark's taxonomy ruling 2026-07-12).
   'ssh',
   'host-terminal',
   // host-power gates the /system/host/* power surface (status/uptime +
@@ -57,6 +68,10 @@ const PLATFORM_FEATURES = [
   'host-power',
   'tasks',
   'provisioning',
+  // provisioner-registry: the SHI-format package-registry surface
+  // (/provisioning/provisioners*) — D14 token, shipped with the registry
+  // parity phase.
+  'provisioner-registry',
 ];
 
 /**
@@ -78,6 +93,13 @@ const CONFIG_GATED_FEATURES = [
   ['file-browser', 'file_browser.enabled'],
   ['artifacts', 'artifact_storage.enabled'],
   ['templates', 'template_sources.enabled'],
+  // guest-agent: the QEMU guest-agent channel (/machines/{name}/guest/*) —
+  // credential-less guest control over the zone's virtio-console qga socket.
+  ['guest-agent', 'guest_agent.enabled'],
+  // machine-suspend: POST /machines/{name}/suspend + /resume (bhyvectl
+  // checkpoint; start also restores). Shared token with the Go agent —
+  // experimental here: the bhyvectl flag is dev-marked.
+  ['machine-suspend', 'experimental.enabled'],
 ];
 
 /**
@@ -143,9 +165,10 @@ const buildFeatures = () => [
  *                   example: true
  *                 console:
  *                   type: array
+ *                   description: Hypervisor-level EMERGENCY consoles (zero guest cooperation needed)
  *                   items:
  *                     type: string
- *                   example: ["vnc"]
+ *                   example: ["vnc", "zlogin"]
  *                 features:
  *                   type: array
  *                   description: |
@@ -154,7 +177,7 @@ const buildFeatures = () => [
  *                     advertised. UIs must gate panels with features.includes(token).
  *                   items:
  *                     type: string
- *                   example: ["machines", "machine-create", "services", "zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "system-users", "processes", "zlogin", "ssh", "host-terminal", "host-power", "tasks", "provisioning", "fault-management", "devices", "monitoring", "syslog", "log-streaming", "file-browser", "artifacts", "templates"]
+ *                   example: ["machines", "machine-create", "machine-modify", "machine-screenshot", "machine-snapshots", "services", "zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "system-users", "processes", "ssh", "host-terminal", "host-power", "tasks", "provisioning", "provisioner-registry", "fault-management", "devices", "monitoring", "syslog", "log-streaming", "file-browser", "artifacts", "templates", "guest-agent", "machine-suspend"]
  *                 uptime:
  *                   type: integer
  *                   description: Process uptime in seconds
@@ -187,7 +210,10 @@ export const getStatus = async (req, res) => {
       hostname: os.hostname(),
       auth: ['apikey'],
       bootstrapAvailable,
-      console: ['vnc'],
+      // Emergency consoles only (work with zero guest cooperation): the bhyve
+      // framebuffer over VNC and zlogin. The machine SSH terminal is the ssh
+      // FEATURE token.
+      console: ['vnc', 'zlogin'],
       features: buildFeatures(),
       uptime: Math.floor(process.uptime()),
     });

@@ -7,7 +7,6 @@
 
 export {
   startTerminalSession,
-  checkSessionHealth,
   getTerminalSessionInfo,
   stopTerminalSession,
   listTerminalSessions,

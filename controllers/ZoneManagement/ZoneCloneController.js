@@ -2,13 +2,39 @@ import Zones from '../../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
+import { validateZoneName } from '../../lib/ZoneValidation.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
 import config from '../../config/ConfigLoader.js';
 import { resolveZoneName, createZoneCreationSubTasks } from './ZoneCreationHelpers.js';
+import { findExistingZoneConflict } from './ZoneCreationController.js';
 
 /**
- * @fileoverview Zone clone controller - clone zones via ZFS snapshots
+ * @fileoverview Zone clone controller — the Go agent's clone wire on honest
+ * ZFS semantics. source "current" (default) clones today's disk state through
+ * ZFS snapshots (linked true = thin CoW clone, false = full zfs send/recv
+ * copy; a named snapshot clones that point in time); source "template"
+ * rebuilds fresh disks from the stored creation config. Either flavor runs
+ * the normal create orchestration — a clone builds real infrastructure.
  */
+
+/**
+ * ZFS snapshot-component charset — the snapshot body rides into zfs
+ * commands, so nothing outside it is accepted.
+ */
+const SNAPSHOT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u;
+
+/**
+ * Parse a zone row's configuration column (JSON string or object).
+ * @param {Object} zone - Zone DB record
+ * @returns {Object} Parsed configuration
+ */
+const parseConfiguration = zone => {
+  let zoneConfig = zone.configuration;
+  if (typeof zoneConfig === 'string') {
+    zoneConfig = JSON.parse(zoneConfig);
+  }
+  return zoneConfig;
+};
 
 /**
  * Batch-allocate provisioning IPs from the configured DHCP range.
@@ -75,19 +101,13 @@ const allocateProvisioningIPs = async count => {
 };
 
 /**
- * Create ZFS snapshots for cloning
- * @param {Object} sourceZone - Source zone DB record
- * @returns {Promise<{bootDataset: string, bootSnapshotName: string, additionalSnapshots: Array}>}
+ * List the source zone's clonable datasets.
+ * @param {Object} zoneConfig - Parsed source configuration
+ * @returns {{bootDataset: string|null, additional: string[]}}
  */
-const createCloneSnapshots = async sourceZone => {
-  let zoneConfig = sourceZone.configuration;
-  if (typeof zoneConfig === 'string') {
-    zoneConfig = JSON.parse(zoneConfig);
-  }
-
-  // Identify boot dataset
+const cloneDatasets = zoneConfig => {
   let bootDataset = null;
-  if (zoneConfig.disks && zoneConfig.disks.boot && zoneConfig.disks.boot.dataset) {
+  if (zoneConfig.disks?.boot?.dataset) {
     // Hosts.yml format
     const disk = zoneConfig.disks.boot;
     bootDataset = `${disk.pool}/${disk.dataset}/${disk.volume_name}`;
@@ -95,7 +115,56 @@ const createCloneSnapshots = async sourceZone => {
     // zadm format
     bootDataset = zoneConfig.bootdisk.path;
   }
+  const additional = (zoneConfig.disks?.additional || []).map(
+    disk => `${disk.pool}/${disk.dataset}/${disk.volume_name}`
+  );
+  return { bootDataset, additional };
+};
 
+/**
+ * Resolve a caller-named snapshot against every source dataset — a named
+ * clone is one point in time, so a dataset missing the snapshot refuses the
+ * whole clone instead of silently mixing states.
+ * @param {Object} zoneConfig - Parsed source configuration
+ * @param {string} snapshot - Snapshot name to verify
+ * @returns {Promise<Object>} Snapshot info or a refusal
+ */
+const verifyNamedSnapshots = async (zoneConfig, snapshot) => {
+  const { bootDataset, additional } = cloneDatasets(zoneConfig);
+  if (!bootDataset) {
+    return { success: false, error: 'Could not determine boot dataset for source zone' };
+  }
+
+  const checks = await Promise.all(
+    [bootDataset, ...additional].map(async dataset => ({
+      dataset,
+      exists: (await executeCommand(`pfexec zfs list -H -o name ${dataset}@${snapshot}`)).success,
+    }))
+  );
+  const missing = checks.filter(check => !check.exists).map(check => check.dataset);
+  if (missing.length > 0) {
+    return {
+      success: false,
+      error: `Snapshot ${snapshot} does not exist on every source dataset`,
+      missing_datasets: missing,
+    };
+  }
+
+  return {
+    success: true,
+    bootDataset,
+    bootSnapshotName: snapshot,
+    additionalSnapshots: additional.map(dataset => ({ dataset, snapshotName: snapshot })),
+  };
+};
+
+/**
+ * Create fresh ZFS snapshots of the source's current state for cloning.
+ * @param {Object} zoneConfig - Parsed source configuration
+ * @returns {Promise<{bootDataset: string, bootSnapshotName: string, additionalSnapshots: Array}>}
+ */
+const createCloneSnapshots = async zoneConfig => {
+  const { bootDataset, additional } = cloneDatasets(zoneConfig);
   if (!bootDataset) {
     throw new Error('Could not determine boot dataset for source zone');
   }
@@ -112,98 +181,78 @@ const createCloneSnapshots = async sourceZone => {
   }
 
   // Handle additional disks in parallel
-  if (zoneConfig.disks && zoneConfig.disks.additional) {
-    const snapResults = await Promise.all(
-      zoneConfig.disks.additional.map(async disk => {
-        const dataset = `${disk.pool}/${disk.dataset}/${disk.volume_name}`;
-        const snapResult = await executeCommand(`pfexec zfs snapshot ${dataset}@${snapshotName}`);
-        return { dataset, snapshotName, success: snapResult.success, error: snapResult.error };
-      })
-    );
+  const snapResults = await Promise.all(
+    additional.map(async dataset => {
+      const snapResult = await executeCommand(`pfexec zfs snapshot ${dataset}@${snapshotName}`);
+      return { dataset, snapshotName, success: snapResult.success, error: snapResult.error };
+    })
+  );
 
-    snapResults.forEach(result => {
-      if (result.success) {
-        additionalSnapshots.push({ dataset: result.dataset, snapshotName: result.snapshotName });
-      } else {
-        log.api.warn(`Failed to snapshot additional disk ${result.dataset}`, {
-          error: result.error,
-        });
-      }
-    });
-  }
+  snapResults.forEach(result => {
+    if (result.success) {
+      additionalSnapshots.push({ dataset: result.dataset, snapshotName: result.snapshotName });
+    } else {
+      log.api.warn(`Failed to snapshot additional disk ${result.dataset}`, {
+        error: result.error,
+      });
+    }
+  });
 
   return { bootDataset, bootSnapshotName: snapshotName, additionalSnapshots };
 };
 
 /**
- * Build clone metadata (Hosts.yml structure)
- * @param {Object} sourceZone - Source zone DB record
- * @param {Object} requestBody - Clone request body
- * @param {Object} snapshotInfo - Snapshot info from createCloneSnapshots
- * @param {string} newZoneName - New zone base name
+ * Build the clone's create-orchestration metadata (Hosts.yml structure).
+ * Identity never copies: MACs, VNIC names, and non-provisional addressing
+ * strip; provisional networks get a fresh provisioning-range address.
+ * @param {Object} sourceConfig - Parsed source configuration
+ * @param {Object} mergedSettings - Source settings with caller settings/overrides merged
+ * @param {Object|null} snapshotInfo - Snapshot info for source "current", null for "template"
+ * @param {string} cloneStrategy - 'clone' (thin) or 'copy' (full send/recv)
+ * @param {string} metadataName - Base name the task executors read
  * @returns {Promise<Object>} Clone metadata
  */
-const buildCloneMetadata = async (sourceZone, requestBody, snapshotInfo, newZoneName) => {
-  let sourceConfig = sourceZone.configuration;
-  if (typeof sourceConfig === 'string') {
-    sourceConfig = JSON.parse(sourceConfig);
-  }
-
-  // 1. Settings
-  const settings = {
-    ...sourceConfig.settings,
-    hostname: requestBody.settings.hostname,
-    domain: requestBody.settings.domain || sourceConfig.settings.domain,
-    server_id: requestBody.settings.server_id,
-  };
-
-  // Apply overrides
-  if (requestBody.overrides) {
-    if (requestBody.overrides.memory) {
-      settings.memory = requestBody.overrides.memory;
-    }
-    if (requestBody.overrides.vcpus) {
-      settings.vcpus = requestBody.overrides.vcpus;
-    }
-  }
-
-  // Remove consoleport to avoid conflict
-  delete settings.consoleport;
-
-  // 2. Disks
-  const disks = {
-    boot: {
-      ...sourceConfig.disks.boot,
-      source: {
-        type: 'template',
-        template_dataset: snapshotInfo.bootDataset,
-        snapshot_name: snapshotInfo.bootSnapshotName,
-        clone_strategy: requestBody.clone_strategy || 'clone',
-      },
-    },
-    additional: (sourceConfig.disks && sourceConfig.disks.additional
-      ? sourceConfig.disks.additional
-      : []
-    ).map(disk => {
-      const dataset = `${disk.pool}/${disk.dataset}/${disk.volume_name}`;
-      const snap = snapshotInfo.additionalSnapshots.find(s => s.dataset === dataset);
-
-      if (snap) {
-        return {
-          ...disk,
+const buildCloneMetadata = async (
+  sourceConfig,
+  mergedSettings,
+  snapshotInfo,
+  cloneStrategy,
+  metadataName
+) => {
+  // Disks: source "current" points every disk at its snapshot; source
+  // "template" rides the stored creation layout verbatim (fresh build).
+  const disks = snapshotInfo
+    ? {
+        boot: {
+          ...sourceConfig.disks?.boot,
           source: {
             type: 'template',
-            template_dataset: dataset,
-            snapshot_name: snap.snapshotName,
-            clone_strategy: requestBody.clone_strategy || 'clone',
+            template_dataset: snapshotInfo.bootDataset,
+            snapshot_name: snapshotInfo.bootSnapshotName,
+            clone_strategy: cloneStrategy,
           },
-        };
-      }
-      return { ...disk };
-    }),
-  };
+        },
+        additional: (sourceConfig.disks?.additional || []).map(disk => {
+          const dataset = `${disk.pool}/${disk.dataset}/${disk.volume_name}`;
+          const snap = snapshotInfo.additionalSnapshots.find(s => s.dataset === dataset);
 
-  // 3. Networks - batch-allocate provisioning IPs (no await-in-loop)
+          if (snap) {
+            return {
+              ...disk,
+              source: {
+                type: 'template',
+                template_dataset: dataset,
+                snapshot_name: snap.snapshotName,
+                clone_strategy: cloneStrategy,
+              },
+            };
+          }
+          return { ...disk };
+        }),
+      }
+    : sourceConfig.disks;
+
+  // Networks - batch-allocate provisioning IPs (no await-in-loop)
   const sourceNetworks = sourceConfig.networks || [];
   const provisionalCount = sourceNetworks.filter(net => net.provisional).length;
   const allocatedIps = await allocateProvisioningIPs(provisionalCount);
@@ -224,7 +273,7 @@ const buildCloneMetadata = async (sourceZone, requestBody, snapshotInfo, newZone
     return netCopy;
   });
 
-  // 4. NICs - Strip physical names and MACs to force auto-generation
+  // NICs - Strip physical names and MACs to force auto-generation
   const nics = (sourceConfig.nics || []).map(nic => {
     const nicCopy = { ...nic };
     delete nicCopy.physical;
@@ -233,14 +282,109 @@ const buildCloneMetadata = async (sourceZone, requestBody, snapshotInfo, newZone
   });
 
   return {
-    settings,
+    settings: mergedSettings,
     zones: sourceConfig.zones,
     networks,
     disks,
     nics,
     cloud_init: sourceConfig.cloud_init,
-    name: newZoneName,
+    provisioner: sourceConfig.provisioner,
+    provisioner_ref: sourceConfig.provisioner_ref,
+    name: metadataName,
   };
+};
+
+/**
+ * Validate the clone request's own fields (source flavor, hostname rule,
+ * snapshot charset). Null when usable.
+ * @param {string} source - Clone flavor
+ * @param {Object} settings - Caller settings
+ * @param {string} snapshot - Named snapshot ('' for fresh)
+ * @returns {Object|null} 400 body or null
+ */
+const validateCloneRequest = (source, settings, snapshot) => {
+  if (!['current', 'template'].includes(source)) {
+    return {
+      error:
+        'source must be "current" (clone today\'s disk state via ZFS snapshots) or "template" (rebuild from the stored creation config)',
+    };
+  }
+  if (!settings.hostname) {
+    return {
+      error: 'settings.hostname is required — a clone must not reuse the source hostname',
+    };
+  }
+  if (snapshot && !SNAPSHOT_NAME_PATTERN.test(snapshot)) {
+    return { error: 'snapshot is not a usable ZFS snapshot name' };
+  }
+  return null;
+};
+
+/**
+ * Resolve the clone's name — an explicit name wins verbatim; otherwise
+ * hostname.domain through the server_id prefix rule.
+ * @param {string|undefined} explicitName - Caller-provided name
+ * @param {Object} mergedSettings - Merged clone settings
+ * @returns {Promise<{finalZoneName?: string, error?: {status: number, body: Object}}>}
+ */
+const resolveCloneName = async (explicitName, mergedSettings) => {
+  if (explicitName) {
+    if (!validateZoneName(explicitName)) {
+      return { error: { status: 400, body: { error: 'Invalid machine name' } } };
+    }
+    return { finalZoneName: explicitName };
+  }
+  const baseName = `${mergedSettings.hostname}.${mergedSettings.domain}`;
+  if (!mergedSettings.domain || !validateZoneName(baseName)) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: `Derived machine name ${baseName} is not usable — provide an explicit name`,
+        },
+      },
+    };
+  }
+  const nameResult = await resolveZoneName(baseName, mergedSettings);
+  if (!nameResult.success) {
+    return { error: { status: nameResult.error.status, body: nameResult.error } };
+  }
+  return { finalZoneName: nameResult.finalZoneName };
+};
+
+/**
+ * Settle the clone's disk sources per flavor: source "current" snapshots (or
+ * verifies the named snapshot on) every source dataset; source "template"
+ * rides the stored creation layout.
+ * @param {string} source - Clone flavor
+ * @param {string} snapshot - Named snapshot ('' for fresh)
+ * @param {Object} sourceConfig - Parsed source configuration
+ * @returns {Promise<{snapshotInfo?: Object|null, refusal?: Object}>}
+ */
+const resolveCloneDiskSources = async (source, snapshot, sourceConfig) => {
+  if (source !== 'current') {
+    if (!sourceConfig.disks?.boot) {
+      return {
+        refusal: {
+          error:
+            'Source machine has no stored creation disk layout — clone with source "current" instead',
+        },
+      };
+    }
+    return { snapshotInfo: null };
+  }
+  if (!snapshot) {
+    return { snapshotInfo: await createCloneSnapshots(sourceConfig) };
+  }
+  const named = await verifyNamedSnapshots(sourceConfig, snapshot);
+  if (!named.success) {
+    const refusal = { error: named.error };
+    if (named.missing_datasets) {
+      refusal.missing_datasets = named.missing_datasets;
+    }
+    return { refusal };
+  }
+  return { snapshotInfo: named };
 };
 
 /**
@@ -248,7 +392,16 @@ const buildCloneMetadata = async (sourceZone, requestBody, snapshotInfo, newZone
  * /machines/{machineName}/clone:
  *   post:
  *     summary: Clone a machine
- *     description: Creates a copy of an existing machine (zone) using ZFS snapshots and clones.
+ *     description: |
+ *       Clones a machine through the create orchestration (the Go agent's clone
+ *       wire). `source` "current" (default) copies today's disk state: every
+ *       source dataset is snapshotted — or the named `snapshot` is used — and
+ *       the clone's disks build from those snapshots (`linked` true = thin ZFS
+ *       CoW clone, false = full copy via zfs send/recv). `source` "template"
+ *       rebuilds fresh disks from the stored creation config instead. Identity
+ *       never copies: server_id, consoleport, MACs, VNIC names, and
+ *       non-provisional addressing strip; provisional networks get a fresh
+ *       provisioning-range address.
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -266,9 +419,17 @@ const buildCloneMetadata = async (sourceZone, requestBody, snapshotInfo, newZone
  *             type: object
  *             required: [settings]
  *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Explicit clone name — wins over the derived hostname.domain name
  *               settings:
  *                 type: object
- *                 required: [hostname, server_id]
+ *                 required: [hostname]
+ *                 description: |
+ *                   Settings merged over the source machine's settings — hostname is
+ *                   required (a clone must not reuse the source hostname); domain
+ *                   defaults to the source's; server_id is required only when
+ *                   prefix_zone_names is enabled.
  *                 properties:
  *                   hostname:
  *                     type: string
@@ -276,36 +437,57 @@ const buildCloneMetadata = async (sourceZone, requestBody, snapshotInfo, newZone
  *                     type: string
  *                   server_id:
  *                     type: string
- *               clone_strategy:
+ *               overrides:
+ *                 type: object
+ *                 description: Settings overrides merged last (e.g. memory, vcpus)
+ *               source:
  *                 type: string
- *                 enum: [clone, copy]
- *                 default: clone
+ *                 enum: [current, template]
+ *                 default: current
+ *                 description: |
+ *                   current = clone today's disk state via ZFS snapshots;
+ *                   template = rebuild fresh disks from the stored creation config.
+ *               snapshot:
+ *                 type: string
+ *                 description: |
+ *                   Named source snapshot to clone from (source "current" only) —
+ *                   must exist on every source dataset. Omit for a fresh snapshot
+ *                   of the current state.
+ *               linked:
+ *                 type: boolean
+ *                 default: true
+ *                 description: |
+ *                   true = thin ZFS CoW clone (natural on ZFS); false = full
+ *                   independent copy via zfs send/recv.
  *               start_after_create:
  *                 type: boolean
  *                 default: false
- *               reprovision:
- *                 type: boolean
- *                 default: false
- *               overrides:
- *                 type: object
- *                 properties:
- *                   memory:
- *                     type: string
- *                   vcpus:
- *                     integer: string
  *     responses:
  *       202:
- *         description: Clone task queued
+ *         description: Clone orchestration queued
+ *       400:
+ *         description: Invalid parameters or missing snapshot/disk layout
+ *       404:
+ *         description: Source zone not found
+ *       409:
+ *         description: Clone name already exists
  */
 export const cloneZone = async (req, res) => {
   try {
     const { machineName: zoneName } = req.params;
-    const { settings, start_after_create = false, reprovision = false } = req.body;
+    const settings = req.body.settings || {};
+    const overrides = req.body.overrides || {};
+    const {
+      name: explicitName,
+      source = 'current',
+      snapshot = '',
+      linked = true,
+      start_after_create = false,
+    } = req.body;
 
-    if (!settings || !settings.hostname || !settings.server_id) {
-      return res
-        .status(400)
-        .json({ error: 'settings.hostname and settings.server_id are required' });
+    const requestProblem = validateCloneRequest(source, settings, snapshot);
+    if (requestProblem) {
+      return res.status(400).json(requestProblem);
     }
 
     // 1. Fetch source zone
@@ -313,48 +495,47 @@ export const cloneZone = async (req, res) => {
     if (!sourceZone) {
       return res.status(404).json({ error: 'Source zone not found' });
     }
-
     if (!sourceZone.configuration) {
       return res.status(400).json({ error: 'Source zone has no configuration data' });
     }
+    const sourceConfig = parseConfiguration(sourceZone);
 
-    // 2. Resolve new zone name
-    // Use domain from source if not provided
-    if (!settings.domain) {
-      let sourceConfig = sourceZone.configuration;
-      if (typeof sourceConfig === 'string') {
-        sourceConfig = JSON.parse(sourceConfig);
-      }
-      if (sourceConfig.settings && sourceConfig.settings.domain) {
-        settings.domain = sourceConfig.settings.domain;
-      }
+    // 2. Merge identity: source settings (server_id/consoleport stripped) ←
+    // caller settings ← overrides (the Go clone's merge order).
+    const mergedSettings = { ...sourceConfig.settings };
+    delete mergedSettings.server_id;
+    delete mergedSettings.consoleport;
+    Object.assign(mergedSettings, settings, overrides);
+
+    // 3. Resolve the clone's name — an explicit name wins verbatim.
+    const named = await resolveCloneName(explicitName, mergedSettings);
+    if (named.error) {
+      return res.status(named.error.status).json(named.error.body);
+    }
+    const { finalZoneName } = named;
+
+    // 4. 409 against the DB and the system
+    const conflict = await findExistingZoneConflict(finalZoneName);
+    if (conflict) {
+      return res.status(409).json(conflict);
     }
 
-    const fullBaseName = `${settings.hostname}.${settings.domain}`;
-    const nameResult = await resolveZoneName(fullBaseName, settings);
-    if (!nameResult.success) {
-      return res.status(nameResult.error.status).json(nameResult.error);
-    }
-    const { finalZoneName } = nameResult;
-
-    // 3. Check if new zone exists
-    const existingZone = await Zones.findOne({ where: { name: finalZoneName } });
-    if (existingZone) {
-      return res.status(409).json({ error: `Zone ${finalZoneName} already exists` });
+    // 5. Disk sources per clone flavor
+    const diskSources = await resolveCloneDiskSources(source, snapshot, sourceConfig);
+    if (diskSources.refusal) {
+      return res.status(400).json(diskSources.refusal);
     }
 
-    // 4. Create snapshots
-    const snapshotInfo = await createCloneSnapshots(sourceZone);
-
-    // 5. Build metadata
+    // 6. Build metadata
     const cloneMetadata = await buildCloneMetadata(
-      sourceZone,
-      req.body,
-      snapshotInfo,
-      fullBaseName
+      sourceConfig,
+      mergedSettings,
+      diskSources.snapshotInfo,
+      linked ? 'clone' : 'copy',
+      explicitName || `${mergedSettings.hostname}.${mergedSettings.domain}`
     );
 
-    // 6. Validate resources
+    // 7. Validate resources
     const resourceValidation = await validateZoneCreationResources(cloneMetadata);
     if (!resourceValidation.valid) {
       return res.status(400).json({
@@ -363,14 +544,16 @@ export const cloneZone = async (req, res) => {
       });
     }
 
-    // 7. Create orchestration tasks
+    // 8. Create orchestration tasks. The clone parent is a pure anchor:
+    // born running, never dispatched; the child rollup drives its state.
     const parentTask = await Tasks.create({
       zone_name: finalZoneName,
       operation: 'zone_clone_orchestration',
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       metadata: JSON.stringify(cloneMetadata),
-      status: 'pending',
+      status: 'running',
+      started_at: new Date(),
     });
 
     const { subTasks } = await createZoneCreationSubTasks(
@@ -382,11 +565,14 @@ export const cloneZone = async (req, res) => {
       req.entity.name
     );
 
-    // 8. Handle reprovisioning (optional)
-    if (reprovision) {
-      // Logic to queue setup/provision tasks would go here
-      // For now, we'll stick to the creation pipeline
-    }
+    log.api.info('Zone clone queued', {
+      source_machine: zoneName,
+      clone: finalZoneName,
+      clone_source: source,
+      snapshot: snapshot || null,
+      linked,
+      created_by: req.entity.name,
+    });
 
     return res.status(202).json({
       success: true,

@@ -53,15 +53,13 @@ export const isSessionHealthy = sessionId => {
 
 /**
  * Creates a terminal session database record immediately.
- * @param {string} terminalCookie - Frontend-generated session identifier.
  * @param {string} zoneName - The zone name for this terminal session.
  * @returns {Promise<import('../../../models/TerminalSessionModel.js').default>} The session record
  */
-export const createSessionRecord = async (terminalCookie, zoneName = null) => {
+export const createSessionRecord = async (zoneName = null) => {
   const timer = createTimer('terminal_session_create');
 
   const session = await TerminalSessions.create({
-    terminal_cookie: terminalCookie,
     pid: 0, // Temporary PID, will be updated when PTY spawns
     zone_name: zoneName,
     status: 'connecting', // Session is being created
@@ -69,7 +67,7 @@ export const createSessionRecord = async (terminalCookie, zoneName = null) => {
 
   const duration = timer.end();
   log.websocket.debug('Terminal session record created', {
-    terminal_cookie: terminalCookie,
+    session_id: session.id,
     zone_name: zoneName,
     duration_ms: duration,
   });
@@ -105,7 +103,6 @@ export const spawnPtyProcessAsync = async session => {
     const duration = timer.end();
     log.websocket.info('PTY process spawned successfully', {
       session_id: session.id,
-      terminal_cookie: session.terminal_cookie,
       pid: ptyProcess.pid,
       duration_ms: duration,
     });
@@ -114,7 +111,6 @@ export const spawnPtyProcessAsync = async session => {
     ptyProcess.on('exit', (code, signal) => {
       log.websocket.info('PTY process exited', {
         session_id: session.id,
-        terminal_cookie: session.terminal_cookie,
         exit_code: code,
         signal,
       });
@@ -125,7 +121,6 @@ export const spawnPtyProcessAsync = async session => {
     const duration = timer.end();
     log.websocket.error('Failed to spawn PTY process', {
       session_id: session.id,
-      terminal_cookie: session.terminal_cookie,
       error: error.message,
       duration_ms: duration,
     });

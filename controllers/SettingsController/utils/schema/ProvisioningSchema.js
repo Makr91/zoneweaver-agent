@@ -5,19 +5,107 @@
  */
 
 export const PROVISIONING_SCHEMA = {
+  snapshots: {
+    description: 'Scheduled zone snapshot rotation (Snapshoter.sh semantics, in-agent)',
+    requires_restart: true,
+    properties: {
+      enabled: {
+        type: 'boolean',
+        description: 'Run the snapshot rotation service',
+        default: false,
+      },
+      interval_minutes: {
+        type: 'integer',
+        description:
+          'Cadence for simple/age default policies (rotation uses the fixed hourly/daily/weekly schedule)',
+        default: 60,
+        min: 5,
+      },
+      default_policy: {
+        type: 'object',
+        description:
+          'Retention policy applied to EVERY zone unless the zone overrides it (configuration.snapshots; type none disables per zone). Types: none | simple (keep newest N) | age (delete older than max_age_days) | rotation (hourly/daily/weekly tiers, Snapshoter.sh schedule). Deletions are always skipped while the pool scrubs/resilvers. quiesce runs qga fsfreeze around each snapshot when the guest agent answers.',
+        properties: {
+          type: {
+            type: 'string',
+            description: 'Retention type',
+            default: 'none',
+            enum: ['none', 'simple', 'age', 'rotation'],
+          },
+          quiesce: {
+            type: 'boolean',
+            description: 'qga fsfreeze around snapshots (application-consistent when available)',
+            default: false,
+          },
+          keep: {
+            type: 'integer',
+            description: 'simple: newest N auto snapshots to keep',
+            default: 24,
+            min: 1,
+          },
+          max_age_days: {
+            type: 'integer',
+            description: 'age: delete auto snapshots older than this',
+            default: 14,
+            min: 1,
+          },
+          tiers: {
+            type: 'object',
+            description:
+              'rotation: per-tier keep counts — hourly (:00, hours 1-23), daily (00:00 Sun-Fri), weekly (00:00 Sat)',
+            properties: {
+              hourly: {
+                type: 'object',
+                description: 'Hourly tier',
+                properties: {
+                  keep: { type: 'integer', description: 'Snapshots to keep', default: 24, min: 1 },
+                },
+              },
+              daily: {
+                type: 'object',
+                description: 'Daily tier',
+                properties: {
+                  keep: { type: 'integer', description: 'Snapshots to keep', default: 8, min: 1 },
+                },
+              },
+              weekly: {
+                type: 'object',
+                description: 'Weekly tier',
+                properties: {
+                  keep: { type: 'integer', description: 'Snapshots to keep', default: 5, min: 1 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  guest_agent: {
+    description: 'QEMU guest-agent channel (virtio-console qga socket)',
+    requires_restart: true,
+    properties: {
+      enabled: {
+        type: 'boolean',
+        description:
+          'Master switch for the guest-agent surface (/machines/{name}/guest/*, discovery probe, and the per-machine zones.guest_agent create option). Windows guests need the r151054az bhyve virtio-console fix and hostbridge=q35.',
+        default: false,
+      },
+    },
+  },
   provisioning: {
     description: 'Zone provisioning configuration',
     requires_restart: true,
     properties: {
-      install_tools: {
-        type: 'boolean',
-        description: 'Auto-install required tools (Ansible, rsync, git, dhcpd) on startup',
-        default: true,
-      },
       staging_path: {
         type: 'string',
         description: 'Path for provisioning staging files',
         default: '/var/lib/zoneweaver-agent/provisioning',
+      },
+      provisioners_path: {
+        type: 'string',
+        description: 'Provisioner package registry directory (SHI on-disk format)',
+        default: '/var/lib/zoneweaver-agent/provisioners',
       },
       playbook_timeout_seconds: {
         type: 'integer',

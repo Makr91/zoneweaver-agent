@@ -23,7 +23,7 @@ import { getSSHCleanupTask, startSSHSessionCleanup } from './controllers/SSHTerm
 import { cleanupLogStreamSessions } from './controllers/LogStreamController.js';
 import CleanupService from './controllers/CleanupService.js';
 import { startHostMonitoring } from './controllers/HostMonitoringService.js';
-import { checkAndInstallPackages } from './controllers/ProvisioningController.js';
+import { startSnapshotRotation } from './controllers/SnapshotRotationService.js';
 import ReconciliationService from './controllers/ReconciliationService.js';
 import {
   initializeArtifactStorage,
@@ -206,23 +206,37 @@ httpServer.listen(httpPort, () => {
   DatabaseMigrations.setupDatabase()
     .then(async success => {
       if (success) {
-        // Clear any pending/running tasks from previous server runs
+        // Startup recovery (the Go queue's split): running rows at boot are
+        // leftovers from a previous process and land in failed; pending rows
+        // are cancelled unless zones.resume_pending_tasks_on_start keeps them.
         try {
-          const clearedTasks = await Tasks.update(
-            { status: 'cancelled' },
+          const [staleRunning] = await Tasks.update(
             {
-              where: {
-                status: ['pending', 'running'],
-              },
-            }
+              status: 'failed',
+              error_message: 'Agent restarted while task was running',
+              completed_at: new Date(),
+            },
+            { where: { status: 'running' } }
           );
-          if (clearedTasks[0] > 0) {
-            log.app.info('Cleared pending tasks from previous startup', {
-              cleared_count: clearedTasks[0],
+          let staleQueued = 0;
+          if (!config.getZones()?.resume_pending_tasks_on_start) {
+            [staleQueued] = await Tasks.update(
+              {
+                status: 'cancelled',
+                error_message: 'Agent restarted before task ran',
+                completed_at: new Date(),
+              },
+              { where: { status: ['pending', 'prepared'] } }
+            );
+          }
+          if (staleRunning > 0 || staleQueued > 0) {
+            log.app.info('Recovered stale tasks from previous startup', {
+              failed_running: staleRunning,
+              cancelled_queued: staleQueued,
             });
           }
         } catch (error) {
-          log.app.warn('Failed to clear tasks on startup', {
+          log.app.warn('Failed to recover stale tasks on startup', {
             error: error.message,
           });
         }
@@ -247,9 +261,6 @@ httpServer.listen(httpPort, () => {
         } catch (error) {
           log.auth.warn('Failed to prepare setup token', { error: error.message });
         }
-
-        // Check and install required packages
-        await checkAndInstallPackages();
 
         // Start task processor for zone operations
         startTaskProcessor();
@@ -277,6 +288,9 @@ httpServer.listen(httpPort, () => {
 
         // Start reconciliation service
         ReconciliationService.start();
+
+        // Start snapshot rotation service (snapshots.enabled)
+        startSnapshotRotation();
 
         // Initialize and start artifact storage service
         await initializeArtifactStorage();

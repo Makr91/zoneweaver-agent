@@ -43,10 +43,6 @@ import { log } from '../../lib/Logger.js';
  *               be_name:
  *                 type: string
  *                 description: Boot environment name to create for installation
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Package installation task created successfully
@@ -71,13 +67,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to create installation task
  */
 export const installPackages = async (req, res) => {
-  const {
-    packages,
-    accept_licenses = false,
-    dry_run = false,
-    be_name,
-    created_by = 'api',
-  } = req.body;
+  const { packages, accept_licenses = false, dry_run = false, be_name } = req.body;
 
   try {
     if (!packages || !Array.isArray(packages) || packages.length === 0) {
@@ -91,7 +81,7 @@ export const installPackages = async (req, res) => {
       zone_name: 'system',
       operation: 'pkg_install',
       priority: TaskPriority.MEDIUM,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -125,7 +115,6 @@ export const installPackages = async (req, res) => {
       stack: error.stack,
       packages,
       dry_run,
-      created_by,
     });
     return res.status(500).json({
       error: 'Failed to create package installation task',
@@ -164,10 +153,6 @@ export const installPackages = async (req, res) => {
  *               be_name:
  *                 type: string
  *                 description: Boot environment name to create for uninstallation
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Package uninstallation task created successfully
@@ -177,7 +162,7 @@ export const installPackages = async (req, res) => {
  *         description: Failed to create uninstallation task
  */
 export const uninstallPackages = async (req, res) => {
-  const { packages, dry_run = false, be_name, created_by = 'api' } = req.body;
+  const { packages, dry_run = false, be_name } = req.body;
 
   try {
     if (!packages || !Array.isArray(packages) || packages.length === 0) {
@@ -191,7 +176,7 @@ export const uninstallPackages = async (req, res) => {
       zone_name: 'system',
       operation: 'pkg_uninstall',
       priority: TaskPriority.MEDIUM,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -224,7 +209,6 @@ export const uninstallPackages = async (req, res) => {
       stack: error.stack,
       packages,
       dry_run,
-      created_by,
     });
     return res.status(500).json({
       error: 'Failed to create package uninstallation task',

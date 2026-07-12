@@ -2,7 +2,7 @@
  * @fileoverview Bridge data fetching helper
  */
 
-import { executeCommand } from './CommandHelper.js';
+import { executeCommand } from '../../../lib/CommandManager.js';
 import { parseBridgeLinks, parseBridgeForwarding } from './ParsingHelpers.js';
 
 /**

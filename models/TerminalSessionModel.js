@@ -53,12 +53,6 @@ const TerminalSessions = db.define(
       primaryKey: true,
       comment: 'Unique session identifier',
     },
-    terminal_cookie: {
-      type: DataTypes.STRING,
-      unique: true,
-      allowNull: false,
-      comment: 'Frontend-generated session identifier',
-    },
     pid: {
       type: DataTypes.INTEGER,
       allowNull: false,

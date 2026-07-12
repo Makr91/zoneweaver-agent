@@ -39,8 +39,6 @@ import { log } from '../../lib/Logger.js';
  *                 default: false
  *               properties:
  *                 type: object
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Snapshot task created
@@ -53,7 +51,7 @@ import { log } from '../../lib/Logger.js';
  */
 export const createSnapshot = async (req, res) => {
   const { name } = req.params;
-  const { snapshot_name, recursive = false, properties = {}, created_by = 'api' } = req.body;
+  const { snapshot_name, recursive = false, properties = {} } = req.body;
 
   try {
     if (!name) {
@@ -78,7 +76,7 @@ export const createSnapshot = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_create_snapshot',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -146,8 +144,6 @@ export const createSnapshot = async (req, res) => {
  *               defer:
  *                 type: boolean
  *                 default: false
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Destruction task created
@@ -160,7 +156,7 @@ export const createSnapshot = async (req, res) => {
  */
 export const destroySnapshot = async (req, res) => {
   const { snapshot } = req.params;
-  const { recursive = false, defer = false, created_by = 'api' } = req.body;
+  const { recursive = false, defer = false } = req.body;
 
   try {
     if (!snapshot) {
@@ -183,7 +179,7 @@ export const destroySnapshot = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_destroy_snapshot',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -249,8 +245,6 @@ export const destroySnapshot = async (req, res) => {
  *               force:
  *                 type: boolean
  *                 default: false
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Rollback task created
@@ -263,7 +257,7 @@ export const destroySnapshot = async (req, res) => {
  */
 export const rollbackSnapshot = async (req, res) => {
   const { snapshot } = req.params;
-  const { recursive = false, force = false, created_by = 'api' } = req.body;
+  const { recursive = false, force = false } = req.body;
 
   try {
     if (!snapshot) {
@@ -286,7 +280,7 @@ export const rollbackSnapshot = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_rollback_snapshot',
       priority: TaskPriority.CRITICAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

@@ -1,6 +1,7 @@
 import { getPtyProcess } from './TerminalSessionController.js';
 import TerminalSessions from '../models/TerminalSessionModel.js';
 import { log } from '../lib/Logger.js';
+import { createSessionBufferWriter } from '../lib/SessionBuffer.js';
 
 /**
  * @fileoverview Xterm Terminal WebSocket handler for Zoneweaver Agent
@@ -32,34 +33,20 @@ const setupTerminalConnection = async (ws, sessionId, session, ptyProcess) => {
     last_activity: new Date(),
   });
 
-  // Pipe data from PTY to WebSocket and capture for buffer
-  const onPtyData = async data => {
+  const bufferWriter = createSessionBufferWriter(session);
+
+  // Pipe data from PTY to WebSocket and buffer it (debounced flush)
+  const onPtyData = data => {
     if (ws.readyState === ws.OPEN) {
       ws.send(data);
     }
-
-    // Append to session buffer (keep last 1000 lines)
-    try {
-      const currentBuffer = session.session_buffer || '';
-      const newBuffer = (currentBuffer + data).split('\n').slice(-1000).join('\n');
-
-      await session.update({
-        session_buffer: newBuffer,
-        last_activity: new Date(),
-      });
-    } catch (error) {
-      log.websocket.error('Error updating session buffer', {
-        session_id: sessionId,
-        error: error.message,
-        stack: error.stack,
-      });
-    }
+    bufferWriter.append(data);
   };
 
   ptyProcess.on('data', onPtyData);
 
   // Pipe data from WebSocket to PTY and update activity
-  ws.on('message', async command => {
+  ws.on('message', command => {
     const text = command.toString();
 
     // NUL-prefixed control message from the UI (PTY resize). Anything that doesn't
@@ -81,33 +68,22 @@ const setupTerminalConnection = async (ws, sessionId, session, ptyProcess) => {
     }
 
     ptyProcess.write(text);
-
-    // Update activity timestamp on user input
-    try {
-      await session.update({ last_activity: new Date() });
-    } catch (error) {
-      log.websocket.error('Error updating activity timestamp', {
-        session_id: sessionId,
-        error: error.message,
-        stack: error.stack,
-      });
-    }
+    bufferWriter.touch();
   });
 
   // Handle WebSocket close
   ws.on('close', () => {
     log.websocket.info('WebSocket closed for terminal session', {
       session_id: sessionId,
-      terminal_cookie: session.terminal_cookie,
     });
     ptyProcess.removeListener('data', onPtyData);
+    bufferWriter.close();
   });
 
   // Handle WebSocket errors
   ws.on('error', error => {
     log.websocket.error('WebSocket error for terminal session', {
       session_id: sessionId,
-      terminal_cookie: session.terminal_cookie,
       error: error.message,
       stack: error.stack,
     });
@@ -130,7 +106,6 @@ export const handleTerminalConnection = async (ws, sessionId) => {
 
   log.websocket.info('WebSocket connected to terminal session', {
     session_id: sessionId,
-    terminal_cookie: session.terminal_cookie,
     status: session.status,
   });
 

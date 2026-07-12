@@ -1,5 +1,24 @@
 import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
+import { log } from '../../lib/Logger.js';
+
+/**
+ * Pool-shape mutations invalidate the disk inventory's pool_assignment /
+ * is_available the moment they land — kick an immediate storage collection
+ * instead of leaving the UI stale until the next storage tick. Fire-and-forget
+ * (a refresh failure never fails the task that already succeeded); dynamic
+ * import keeps this module out of the monitoring service's import cycle.
+ */
+const refreshStorageInventory = async () => {
+  try {
+    const { getHostMonitoringService } = await import('../HostMonitoringService.js');
+    await getHostMonitoringService().triggerCollection('storage');
+  } catch (error) {
+    log.monitoring.warn('Post-mutation storage inventory refresh failed', {
+      error: error.message,
+    });
+  }
+};
 
 /**
  * Build a vdev specification string from an array of vdev objects
@@ -60,6 +79,7 @@ export const executeCreatePoolTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
+      void refreshStorageInventory();
       return {
         success: true,
         message: `Pool '${pool_name}' created successfully`,
@@ -98,6 +118,7 @@ export const executeDestroyPoolTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
+      void refreshStorageInventory();
       return {
         success: true,
         message: `Pool '${pool_name}' destroyed successfully`,
@@ -187,6 +208,7 @@ export const executeAddVdevTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
+      void refreshStorageInventory();
       return {
         success: true,
         message: `Vdev added to pool '${pool_name}' successfully`,
@@ -219,6 +241,7 @@ export const executeRemoveVdevTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
+      void refreshStorageInventory();
       return {
         success: true,
         message: `Device '${device}' removal initiated from pool '${pool_name}'`,
@@ -257,6 +280,7 @@ export const executeReplaceDeviceTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
+      void refreshStorageInventory();
       return {
         success: true,
         message: `Device '${old_device}' replaced with '${new_device}' in pool '${pool_name}'`,
@@ -295,6 +319,7 @@ export const executeOnlineDeviceTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
+      void refreshStorageInventory();
       return {
         success: true,
         message: `Device '${device}' brought online in pool '${pool_name}'`,
@@ -333,6 +358,7 @@ export const executeOfflineDeviceTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
+      void refreshStorageInventory();
       return {
         success: true,
         message: `Device '${device}' taken offline in pool '${pool_name}'`,
@@ -435,6 +461,7 @@ export const executeExportPoolTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
+      void refreshStorageInventory();
       return {
         success: true,
         message: `Pool '${pool_name}' exported successfully`,
@@ -487,6 +514,7 @@ export const executeImportPoolTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
+      void refreshStorageInventory();
       const displayName = new_name || pool_name || pool_id;
       return {
         success: true,

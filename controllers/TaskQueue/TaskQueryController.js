@@ -23,7 +23,7 @@ import { runningTasks } from './TaskState.js';
  *         name: status
  *         schema:
  *           type: string
- *           enum: [pending, running, completed, failed, cancelled]
+ *           enum: [pending, prepared, running, completed, completed_with_errors, failed, cancelled]
  *         description: Filter by task status
  *       - in: query
  *         name: machine_name
@@ -139,8 +139,11 @@ export const listTasks = async (req, res) => {
     const sortColumn = requestedSort === 'machine_name' ? 'zone_name' : requestedSort;
     const sortDirection = sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
+    // The LIST never carries the output column (joint contract with the Go
+    // agent) — full task output rides GET /tasks/{taskId}/output only.
     const tasks = await Tasks.findAll({
       where: whereClause,
+      attributes: { exclude: ['output'] },
       order: [[sortColumn, sortDirection]],
       limit: parseInt(limit),
     });

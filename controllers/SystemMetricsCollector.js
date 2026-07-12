@@ -12,6 +12,7 @@ import config from '../config/ConfigLoader.js';
 import CPUStats from '../models/CPUStatsModel.js';
 import MemoryStats from '../models/MemoryStatsModel.js';
 import SwapArea from '../models/SwapAreaModel.js';
+import ZoneMetrics from '../models/ZoneMetricsModel.js';
 import HostInfo from '../models/HostInfoModel.js';
 import { Op } from 'sequelize';
 import { log, createTimer } from '../lib/Logger.js';
@@ -30,6 +31,9 @@ class SystemMetricsCollector {
     this.errorCount = 0;
     this.lastErrorReset = Date.now();
     this.lastCPUTimes = null;
+    // Per-zone VFS counters from the previous scan (keyed by zone name) —
+    // rates derive from kstat snaptime deltas.
+    this.lastZoneVfs = new Map();
   }
 
   /**
@@ -626,13 +630,168 @@ class SystemMetricsCollector {
   }
 
   /**
+   * Parse `zonestat -p -r summary` output into per-zone CPU figures.
+   * Row shape (verified host-1162):
+   * interval:summary:<zone>:<cpus-used>:<pct-of-host>%:-:-:<physK>:<pct>%:...
+   * Bracketed pseudo-rows ([resource]/[total]/[system]) are skipped. The
+   * memory columns are deliberately IGNORED — zonestat memory is not
+   * meaningful for bhyve zones (guest RAM is not host-attributed); memory
+   * rides the memory_cap kstats instead.
+   * @param {string} output - zonestat parseable output
+   * @returns {Object} zone name → {cpu_used, cpu_pct}
+   */
+  parseZonestatSummary(output) {
+    const zones = {};
+    for (const line of output.split('\n')) {
+      const parts = line.trim().split(':');
+      if (parts[0] !== 'interval' || parts[1] !== 'summary') {
+        continue;
+      }
+      const [, , name] = parts;
+      if (!name || name.startsWith('[')) {
+        continue;
+      }
+      zones[name] = {
+        cpu_used: parseFloat(parts[3]) || 0,
+        cpu_pct: parseFloat(parts[4]) || 0,
+      };
+    }
+    return zones;
+  }
+
+  /**
+   * Parse `kstat -p -m <module>` output into per-zone stat maps. Rows group
+   * by module:instance; the group's own `zonename` stat is the canonical key
+   * (the kstat NAME field truncates long zone names, the stat does not).
+   * @param {string} output - kstat parseable output
+   * @returns {Object} zone name → {stat: numericValue, zonename: string}
+   */
+  parseZoneKstats(output) {
+    const groups = {};
+    for (const line of output.split('\n')) {
+      const match = line.match(
+        /^(?<module>[^:]+):(?<instance>\d+):(?<name>\S+):(?<stat>\S+)\s+(?<value>.*)$/
+      );
+      if (!match) {
+        continue;
+      }
+      const { instance, stat, value } = match.groups;
+      groups[instance] = groups[instance] || {};
+      groups[instance][stat] = value.trim();
+    }
+    const zones = {};
+    for (const group of Object.values(groups)) {
+      if (group.zonename) {
+        zones[group.zonename] = group;
+      }
+    }
+    return zones;
+  }
+
+  /**
+   * Collect per-zone CPU/memory/VFS-I/O metrics (zonestat + memory_cap +
+   * zone_vfs — all three verified on host-1162). VFS byte/op counters are
+   * cumulative; bps rates derive from the previous scan's counters via kstat
+   * snaptime. Platform caveats live on the model: bhyve guest RAM is not
+   * host-attributed, and zvol block traffic bypasses zone_vfs.
+   * @returns {Promise<boolean>} Success status
+   */
+  async collectZoneMetrics() {
+    try {
+      const timeout = this.hostMonitoringConfig.performance.command_timeout * 1000;
+
+      const [zonestatResult, memResult, vfsResult] = await Promise.all([
+        // zonestat samples for 1 second — pad the timeout accordingly.
+        execProm('pfexec zonestat -p -r summary 1 1', { timeout: timeout + 5000 }),
+        execProm('kstat -p -m memory_cap', { timeout }),
+        execProm('kstat -p -m zone_vfs', { timeout }),
+      ]);
+
+      const cpu = this.parseZonestatSummary(zonestatResult.stdout);
+      const mem = this.parseZoneKstats(memResult.stdout);
+      const vfs = this.parseZoneKstats(vfsResult.stdout);
+
+      const now = new Date();
+      const names = new Set([...Object.keys(cpu), ...Object.keys(mem), ...Object.keys(vfs)]);
+
+      // bhyve guest RAM is not host-attributed in memory_cap (rss stays ~8MB
+      // for a 4G guest) — bhyvectl's "Resident memory" is the real wired
+      // figure (verified host-1162). Probe every non-global zone; non-bhyve /
+      // not-running zones simply fail the probe and keep their memory_cap rss.
+      const bhyveProbes = await Promise.all(
+        [...names]
+          .filter(name => name !== 'global')
+          .map(async name => {
+            try {
+              const { stdout } = await execProm(`pfexec bhyvectl --vm=${name} --get-stats`, {
+                timeout,
+              });
+              const match = stdout.match(/^Resident memory\s+(?<bytes>\d+)/m);
+              return match ? [name, Number(match.groups.bytes)] : null;
+            } catch {
+              return null;
+            }
+          })
+      );
+      const bhyveRss = new Map(bhyveProbes.filter(Boolean));
+      const rows = [];
+      for (const name of names) {
+        const vfsStats = vfs[name];
+        let readBps = null;
+        let writeBps = null;
+        if (vfsStats) {
+          const snaptime = parseFloat(vfsStats.snaptime);
+          const nread = Number(vfsStats.nread);
+          const nwritten = Number(vfsStats.nwritten);
+          const prev = this.lastZoneVfs.get(name);
+          if (prev && snaptime > prev.snaptime) {
+            const elapsed = snaptime - prev.snaptime;
+            readBps = Math.max(0, (nread - prev.nread) / elapsed);
+            writeBps = Math.max(0, (nwritten - prev.nwritten) / elapsed);
+          }
+          this.lastZoneVfs.set(name, { nread, nwritten, snaptime });
+        }
+        rows.push({
+          host: this.hostname,
+          zone_name: name,
+          cpu_used: cpu[name]?.cpu_used ?? null,
+          cpu_pct: cpu[name]?.cpu_pct ?? null,
+          rss_bytes: bhyveRss.get(name) ?? (mem[name] ? Number(mem[name].rss) : null),
+          swap_bytes: mem[name] ? Number(mem[name].swap) : null,
+          vfs_nread_bytes: vfsStats ? Number(vfsStats.nread) : null,
+          vfs_nwritten_bytes: vfsStats ? Number(vfsStats.nwritten) : null,
+          vfs_reads: vfsStats ? Number(vfsStats.reads) : null,
+          vfs_writes: vfsStats ? Number(vfsStats.writes) : null,
+          vfs_read_bps: readBps,
+          vfs_write_bps: writeBps,
+          scan_timestamp: now,
+        });
+      }
+
+      if (rows.length > 0) {
+        await ZoneMetrics.bulkCreate(rows);
+      }
+
+      log.monitoring.debug('Zone metrics collected', {
+        zones: rows.length,
+        hostname: this.hostname,
+      });
+
+      return true;
+    } catch (error) {
+      const shouldContinue = await this.handleError(error, 'Zone metrics collection');
+      return shouldContinue;
+    }
+  }
+
+  /**
    * Collect CPU, memory, and swap statistics in parallel
    * @returns {Promise<boolean>} Success status
    */
   async collectSystemMetrics() {
     try {
       // Collect all system metrics in parallel for optimal performance
-      const [cpuSuccess, memorySuccess, swapSuccess] = await Promise.all([
+      const [cpuSuccess, memorySuccess, swapSuccess, zoneSuccess] = await Promise.all([
         this.collectCPUStats().catch(error => {
           log.monitoring.warn('CPU stats collection failed', {
             error: error.message,
@@ -654,9 +813,16 @@ class SystemMetricsCollector {
           });
           return false;
         }),
+        this.collectZoneMetrics().catch(error => {
+          log.monitoring.warn('Zone metrics collection failed', {
+            error: error.message,
+            hostname: this.hostname,
+          });
+          return false;
+        }),
       ]);
 
-      if (cpuSuccess && memorySuccess && swapSuccess) {
+      if (cpuSuccess && memorySuccess && swapSuccess && zoneSuccess) {
         await this.resetErrorCount();
         return true;
       }
@@ -664,6 +830,7 @@ class SystemMetricsCollector {
         cpu_success: cpuSuccess,
         memory_success: memorySuccess,
         swap_success: swapSuccess,
+        zone_success: zoneSuccess,
         hostname: this.hostname,
       });
       return false;
@@ -712,13 +879,21 @@ class SystemMetricsCollector {
         },
       });
 
+      // Clean per-zone metrics (same retention window as system metrics)
+      const deletedZoneMetrics = await ZoneMetrics.destroy({
+        where: {
+          scan_timestamp: { [Op.lt]: swapRetentionDate },
+        },
+      });
+
       const duration = timer.end();
 
-      if (deletedCPU > 0 || deletedMemory > 0 || deletedSwapAreas > 0) {
+      if (deletedCPU > 0 || deletedMemory > 0 || deletedSwapAreas > 0 || deletedZoneMetrics > 0) {
         log.database.info('System metrics cleanup completed', {
           deleted_cpu: deletedCPU,
           deleted_memory: deletedMemory,
           deleted_swap_areas: deletedSwapAreas,
+          deleted_zone_metrics: deletedZoneMetrics,
           duration_ms: duration,
           hostname: this.hostname,
         });

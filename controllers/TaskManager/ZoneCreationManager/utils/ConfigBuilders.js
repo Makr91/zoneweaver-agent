@@ -112,5 +112,12 @@ export const buildZoneAttributeMap = metadata => {
     vnc: zones.vnc || metadata.vnc,
     acpi: zones.acpi || metadata.acpi,
     xhci: zones.xhci || metadata.xhci,
+    bootorder: zones.bootorder || metadata.bootorder,
+    bootnext: zones.bootnext || metadata.bootnext,
+    // Agent-owned custom attrs: create materializes the document inputs into
+    // zonecfg so the value rides the zone (the PUT knobs edit the same attrs).
+    boot_priority: zones.boot_priority,
+    consoleport: settings.consoleport,
+    consolehost: settings.consolehost,
   };
 };

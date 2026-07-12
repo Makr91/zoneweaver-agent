@@ -26,15 +26,16 @@ import {
 export const listSources = (req, res) => {
   void req;
   try {
+    // D14 LIST shape, shared with the Go agent: {name, url, enabled, default}
+    // — registry internals (credentials/TLS knobs) never leave the agent.
     const templateConfig = config.getTemplateSources();
     const sources = (templateConfig?.sources || [])
       .filter(s => s.enabled)
       .map(s => ({
         name: s.name,
-        type: s.type,
         url: s.url,
-        organization: s.organization,
-        verify_ssl: s.verify_ssl,
+        enabled: s.enabled,
+        default: Boolean(s.default),
       }));
 
     return res.json({ sources });
@@ -65,7 +66,6 @@ export const listSources = (req, res) => {
  */
 export const listRemoteTemplates = async (req, res) => {
   const { sourceName } = req.params;
-  const userToken = req.headers['x-registry-token'];
 
   try {
     const sourceConfig = findSourceConfig(sourceName);
@@ -73,11 +73,12 @@ export const listRemoteTemplates = async (req, res) => {
       return res.status(404).json({ error: 'Template source not found or disabled' });
     }
 
-    const token = await getRegistryToken(sourceConfig, userToken);
-    const client = createRegistryClient(sourceConfig, token);
+    const token = getRegistryToken(sourceConfig);
+    // Plain UA: BoxVault's vagrantHandler middleware parses any two-segment
+    // Vagrant-UA path as {org}/{box} — /api/discover would 404 as box
+    // "discover" in org "api".
+    const client = createRegistryClient(sourceConfig, token, { plainUA: true });
 
-    // If organization is configured, we could list boxes for that org,
-    // but /api/discover is the general discovery endpoint for BoxVault
     const response = await client.get('/api/discover');
 
     return res.json(response.data);
@@ -125,7 +126,6 @@ export const listRemoteTemplates = async (req, res) => {
  */
 export const getRemoteTemplateDetails = async (req, res) => {
   const { sourceName, org, boxName } = req.params;
-  const userToken = req.headers['x-registry-token'];
 
   try {
     const sourceConfig = findSourceConfig(sourceName);
@@ -133,7 +133,7 @@ export const getRemoteTemplateDetails = async (req, res) => {
       return res.status(404).json({ error: 'Template source not found or disabled' });
     }
 
-    const token = await getRegistryToken(sourceConfig, userToken);
+    const token = getRegistryToken(sourceConfig);
     const client = createRegistryClient(sourceConfig, token);
     // Vagrant-compatible metadata endpoint: /{user}/{box}
     const response = await client.get(`/${org}/${boxName}`);

@@ -3,4 +3,4 @@
  * Re-exports shared task progress helpers
  */
 
-export { findRunningTask, updateTaskProgress } from '../../../../lib/TaskProgressHelper.js';
+export { updateTaskProgress } from '../../../../lib/TaskProgressHelper.js';

@@ -30,8 +30,6 @@ import { log } from '../../lib/Logger.js';
  *             properties:
  *               force:
  *                 type: boolean
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Export task created
@@ -40,7 +38,7 @@ import { log } from '../../lib/Logger.js';
  */
 export const exportPool = async (req, res) => {
   const { pool } = req.params;
-  const { force = false, created_by = 'api' } = req.body || {};
+  const { force = false } = req.body || {};
 
   try {
     if (!pool) {
@@ -59,7 +57,7 @@ export const exportPool = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_export',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -123,8 +121,6 @@ export const exportPool = async (req, res) => {
  *                 type: object
  *               force:
  *                 type: boolean
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Import task created
@@ -132,14 +128,7 @@ export const exportPool = async (req, res) => {
  *         description: Invalid request
  */
 export const importPool = async (req, res) => {
-  const {
-    pool_name,
-    pool_id,
-    new_name,
-    properties = {},
-    force = false,
-    created_by = 'api',
-  } = req.body;
+  const { pool_name, pool_id, new_name, properties = {}, force = false } = req.body;
 
   try {
     if (!pool_name && !pool_id) {
@@ -150,7 +139,7 @@ export const importPool = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_import',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

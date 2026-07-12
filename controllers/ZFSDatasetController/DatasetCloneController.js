@@ -37,8 +37,6 @@ import { log } from '../../lib/Logger.js';
  *                 description: Target dataset name
  *               properties:
  *                 type: object
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Clone task created
@@ -51,7 +49,7 @@ import { log } from '../../lib/Logger.js';
  */
 export const cloneDataset = async (req, res) => {
   const { name: snapshot } = req.params;
-  const { target, properties = {}, created_by = 'api' } = req.body;
+  const { target, properties = {} } = req.body;
 
   try {
     if (!snapshot) {
@@ -78,7 +76,7 @@ export const cloneDataset = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_clone_dataset',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -134,14 +132,6 @@ export const cloneDataset = async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Promote task created
@@ -152,7 +142,6 @@ export const cloneDataset = async (req, res) => {
  */
 export const promoteDataset = async (req, res) => {
   const { name } = req.params;
-  const { created_by = 'api' } = req.body;
 
   try {
     if (!name) {
@@ -171,7 +160,7 @@ export const promoteDataset = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_promote_dataset',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

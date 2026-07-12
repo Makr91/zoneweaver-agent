@@ -51,11 +51,6 @@ const LogStreamSession = sequelize.define(
       unique: true,
       comment: 'Unique session identifier',
     },
-    cookie: {
-      type: DataTypes.STRING(100),
-      allowNull: false,
-      comment: 'Session cookie for tracking',
-    },
     logname: {
       type: DataTypes.STRING(255),
       allowNull: false,

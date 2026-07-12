@@ -94,6 +94,15 @@ export const storeInfrastructureConfig = async (zone, metadata, zoneName) => {
   if (metadata.disks) {
     zoneConfig.disks = metadata.disks;
   }
+  if (metadata.provisioner) {
+    zoneConfig.provisioner = metadata.provisioner;
+  }
+  if (metadata.provisioner_ref) {
+    zoneConfig.provisioner_ref = metadata.provisioner_ref;
+  }
+  if (metadata.snapshots) {
+    zoneConfig.snapshots = metadata.snapshots;
+  }
   if (metadata.metadata) {
     zoneConfig.metadata = metadata.metadata;
   }
@@ -105,6 +114,7 @@ export const storeInfrastructureConfig = async (zone, metadata, zoneName) => {
     has_zones: !!metadata.zones,
     has_networks: !!metadata.networks,
     has_disks: !!metadata.disks,
+    has_provisioner: !!metadata.provisioner,
   });
 };
 

@@ -46,10 +46,6 @@ import { log } from '../../lib/Logger.js';
  *               properties:
  *                 type: object
  *                 description: ZFS properties to set
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Boot environment creation task created successfully
@@ -81,7 +77,6 @@ export const createBootEnvironment = async (req, res) => {
       activate = false,
       zpool,
       properties = {},
-      created_by = 'api',
     } = req.body;
 
     if (!name) {
@@ -102,7 +97,7 @@ export const createBootEnvironment = async (req, res) => {
       zone_name: 'system',
       operation: 'beadm_create',
       priority: TaskPriority.MEDIUM,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -139,7 +134,6 @@ export const createBootEnvironment = async (req, res) => {
       stack: error.stack,
       name: req.body?.name,
       activate: req.body?.activate,
-      created_by: req.body?.created_by,
     });
     return res.status(500).json({
       error: 'Failed to create boot environment task',
@@ -200,7 +194,7 @@ export const createBootEnvironment = async (req, res) => {
 export const deleteBootEnvironment = async (req, res) => {
   try {
     const { name } = req.params;
-    const { force = false, snapshots = false, created_by = 'api' } = req.query;
+    const { force = false, snapshots = false } = req.query;
 
     if (!name) {
       return res.status(400).json({
@@ -213,7 +207,7 @@ export const deleteBootEnvironment = async (req, res) => {
       zone_name: 'system',
       operation: 'beadm_delete',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -248,7 +242,6 @@ export const deleteBootEnvironment = async (req, res) => {
       name: req.params.name,
       force: req.query.force,
       snapshots: req.query.snapshots,
-      created_by: req.query.created_by,
     });
     return res.status(500).json({
       error: 'Failed to create boot environment deletion task',
@@ -284,10 +277,6 @@ export const deleteBootEnvironment = async (req, res) => {
  *                 type: boolean
  *                 default: false
  *                 description: Temporary activation (one-time boot)
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Boot environment activation task created successfully
@@ -312,7 +301,7 @@ export const deleteBootEnvironment = async (req, res) => {
 export const activateBootEnvironment = async (req, res) => {
   try {
     const { name } = req.params;
-    const { temporary = false, created_by = 'api' } = req.body || {};
+    const { temporary = false } = req.body || {};
 
     if (!name) {
       return res.status(400).json({
@@ -325,7 +314,7 @@ export const activateBootEnvironment = async (req, res) => {
       zone_name: 'system',
       operation: 'beadm_activate',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -357,7 +346,6 @@ export const activateBootEnvironment = async (req, res) => {
       stack: error.stack,
       name: req.params.name,
       temporary: req.body?.temporary,
-      created_by: req.body?.created_by,
     });
     return res.status(500).json({
       error: 'Failed to create boot environment activation task',
@@ -398,10 +386,6 @@ export const activateBootEnvironment = async (req, res) => {
  *                 type: string
  *                 enum: [ro, rw]
  *                 description: Mount shared filesystems as read-only or read-write
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Boot environment mount task created successfully
@@ -413,7 +397,7 @@ export const activateBootEnvironment = async (req, res) => {
 export const mountBootEnvironment = async (req, res) => {
   try {
     const { name } = req.params;
-    const { mountpoint, shared_mode, created_by = 'api' } = req.body;
+    const { mountpoint, shared_mode } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -432,7 +416,7 @@ export const mountBootEnvironment = async (req, res) => {
       zone_name: 'system',
       operation: 'beadm_mount',
       priority: TaskPriority.LOW,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -466,7 +450,6 @@ export const mountBootEnvironment = async (req, res) => {
       name: req.params.name,
       mountpoint: req.body?.mountpoint,
       shared_mode: req.body?.shared_mode,
-      created_by: req.body?.created_by,
     });
     return res.status(500).json({
       error: 'Failed to create boot environment mount task',
@@ -502,10 +485,6 @@ export const mountBootEnvironment = async (req, res) => {
  *                 type: boolean
  *                 default: false
  *                 description: Force unmount even if busy
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Boot environment unmount task created successfully
@@ -517,7 +496,7 @@ export const mountBootEnvironment = async (req, res) => {
 export const unmountBootEnvironment = async (req, res) => {
   try {
     const { name } = req.params;
-    const { force = false, created_by = 'api' } = req.body || {};
+    const { force = false } = req.body || {};
 
     if (!name) {
       return res.status(400).json({
@@ -530,7 +509,7 @@ export const unmountBootEnvironment = async (req, res) => {
       zone_name: 'system',
       operation: 'beadm_unmount',
       priority: TaskPriority.LOW,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -562,7 +541,6 @@ export const unmountBootEnvironment = async (req, res) => {
       stack: error.stack,
       name: req.params.name,
       force: req.body?.force,
-      created_by: req.body?.created_by,
     });
     return res.status(500).json({
       error: 'Failed to create boot environment unmount task',

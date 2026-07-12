@@ -13,7 +13,7 @@ import {
   createRegistryClient,
   findSourceConfig,
 } from '../../../lib/TemplateRegistryUtils.js';
-import { findRunningTask, updateTaskProgress } from './utils/ProgressHelper.js';
+import { updateTaskProgress } from './utils/ProgressHelper.js';
 import { downloadTemplateFile } from './utils/DownloadHelper.js';
 import { extractAndImport } from './utils/ExtractionHelper.js';
 
@@ -25,9 +25,10 @@ import { extractAndImport } from './utils/ExtractionHelper.js';
  * Execute template download task
  * Downloads a .box from a Vagrant-compatible registry, extracts it, and imports via zfs recv
  * @param {string} metadataJson - Task metadata as JSON string
+ * @param {Object} task - The task row (progress updates write it directly)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeTemplateDownloadTask = async metadataJson => {
+export const executeTemplateDownloadTask = async (metadataJson, task) => {
   log.task.debug('Template download task starting');
 
   let tempBoxPath = null;
@@ -44,8 +45,7 @@ export const executeTemplateDownloadTask = async metadataJson => {
       });
     });
 
-    const { source_name, organization, box_name, version, provider, architecture, auth_token } =
-      metadata;
+    const { source_name, organization, box_name, version, provider, architecture } = metadata;
 
     log.task.info('Template download task parameters', {
       source_name,
@@ -54,8 +54,17 @@ export const executeTemplateDownloadTask = async metadataJson => {
       version,
       provider,
       architecture,
-      has_auth_token: !!auth_token,
     });
+
+    // Download-honesty guard: the download URL embeds the version verbatim —
+    // callers resolve 'latest' to a concrete version before queueing.
+    if (!version || version === 'latest') {
+      return {
+        success: false,
+        error:
+          "Refusing to download non-specific version 'latest' — resolve a concrete version first",
+      };
+    }
 
     // Find source configuration
     const sourceConfig = findSourceConfig(source_name);
@@ -77,14 +86,12 @@ export const executeTemplateDownloadTask = async metadataJson => {
       };
     }
 
-    const task = await findRunningTask('template_download', box_name);
     await updateTaskProgress(task, 5, { status: 'connecting_to_registry' });
 
     // Build the download URL following Vagrant-compatible API pattern
     const downloadPath = `/api/organization/${encodeURIComponent(organization)}/box/${encodeURIComponent(box_name)}/version/${encodeURIComponent(version)}/provider/${encodeURIComponent(provider)}/architecture/${encodeURIComponent(architecture)}/file/download`;
 
-    // Get valid token (login if necessary)
-    const token = await getRegistryToken(sourceConfig, auth_token);
+    const token = getRegistryToken(sourceConfig);
     const client = createRegistryClient(sourceConfig, token);
     const downloadUrl = `${sourceConfig.url}${downloadPath}`;
 

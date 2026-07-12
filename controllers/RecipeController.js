@@ -170,7 +170,7 @@ export const createRecipe = async (req, res) => {
       timeout_seconds: req.body.timeout_seconds || 300,
       steps,
       variables: req.body.variables || {},
-      created_by: req.body.created_by,
+      created_by: req.entity.name,
     });
 
     log.api.info('Recipe created', { id: recipe.id, name });
@@ -293,7 +293,6 @@ export const updateRecipe = async (req, res) => {
       'timeout_seconds',
       'steps',
       'variables',
-      'created_by',
     ];
 
     const updates = {};

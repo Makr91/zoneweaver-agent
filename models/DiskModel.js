@@ -70,6 +70,26 @@ const { DataTypes } = Sequelize;
  *           type: boolean
  *           description: Whether disk is available for use
  *           example: true
+ *         removable:
+ *           type: boolean
+ *           nullable: true
+ *           description: Removable media (diskinfo FLRS R flag)
+ *           example: false
+ *         faulty:
+ *           type: boolean
+ *           nullable: true
+ *           description: Faulted per fmd (diskinfo FLRS F flag; null = unknown)
+ *           example: false
+ *         chassis:
+ *           type: integer
+ *           nullable: true
+ *           description: Physical chassis number (diskinfo LOCATION; 0 = host chassis)
+ *           example: 0
+ *         bay:
+ *           type: integer
+ *           nullable: true
+ *           description: Physical bay/slot number within the chassis (diskinfo LOCATION)
+ *           example: 5
  *         scan_timestamp:
  *           type: string
  *           format: date-time
@@ -155,6 +175,26 @@ const Disks = db.define(
       type: DataTypes.BOOLEAN,
       defaultValue: true,
       comment: 'Whether disk is available for pool assignment',
+    },
+    removable: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      comment: 'Removable media (diskinfo FLRS R flag)',
+    },
+    faulty: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      comment: 'Faulted per fmd (diskinfo FLRS F flag; null = unknown)',
+    },
+    chassis: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Physical chassis number (diskinfo LOCATION; 0 = host chassis)',
+    },
+    bay: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Physical bay/slot number within the chassis (diskinfo LOCATION)',
     },
     scan_timestamp: {
       type: DataTypes.DATE,

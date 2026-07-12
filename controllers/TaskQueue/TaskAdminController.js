@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import config from '../../config/ConfigLoader.js';
 import { log, createTimer } from '../../lib/Logger.js';
 import { runningTasks, processorState } from './TaskState.js';
+import { cancelTaskById } from './TaskLifecycle.js';
 
 /**
  * @fileoverview Task admin controllers - cancel, stats, cleanup
@@ -13,7 +14,12 @@ import { runningTasks, processorState } from './TaskState.js';
  * /tasks/{taskId}:
  *   delete:
  *     summary: Cancel task
- *     description: Cancels a pending task (cannot cancel running tasks)
+ *     description: |
+ *       Cancels a task (shared contract with the Go agent). Pending tasks flip
+ *       to cancelled immediately. Running tasks have their in-flight work
+ *       killed and land in cancelled with output preserved. Cancelling an
+ *       orchestration parent cascade-cancels its whole pipeline. Tasks already
+ *       in a terminal state answer 400 with the current status.
  *     tags: [Task Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -26,9 +32,32 @@ import { runningTasks, processorState } from './TaskState.js';
  *         description: Task ID to cancel
  *     responses:
  *       200:
- *         description: Task cancelled successfully
+ *         description: Task cancelled (or cancellation of a running task is in progress)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 task_id:
+ *                   type: string
+ *                 was_running:
+ *                   type: boolean
+ *                   description: True when the task was mid-execution and its work was killed
+ *                 message:
+ *                   type: string
  *       400:
- *         description: Task cannot be cancelled
+ *         description: Task is already in a terminal state
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                 current_status:
+ *                   type: string
  *       404:
  *         description: Task not found
  */
@@ -36,24 +65,28 @@ export const cancelTask = async (req, res) => {
   try {
     const { taskId } = req.params;
 
-    const task = await Tasks.findByPk(taskId);
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
+    const result = await cancelTaskById(taskId);
 
-    if (task.status !== 'pending') {
+    if (result.error === 'Task not found') {
+      return res.status(404).json({ error: result.error });
+    }
+    if (result.error && result.currentStatus) {
       return res.status(400).json({
-        error: 'Can only cancel pending tasks',
-        current_status: task.status,
+        error: result.error,
+        current_status: result.currentStatus,
       });
     }
-
-    await task.update({ status: 'cancelled' });
+    if (result.error) {
+      return res.status(500).json({ error: result.error });
+    }
 
     return res.json({
       success: true,
       task_id: taskId,
-      message: 'Task cancelled successfully',
+      was_running: result.wasRunning,
+      message: result.wasRunning
+        ? 'Task cancellation in progress — in-flight work is being killed'
+        : 'Task cancelled successfully',
     });
   } catch (error) {
     log.database.error('Database error cancelling task', {
@@ -88,6 +121,8 @@ export const cancelTask = async (req, res) => {
  *                   type: integer
  *                 completed_tasks:
  *                   type: integer
+ *                 completed_with_errors_tasks:
+ *                   type: integer
  *                 failed_tasks:
  *                   type: integer
  *                 cancelled_tasks:
@@ -114,6 +149,7 @@ export const getTaskStats = async (req, res) => {
       pending_tasks: statMap.pending || 0,
       running_tasks: runningTasks.size,
       completed_tasks: statMap.completed || 0,
+      completed_with_errors_tasks: statMap.completed_with_errors || 0,
       failed_tasks: statMap.failed || 0,
       cancelled_tasks: statMap.cancelled || 0,
       max_concurrent_tasks: config.getZones().max_concurrent_tasks || 5,
@@ -159,7 +195,7 @@ export const clearCompletedTasks = async (req, res) => {
   try {
     const deleted = await Tasks.destroy({
       where: {
-        status: { [Op.in]: ['completed', 'failed', 'cancelled'] },
+        status: { [Op.in]: ['completed', 'completed_with_errors', 'failed', 'cancelled'] },
       },
     });
 
@@ -199,7 +235,7 @@ export const cleanupOldTasks = async () => {
     );
     const deletedTasks = await Tasks.destroy({
       where: {
-        status: { [Op.in]: ['completed', 'failed', 'cancelled'] },
+        status: { [Op.in]: ['completed', 'completed_with_errors', 'failed', 'cancelled'] },
         created_at: { [Op.lt]: tasksRetentionDate },
       },
     });

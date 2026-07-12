@@ -28,8 +28,8 @@ const { DataTypes } = Sequelize;
  *           example: "omnios-host-01"
  *         status:
  *           type: string
- *           description: Current zone status
- *           enum: [configured, incomplete, installed, ready, running, shutting_down, down]
+ *           description: Current zone status (suspended = a bhyve suspend checkpoint exists)
+ *           enum: [configured, incomplete, installed, ready, running, shutting_down, down, suspended]
  *           example: "running"
  *         brand:
  *           type: string

@@ -4,7 +4,6 @@ import { log, createTimer } from '../../../lib/Logger.js';
 import { moveItem, copyItem } from '../../../lib/FileSystemManager.js';
 import Artifact from '../../../models/ArtifactModel.js';
 import ArtifactStorageLocation from '../../../models/ArtifactStorageLocationModel.js';
-import Tasks from '../../../models/TaskModel.js';
 import { coreDb as db } from '../../../config/Database.js';
 
 /**
@@ -15,9 +14,10 @@ import { coreDb as db } from '../../../config/Database.js';
 /**
  * Execute artifact move task
  * @param {string} metadataJson - Task metadata as JSON string
+ * @param {Object} task - The task row (progress updates write it directly)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeArtifactMoveTask = async metadataJson => {
+export const executeArtifactMoveTask = async (metadataJson, task) => {
   const taskTimer = createTimer('artifact_move_task');
   let transaction;
 
@@ -34,15 +34,6 @@ export const executeArtifactMoveTask = async metadataJson => {
     const { artifact_id, destination_storage_location_id } = metadata;
 
     log.task.info('Artifact move task started', { artifact_id, destination_storage_location_id });
-
-    // Find the current task for progress updates (look for recent task with matching operation)
-    const task = await Tasks.findOne({
-      where: {
-        operation: 'artifact_move',
-        status: 'running',
-      },
-      order: [['created_at', 'DESC']],
-    });
 
     const updateProgress = async (percent, status, info = {}) => {
       if (task) {
@@ -141,9 +132,10 @@ export const executeArtifactMoveTask = async metadataJson => {
 /**
  * Execute artifact copy task
  * @param {string} metadataJson - Task metadata as JSON string
+ * @param {Object} task - The task row (progress updates write it directly)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeArtifactCopyTask = async metadataJson => {
+export const executeArtifactCopyTask = async (metadataJson, task) => {
   const taskTimer = createTimer('artifact_copy_task');
   let transaction;
 
@@ -160,15 +152,6 @@ export const executeArtifactCopyTask = async metadataJson => {
     const { artifact_id, destination_storage_location_id } = metadata;
 
     log.task.info('Artifact copy task started', { artifact_id, destination_storage_location_id });
-
-    // Find the current task for progress updates (look for recent task with matching operation)
-    const task = await Tasks.findOne({
-      where: {
-        operation: 'artifact_copy',
-        status: 'running',
-      },
-      order: [['created_at', 'DESC']],
-    });
 
     const updateProgress = async (percent, status, info = {}) => {
       if (task) {

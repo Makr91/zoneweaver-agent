@@ -104,7 +104,7 @@ export const createProvisioningProfile = async (req, res) => {
       default_sync_folders: req.body.default_sync_folders,
       default_provisioners: req.body.default_provisioners,
       default_variables: req.body.default_variables || {},
-      created_by: req.body.created_by,
+      created_by: req.entity.name,
     });
 
     log.api.info('Provisioning profile created', { id: profile.id, name });
@@ -206,7 +206,6 @@ export const updateProvisioningProfile = async (req, res) => {
       'default_sync_folders',
       'default_provisioners',
       'default_variables',
-      'created_by',
     ];
 
     const updates = {};

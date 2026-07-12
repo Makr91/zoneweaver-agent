@@ -43,10 +43,6 @@ export const OPERATION_CATEGORIES = {
   delete_nat_rule: 'network_nat',
   configure_forwarding: 'network_nat',
 
-  // Provisioning network orchestration
-  provisioning_network_setup: 'network_provisioning',
-  provisioning_network_teardown: 'network_provisioning',
-
   // Network DHCP operations
   dhcp_update_config: 'network_dhcp',
   dhcp_add_host: 'network_dhcp',
@@ -125,31 +121,11 @@ export const OPERATION_CATEGORIES = {
   template_export: 'template',
   template_move: 'template',
 
-  // Zone lifecycle operations
-  zone_create_orchestration: 'zone_lifecycle',
-  zone_create_storage: 'zone_lifecycle',
-  zone_create_config: 'zone_lifecycle',
-  zone_create_install: 'zone_lifecycle',
-  zone_create_finalize: 'zone_lifecycle',
-  zone_modify: 'zone_lifecycle',
-  zone_provisioning_extract: 'zone_lifecycle',
-  zone_setup: 'zone_lifecycle',
-  zone_wait_ssh: 'zone_lifecycle',
-  zone_sync: 'zone_lifecycle',
-  zone_sync_parent: 'zone_lifecycle',
-  zone_provision: 'zone_lifecycle',
-  zone_provision_parent: 'zone_lifecycle',
-  zone_provision_orchestration: 'zone_lifecycle',
-  zone_clone_orchestration: 'zone_lifecycle',
-};
+  // Provisioner registry operations (one import writes into the shared registry at a time)
+  provisioner_import: 'provisioner_registry',
 
-/**
- * Parent task operations that track subtasks
- */
-export const PARENT_OPERATIONS = [
-  'zone_create_orchestration',
-  'zone_provision_orchestration',
-  'zone_sync_parent',
-  'zone_provision_parent',
-  'zone_clone_orchestration',
-];
+  // Zone lifecycle operations have NO category: per-zone exclusivity (the
+  // task processor's busy-zone pick, the Go queue's per-machine rule) already
+  // serializes work on one zone while different zones run in parallel — a
+  // global lifecycle lock would serialize the whole fleet on one provision.
+};

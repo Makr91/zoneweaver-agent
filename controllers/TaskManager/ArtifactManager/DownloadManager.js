@@ -1,5 +1,6 @@
 import yj from 'yieldable-json';
 import { executeCommand } from '../../../lib/CommandManager.js';
+import { isTaskCancelled } from '../../../lib/TaskContext.js';
 import { log } from '../../../lib/Logger.js';
 import axios from 'axios';
 import crypto from 'crypto';
@@ -8,8 +9,6 @@ import path from 'path';
 import config from '../../../config/ConfigLoader.js';
 import ArtifactStorageLocation from '../../../models/ArtifactStorageLocationModel.js';
 import Artifact from '../../../models/ArtifactModel.js';
-import Tasks from '../../../models/TaskModel.js';
-import { Op } from 'sequelize';
 import { getMimeType } from '../../../lib/FileSystemManager.js';
 
 /**
@@ -43,14 +42,17 @@ export const setupDownloadFile = async final_path => {
  * @param {string} url - Download URL
  * @param {string} final_path - Final file path
  * @param {number} downloadTimeout - Download timeout in ms
+ * @param {Object} [task] - The task row (progress updates write it directly)
  * @returns {Promise<{downloadedBytes: number, downloadTime: number}>}
  */
-export const performDownload = async (url, final_path, downloadTimeout) => {
+export const performDownload = async (url, final_path, downloadTimeout, task = null) => {
+  const abort = new AbortController();
   const response = await axios({
     method: 'get',
     url,
     responseType: 'stream',
     timeout: downloadTimeout,
+    signal: abort.signal,
   });
 
   const contentLength = response.headers['content-length'];
@@ -69,8 +71,17 @@ export const performDownload = async (url, final_path, downloadTimeout) => {
 
   const artifactConfig = config.getArtifactStorage();
 
+  let cancelled = false;
   response.data.on('data', chunk => {
     downloadedBytes += chunk.length;
+
+    // Cooperative cancel: a running-task cancel aborts the stream mid-flight
+    // instead of downloading to the natural end.
+    if (!cancelled && isTaskCancelled(task?.id)) {
+      cancelled = true;
+      abort.abort();
+      return;
+    }
 
     const progressUpdateInterval = (artifactConfig.download?.progress_update_seconds || 10) * 1000;
     const now = Date.now();
@@ -84,16 +95,8 @@ export const performDownload = async (url, final_path, downloadTimeout) => {
           const remainingBytes = fileSize - downloadedBytes;
           const etaSeconds = remainingBytes / (downloadedBytes / ((now - startTime) / 1000));
 
-          const taskToUpdate = await Tasks.findOne({
-            where: {
-              operation: 'artifact_download_url',
-              status: 'running',
-              metadata: { [Op.like]: `%${url.substring(0, 50)}%` },
-            },
-          });
-
-          if (taskToUpdate) {
-            await taskToUpdate.update({
+          if (task) {
+            await task.update({
               progress_percent: Math.round(progress * 100) / 100,
               progress_info: {
                 downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
@@ -113,11 +116,20 @@ export const performDownload = async (url, final_path, downloadTimeout) => {
 
   response.data.pipe(fileStream);
 
-  await new Promise((resolve, reject) => {
-    fileStream.on('finish', resolve);
-    fileStream.on('error', reject);
-    response.data.on('error', reject);
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      fileStream.on('finish', resolve);
+      fileStream.on('error', reject);
+      response.data.on('error', reject);
+    });
+  } catch (streamError) {
+    fileStream.destroy();
+    if (cancelled) {
+      await executeCommand(`pfexec rm -f "${final_path}"`);
+      throw new Error('Download cancelled — partial file removed');
+    }
+    throw streamError;
+  }
 
   const downloadTime = Date.now() - startTime;
 
@@ -262,9 +274,10 @@ export const createArtifactRecord = async params => {
 /**
  * Execute artifact download from URL task
  * @param {string} metadataJson - Task metadata as JSON string
+ * @param {Object} [task] - The task row (progress updates write it directly)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeArtifactDownloadTask = async metadataJson => {
+export const executeArtifactDownloadTask = async (metadataJson, task = null) => {
   log.task.debug('Artifact download task starting');
 
   try {
@@ -334,7 +347,8 @@ export const executeArtifactDownloadTask = async metadataJson => {
     const { downloadedBytes, downloadTime } = await performDownload(
       url,
       final_path,
-      downloadTimeout
+      downloadTimeout,
+      task
     );
 
     const { calculatedChecksum, checksumVerified } = await calculateAndVerifyChecksum(

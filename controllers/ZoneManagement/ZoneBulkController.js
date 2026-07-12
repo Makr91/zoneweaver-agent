@@ -2,6 +2,7 @@ import Zones from '../../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
 import { getSystemZoneStatus } from './ZoneQueryController.js';
+import { queuePendingApply } from './ZoneModificationController.js';
 
 /**
  * @fileoverview Zone bulk operations - bulk start and stop
@@ -129,17 +130,22 @@ export const bulkStartZones = async (req, res) => {
       }
     });
 
-    // Create start tasks for all eligible zones in parallel
+    // Create start tasks for all eligible zones in parallel. The
+    // accrue-changes contract rides bulk starts too (single-op parity):
+    // each zone's pending changes apply FIRST, so a bad pending value fails
+    // that zone's boot honestly instead of booting past it.
     const tasks = await Promise.all(
-      toStart.map(zone =>
-        Tasks.create({
+      toStart.map(async zone => {
+        const applyTask = await queuePendingApply(zone, req.entity.name);
+        return Tasks.create({
           zone_name: zone.name,
           operation: 'start',
           priority: TaskPriority.MEDIUM,
           created_by: req.entity.name,
+          depends_on: applyTask ? applyTask.id : null,
           status: 'pending',
-        })
-      )
+        });
+      })
     );
 
     log.api.info('Bulk zone start queued', {
@@ -301,17 +307,24 @@ export const bulkStopZones = async (req, res) => {
       );
     }
 
-    // Create stop tasks for all eligible zones in parallel
+    // Create stop tasks for all eligible zones in parallel. Accrued pending
+    // changes apply right after each power-off (single-op parity), so pending
+    // badges clear after bulk stops too.
     const tasks = await Promise.all(
-      toStop.map(zone =>
-        Tasks.create({
+      toStop.map(async zone => {
+        const stopTask = await Tasks.create({
           zone_name: zone.name,
           operation: 'stop',
           priority: TaskPriority.HIGH,
           created_by: req.entity.name,
           status: 'pending',
-        })
-      )
+        });
+        const applyTask = await queuePendingApply(zone, req.entity.name);
+        if (applyTask) {
+          await applyTask.update({ depends_on: stopTask.id });
+        }
+        return stopTask;
+      })
     );
 
     log.api.info('Bulk zone stop queued', {

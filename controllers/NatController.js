@@ -153,7 +153,7 @@ export const createNatRule = async (req, res) => {
       return res.status(400).json({ error: 'bridge and subnet are required' });
     }
 
-    const metadata = { bridge, subnet, target, protocol, type };
+    const metadata = { bridge, subnet, target, protocol, type, created_by: req.entity.name };
 
     const task = await Tasks.create({
       zone_name: 'system',

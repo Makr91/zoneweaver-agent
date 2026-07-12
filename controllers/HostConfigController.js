@@ -171,6 +171,10 @@ const backupFile = async filePath => {
  *                 raw:
  *                   type: string
  *                   description: Raw file contents
+ *                 path:
+ *                   type: string
+ *                   description: The file the entries came from
+ *                   example: "/etc/hosts"
  *       500:
  *         description: Failed to read hosts file
  */
@@ -183,6 +187,7 @@ export const getHosts = async (req, res) => {
     return directSuccessResponse(res, 'Hosts file retrieved successfully', {
       entries,
       raw: content,
+      path: HOSTS_FILE,
     });
   } catch (error) {
     log.api.error('Error reading hosts file', {

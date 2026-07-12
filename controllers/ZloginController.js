@@ -4,6 +4,7 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 import { log } from '../lib/Logger.js';
 import { ptyManager } from '../lib/ZloginPtyManager.js';
+import { createSessionBufferWriter } from '../lib/SessionBuffer.js';
 
 /**
  * @fileoverview Zlogin Session Controller for Zoneweaver Agent
@@ -512,30 +513,21 @@ export const handleZloginConnection = async (ws, sessionId) => {
     // Update session access time
     await session.update({ last_accessed: new Date(), last_activity: new Date() });
 
-    // Subscribe to PTY output
-    const unsubscribe = ptyManager.subscribe(zone_name, async data => {
+    const bufferWriter = createSessionBufferWriter(session);
+
+    // Subscribe to PTY output (buffered, debounced flush)
+    const unsubscribe = ptyManager.subscribe(zone_name, data => {
       if (ws.readyState === ws.OPEN) {
         ws.send(data);
-
-        // Append to session buffer (keep last 1000 lines)
-        try {
-          const currentBuffer = session.session_buffer || '';
-          const newBuffer = (currentBuffer + data).split('\n').slice(-1000).join('\n');
-          await session.update({ session_buffer: newBuffer, last_activity: new Date() });
-        } catch (error) {
-          log.websocket.error('Error updating session buffer', {
-            session_id: sessionId,
-            error: error.message,
-          });
-        }
+        bufferWriter.append(data);
       }
     });
 
     // Handle user input from WebSocket
-    ws.on('message', async command => {
+    ws.on('message', command => {
       try {
         ptyManager.write(zone_name, command.toString());
-        await session.update({ last_activity: new Date() });
+        bufferWriter.touch();
       } catch (error) {
         log.websocket.error('[ZLOGIN-WS] Error writing to PTY', {
           session_id: sessionId,
@@ -554,6 +546,7 @@ export const handleZloginConnection = async (ws, sessionId) => {
         reason: reason || 'none',
       });
       unsubscribe();
+      bufferWriter.close();
     });
 
     ws.on('error', error => {
@@ -563,6 +556,7 @@ export const handleZloginConnection = async (ws, sessionId) => {
         error: error.message,
       });
       unsubscribe();
+      bufferWriter.close();
     });
   } catch (error) {
     log.websocket.error('[ZLOGIN-WS] Error handling zlogin connection', {

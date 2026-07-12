@@ -17,6 +17,7 @@ import {
   getProvisioningNetworkStatus,
   setupProvisioningNetwork,
   teardownProvisioningNetwork,
+  getBridgedInterfaces,
 } from '../controllers/ProvisioningNetworkController.js';
 import {
   listRecipes,
@@ -32,6 +33,13 @@ import {
   getProvisioningProfile,
   updateProvisioningProfile,
   deleteProvisioningProfile,
+  listProvisioners,
+  getProvisionerDetails,
+  getProvisionerVersion,
+  importProvisioner,
+  deleteProvisioner,
+  deleteProvisionerVersion,
+  refreshProvisionerSpecs,
 } from '../controllers/ProvisioningOrchestrationController/index.js';
 import {
   getSettings,
@@ -45,6 +53,7 @@ import {
 } from '../controllers/SettingsController/index.js';
 import { getVersion, checkForAppUpdates } from '../controllers/VersionController.js';
 import { getStatus } from '../controllers/StatusController.js';
+import { getTicketConfig } from '../controllers/TicketConfigController.js';
 import { getWsTicket } from '../controllers/WsTicketController.js';
 
 /**
@@ -53,12 +62,14 @@ import { getWsTicket } from '../controllers/WsTicketController.js';
  */
 
 /**
- * Register the core route set on the shared router.
+ * Register the provisioning route set (status, network, recipes, package
+ * registry, profiles) on the shared router.
  * @param {import('express').Router} router - Application router
  */
-export const registerCoreRoutes = router => {
+const registerProvisioningRoutes = router => {
   // Provisioning Routes
   router.get('/provisioning/status', verifyApiKey, getProvisioningStatus);
+  router.get('/provisioning/bridged-interfaces', verifyApiKey, getBridgedInterfaces); // All valid VNIC parents (shared wire with the Go agent)
   router.get('/provisioning/network/status', verifyApiKey, getProvisioningNetworkStatus); // Check provisioning network status
   router.post('/provisioning/network/setup', verifyApiKey, setupProvisioningNetwork); // Setup provisioning network
   router.delete('/provisioning/network/teardown', verifyApiKey, teardownProvisioningNetwork); // Teardown provisioning network
@@ -71,12 +82,38 @@ export const registerCoreRoutes = router => {
   router.delete('/provisioning/recipes/:id', verifyApiKey, deleteRecipe); // Delete recipe
   router.post('/provisioning/recipes/:id/test', verifyApiKey, testRecipe); // Test recipe against zone
 
+  // Provisioner Package Registry Routes (D14 provisioner-registry surface —
+  // version paths carry the /versions/ segment, the Go agent's exact wire)
+  router.get('/provisioning/provisioners', verifyApiKey, listProvisioners);
+  router.post('/provisioning/provisioners/import', verifyApiKey, importProvisioner);
+  router.post('/provisioning/provisioners/refresh-specs', verifyApiKey, refreshProvisionerSpecs);
+  router.get('/provisioning/provisioners/:name', verifyApiKey, getProvisionerDetails);
+  router.delete('/provisioning/provisioners/:name', verifyApiKey, deleteProvisioner);
+  router.get(
+    '/provisioning/provisioners/:name/versions/:version',
+    verifyApiKey,
+    getProvisionerVersion
+  );
+  router.delete(
+    '/provisioning/provisioners/:name/versions/:version',
+    verifyApiKey,
+    deleteProvisionerVersion
+  );
+
   // Provisioning Profile Routes
   router.get('/provisioning/profiles', verifyApiKey, listProvisioningProfiles); // List all profiles
   router.post('/provisioning/profiles', verifyApiKey, createProvisioningProfile); // Create profile
   router.get('/provisioning/profiles/:id', verifyApiKey, getProvisioningProfile); // Get profile details
   router.put('/provisioning/profiles/:id', verifyApiKey, updateProvisioningProfile); // Update profile
   router.delete('/provisioning/profiles/:id', verifyApiKey, deleteProvisioningProfile); // Delete profile
+};
+
+/**
+ * Register the core route set on the shared router.
+ * @param {import('express').Router} router - Application router
+ */
+export const registerCoreRoutes = router => {
+  registerProvisioningRoutes(router);
 
   // Version and Update Routes
   router.get('/version', verifyApiKey, getVersion); // Get application version information
@@ -135,6 +172,7 @@ export const registerCoreRoutes = router => {
   // Public routes (no authentication required)
   router.get('/status', getStatus); // Public slim identity & capabilities (Hyperweaver dual-mode contract)
   router.get('/api/status', getStatus); // Unconditional alias — the single mode-discovery probe URL for the SPA
+  router.get('/api/config/ticket', getTicketConfig); // Help & Support link feed (the Server's public URL, Go parity)
   router.post('/api-keys/bootstrap', bootstrapFirstApiKey); // Bootstrap endpoint for initial setup
 
   // Conditionally public stats endpoint
@@ -162,5 +200,5 @@ export const registerCoreRoutes = router => {
   router.get('/settings/backups', verifyApiKey, listBackups); // List configuration backups
   router.delete('/settings/backups/:filename', verifyApiKey, deleteBackup); // Delete a specific backup
   router.post('/settings/restore/:filename', verifyApiKey, restoreBackup); // Restore configuration from backup
-  router.post('/server/restart', verifyApiKey, restartServer); // Restart the server (dummy endpoint)
+  router.post('/server/restart', verifyApiKey, restartServer); // Restart the server (SMF exit-restart)
 };

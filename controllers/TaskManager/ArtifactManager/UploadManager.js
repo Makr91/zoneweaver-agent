@@ -5,8 +5,6 @@ import fs from 'fs';
 import path from 'path';
 import ArtifactStorageLocation from '../../../models/ArtifactStorageLocationModel.js';
 import Artifact from '../../../models/ArtifactModel.js';
-import Tasks from '../../../models/TaskModel.js';
-import { Op } from 'sequelize';
 import { getMimeType } from '../../../lib/FileSystemManager.js';
 
 /**
@@ -17,9 +15,10 @@ import { getMimeType } from '../../../lib/FileSystemManager.js';
 /**
  * Execute artifact upload processing task
  * @param {string} metadataJson - Task metadata as JSON string
+ * @param {Object} taskToUpdate - The task row (progress updates write it directly)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeArtifactUploadProcessTask = async metadataJson => {
+export const executeArtifactUploadProcessTask = async (metadataJson, taskToUpdate) => {
   log.task.debug('Artifact upload process task starting');
 
   try {
@@ -71,14 +70,6 @@ export const executeArtifactUploadProcessTask = async metadataJson => {
 
     // Calculate checksum with progress tracking
     log.task.debug('Calculating checksum');
-
-    const taskToUpdate = await Tasks.findOne({
-      where: {
-        operation: 'artifact_upload_process',
-        status: 'running',
-        metadata: { [Op.like]: `%${original_name}%` },
-      },
-    });
 
     const hash = crypto.createHash(checksum_algorithm);
     const stream = fs.createReadStream(final_path);

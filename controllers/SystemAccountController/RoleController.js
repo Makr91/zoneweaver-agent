@@ -79,10 +79,6 @@ import { log } from '../../lib/Logger.js';
  *                 type: string
  *                 description: Associated project name
  *                 example: "backup_services"
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this role
  *     responses:
  *       202:
  *         description: Role creation task created successfully
@@ -104,8 +100,8 @@ export const createSystemRole = async (req, res) => {
       authorizations = [],
       profiles = [],
       project,
-      created_by = 'api',
     } = req.body;
+    const createdBy = req.entity.name;
 
     // Validate required parameters
     if (!rolename) {
@@ -140,7 +136,7 @@ export const createSystemRole = async (req, res) => {
       rolename,
       uid,
       gid,
-      created_by,
+      created_by: createdBy,
       has_rbac: authorizations.length > 0 || profiles.length > 0,
     });
 
@@ -159,7 +155,7 @@ export const createSystemRole = async (req, res) => {
         profiles,
         project,
       },
-      created_by,
+      createdBy,
       TaskPriority.MEDIUM
     );
 
@@ -167,7 +163,7 @@ export const createSystemRole = async (req, res) => {
       task_id: task.id,
       rolename,
       uid,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `Role creation task created for ${rolename}`, task, {
@@ -180,7 +176,6 @@ export const createSystemRole = async (req, res) => {
       error: error.message,
       stack: error.stack,
       rolename: req.body?.rolename,
-      created_by: req.body?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create role creation task', error.message);
   }
@@ -208,12 +203,6 @@ export const createSystemRole = async (req, res) => {
  *           type: boolean
  *           default: false
  *         description: Remove role's home directory
- *       - in: query
- *         name: created_by
- *         schema:
- *           type: string
- *           default: "api"
- *         description: User performing this deletion
  *     responses:
  *       202:
  *         description: Role deletion task created successfully
@@ -223,12 +212,13 @@ export const createSystemRole = async (req, res) => {
 export const deleteSystemRole = async (req, res) => {
   try {
     const { rolename } = req.params;
-    const { remove_home = false, created_by = 'api' } = req.query;
+    const { remove_home = false } = req.query;
+    const createdBy = req.entity.name;
 
     log.api.info('Role deletion request received', {
       rolename,
       remove_home: remove_home === 'true' || remove_home === true,
-      created_by,
+      created_by: createdBy,
     });
 
     // Create task using ResponseHelpers
@@ -238,14 +228,14 @@ export const deleteSystemRole = async (req, res) => {
         rolename,
         remove_home: remove_home === 'true' || remove_home === true,
       },
-      created_by,
+      createdBy,
       TaskPriority.CRITICAL // Role deletion is critical priority
     );
 
     log.api.info('Role deletion task created', {
       task_id: task.id,
       rolename,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `Role deletion task created for ${rolename}`, task, {
@@ -257,7 +247,6 @@ export const deleteSystemRole = async (req, res) => {
       error: error.message,
       stack: error.stack,
       rolename: req.params?.rolename,
-      created_by: req.query?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create role deletion task', error.message);
   }
@@ -317,10 +306,6 @@ export const deleteSystemRole = async (req, res) => {
  *                   type: string
  *                 description: New RBAC profiles (replaces existing)
  *                 example: ["System Administrator"]
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User performing this modification
  *     responses:
  *       202:
  *         description: Role modification task created successfully
@@ -339,8 +324,8 @@ export const modifySystemRole = async (req, res) => {
       new_comment,
       new_authorizations = [],
       new_profiles = [],
-      created_by = 'api',
     } = req.body;
+    const createdBy = req.entity.name;
 
     // Validate new role name format if provided
     if (new_rolename) {
@@ -374,7 +359,7 @@ export const modifySystemRole = async (req, res) => {
       rolename,
       new_rolename,
       new_uid,
-      created_by,
+      created_by: createdBy,
       has_rbac: new_authorizations.length > 0 || new_profiles.length > 0,
     });
 
@@ -390,7 +375,7 @@ export const modifySystemRole = async (req, res) => {
         new_authorizations,
         new_profiles,
       },
-      created_by,
+      createdBy,
       TaskPriority.MEDIUM
     );
 
@@ -398,7 +383,7 @@ export const modifySystemRole = async (req, res) => {
       task_id: task.id,
       rolename,
       new_rolename,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `Role modification task created for ${rolename}`, task, {
@@ -416,7 +401,6 @@ export const modifySystemRole = async (req, res) => {
       stack: error.stack,
       rolename: req.params?.rolename,
       new_rolename: req.body?.new_rolename,
-      created_by: req.body?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create role modification task', error.message);
   }

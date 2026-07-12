@@ -45,6 +45,8 @@ import {
   vacuumDatabase,
   analyzeDatabase,
   triggerCleanup,
+  listDatabaseTables,
+  browseDatabaseTable,
 } from '../controllers/DatabaseController.js';
 
 /**
@@ -99,6 +101,8 @@ export const registerSystemAdminRoutes = router => {
   router.post('/database/vacuum', verifyApiKey, vacuumDatabase); // Run SQLite VACUUM
   router.post('/database/analyze', verifyApiKey, analyzeDatabase); // Run SQLite ANALYZE
   router.post('/database/cleanup', verifyApiKey, triggerCleanup); // Trigger manual cleanup
+  router.get('/database/:db/tables', verifyApiKey, listDatabaseTables); // Explorer: list a database's tables
+  router.get('/database/:db/tables/:table/rows', verifyApiKey, browseDatabaseTable); // Explorer: paged read-only row browser
 
   // System Host Restart Operations (TaskQueue)
   router.post('/system/host/restart', verifyApiKey, restartHost); // Gracefully restart host system

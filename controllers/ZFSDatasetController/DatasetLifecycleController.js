@@ -35,8 +35,6 @@ import { log } from '../../lib/Logger.js';
  *               properties:
  *                 type: object
  *                 description: ZFS properties to set
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Dataset creation task created
@@ -46,7 +44,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to create task
  */
 export const createDataset = async (req, res) => {
-  const { name, type = 'filesystem', properties = {}, created_by = 'api' } = req.body;
+  const { name, type = 'filesystem', properties = {} } = req.body;
 
   try {
     if (!name) {
@@ -65,7 +63,7 @@ export const createDataset = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_create_dataset',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -132,8 +130,6 @@ export const createDataset = async (req, res) => {
  *               force:
  *                 type: boolean
  *                 default: false
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Destruction task created
@@ -144,7 +140,7 @@ export const createDataset = async (req, res) => {
  */
 export const destroyDataset = async (req, res) => {
   const { name } = req.params;
-  const { recursive = false, force = false, created_by = 'api' } = req.body;
+  const { recursive = false, force = false } = req.body;
 
   try {
     if (!name) {
@@ -163,7 +159,7 @@ export const destroyDataset = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_destroy_dataset',
       priority: TaskPriority.CRITICAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -230,8 +226,6 @@ export const destroyDataset = async (req, res) => {
  *             properties:
  *               properties:
  *                 type: object
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Property update task created
@@ -242,7 +236,7 @@ export const destroyDataset = async (req, res) => {
  */
 export const setDatasetProperties = async (req, res) => {
   const { name } = req.params;
-  const { properties, created_by = 'api' } = req.body;
+  const { properties } = req.body;
 
   try {
     if (!name) {
@@ -265,7 +259,7 @@ export const setDatasetProperties = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_set_properties',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

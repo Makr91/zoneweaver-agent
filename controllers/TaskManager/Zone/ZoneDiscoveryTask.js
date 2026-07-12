@@ -2,10 +2,57 @@
  * @fileoverview Zone Discovery Task Executor for Zoneweaver Agent
  * @description Discovers zones on the system, syncs them to the database, and marks orphans.
  */
+import fs from 'fs';
 import { executeCommand } from '../../../lib/CommandManager.js';
-import { getAllZoneConfigs, preserveUserConfig } from '../../../lib/ZoneConfigUtils.js';
+import {
+  getAllZoneConfigs,
+  preserveUserConfig,
+  setGuestInfo,
+} from '../../../lib/ZoneConfigUtils.js';
+import { hasSuspendCheckpoint } from '../../../lib/SuspendCheckpoint.js';
+import { isGuestAgentEnabled, guestSocketPath, guestIPv4s } from '../../../lib/QemuGuestAgent.js';
+import { log } from '../../../lib/Logger.js';
 import Zones from '../../../models/ZoneModel.js';
 import os from 'os';
+
+/**
+ * Record one running zone's guest-agent observation on its row —
+ * configuration.guest_info {ips[], source, agent_responding, checked_at};
+ * non-running zones (and zones without a qga socket) lose the section, so
+ * absence stays honest.
+ */
+const refreshGuestInfo = async (zoneName, zoneConfig, status) => {
+  try {
+    if (status !== 'running' || !isGuestAgentEnabled() || !zoneConfig.zonepath) {
+      await setGuestInfo(zoneName, null);
+      return;
+    }
+    const socketPath = guestSocketPath(zoneConfig.zonepath);
+    if (!fs.existsSync(socketPath)) {
+      await setGuestInfo(zoneName, null);
+      return;
+    }
+    let ips = [];
+    let responding = false;
+    try {
+      ips = await guestIPv4s(socketPath, 3000);
+      responding = true;
+    } catch {
+      responding = false;
+    }
+    await setGuestInfo(zoneName, {
+      ips,
+      source: ips.length > 0 ? 'guest-agent' : '',
+      agent_responding: responding,
+      checked_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.monitoring.warn('Guest info refresh failed', {
+      zone_name: zoneName,
+      error: error.message,
+    });
+  }
+};
 
 /**
  * Execute zone discovery task
@@ -39,7 +86,7 @@ export const executeDiscoverTask = async () => {
           status = parts[2] || 'configured';
         }
 
-        return Zones.create({
+        const created = await Zones.create({
           name: zoneName,
           zone_id: zoneConfig.zonename || zoneName,
           host: os.hostname(),
@@ -49,6 +96,8 @@ export const executeDiscoverTask = async () => {
           auto_discovered: true,
           last_seen: new Date(),
         });
+        await refreshGuestInfo(zoneName, zoneConfig, status);
+        return created;
       })
     );
 
@@ -73,16 +122,29 @@ export const executeDiscoverTask = async () => {
           status = parts[2] || dbZone.status;
         }
 
+        // A suspended zone looks merely installed to zoneadm — the checkpoint
+        // file is the truth. Suspended survives discovery while it exists;
+        // running always wins (someone resumed outside the agent).
+        if (
+          status !== 'running' &&
+          dbZone.status === 'suspended' &&
+          (await hasSuspendCheckpoint(zoneConfig.zonepath))
+        ) {
+          status = 'suspended';
+        }
+
         // Preserve user-defined config sections (settings, zones, networks, disks, provisioner)
         preserveUserConfig(dbZone, zoneConfig, dbZone.name);
 
-        return dbZone.update({
+        await dbZone.update({
           status,
           brand: zoneConfig.brand || dbZone.brand,
           configuration: zoneConfig,
           last_seen: new Date(),
           is_orphaned: false,
         });
+
+        return refreshGuestInfo(dbZone.name, zoneConfig, status);
       })
     );
 

@@ -1,8 +1,8 @@
 /**
  * @fileoverview Settings schema — platform surface sections
- * @description api_docs, ui, docs, fault_management, system_logs,
- * file_browser. Field shape and `default` semantics per SettingsSchema.js
- * (the aggregating index).
+ * @description api_docs, ui, docs, ticket_system, guest_agent,
+ * fault_management, system_logs, file_browser. Field shape and `default`
+ * semantics per SettingsSchema.js (the aggregating index).
  */
 
 export const PLATFORM_SCHEMA = {
@@ -14,6 +14,32 @@ export const PLATFORM_SCHEMA = {
         type: 'boolean',
         description: 'Enable Swagger API documentation at /api-docs',
         default: true,
+      },
+    },
+  },
+  ticket_system: {
+    description: 'Help & Support ticket link (served by the public GET /api/config/ticket feed)',
+    requires_restart: false,
+    properties: {
+      enabled: {
+        type: 'boolean',
+        description: 'Render the Help & Support link in the UI profile dropdown',
+        default: true,
+      },
+      base_url: {
+        type: 'string',
+        description: 'Ticket system base URL the UI appends req/user/context parameters to',
+        default: 'https://xd.prominic.net/app/apprequest.nsf/router?openagent',
+      },
+      req_type: {
+        type: 'string',
+        description: 'Request type parameter (req=) the UI appends to the base URL',
+        default: 'sso',
+      },
+      context: {
+        type: 'string',
+        description: 'Context URL identifying this product in filed tickets',
+        default: 'https://github.com/Makr91/zoneweaver-agent',
       },
     },
   },
@@ -41,6 +67,60 @@ export const PLATFORM_SCHEMA = {
         type: 'boolean',
         description: 'Serve the bundled docs site at /docs (ships inside the UI artifact)',
         default: true,
+      },
+    },
+  },
+  experimental: {
+    description: 'Experimental features (dev-marked platform mechanisms)',
+    requires_restart: false,
+    properties: {
+      enabled: {
+        type: 'boolean',
+        description:
+          'Advertise and honor experimental surfaces. Currently: machine suspend/resume (bhyvectl checkpoint — the flag is dev-marked in bhyvectl; statefiles may not survive platform upgrades). Off = endpoints answer 503, the machine-suspend token is not advertised, and start discards any leftover checkpoint instead of restoring it.',
+        default: false,
+      },
+    },
+  },
+  guest_agent: {
+    description: 'QEMU guest-agent channel (/machines/{name}/guest/* — the guest-agent token)',
+    requires_restart: false,
+    properties: {
+      enabled: {
+        type: 'boolean',
+        description:
+          "Serve the guest-agent endpoints and advertise the guest-agent token. The channel itself rides each zone's virtio-console extra attr (create-time guest_agent toggle or POST /machines/{name}/guest-agent/setup, applies at next boot); the guest must run qemu-ga on its virtio-serial port",
+        default: true,
+      },
+    },
+  },
+  packages: {
+    description: 'IPS package operation timeouts',
+    requires_restart: false,
+    properties: {
+      install_timeout_seconds: {
+        type: 'integer',
+        description: 'Timeout for pkg install/uninstall operations',
+        default: 600,
+        min: 60,
+      },
+      update_timeout_seconds: {
+        type: 'integer',
+        description: 'Timeout for pkg update operations',
+        default: 1800,
+        min: 60,
+      },
+    },
+  },
+  system_host: {
+    description: 'Host power operation settings',
+    requires_restart: false,
+    properties: {
+      command_timeout_seconds: {
+        type: 'integer',
+        description: 'Timeout for host shutdown/restart/poweroff commands',
+        default: 300,
+        min: 30,
       },
     },
   },

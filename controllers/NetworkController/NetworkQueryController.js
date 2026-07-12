@@ -7,7 +7,7 @@ import { Op } from 'sequelize';
 import os from 'os';
 import fs from 'fs/promises';
 import { log } from '../../lib/Logger.js';
-import { executeCommand } from './utils/CommandHelper.js';
+import { executeCommand } from '../../lib/CommandManager.js';
 
 /**
  * @swagger

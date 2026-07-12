@@ -39,8 +39,6 @@ import { log } from '../../lib/Logger.js';
  *               force:
  *                 type: boolean
  *                 default: false
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Rename task created
@@ -53,7 +51,7 @@ import { log } from '../../lib/Logger.js';
  */
 export const renameDataset = async (req, res) => {
   const { name } = req.params;
-  const { new_name, recursive = false, force = false, created_by = 'api' } = req.body;
+  const { new_name, recursive = false, force = false } = req.body;
 
   try {
     if (!name) {
@@ -76,7 +74,7 @@ export const renameDataset = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_rename_dataset',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

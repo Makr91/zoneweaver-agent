@@ -30,9 +30,21 @@ export const ZONES_SCHEMA = {
       },
       task_timeout: {
         type: 'integer',
-        description: 'Task execution timeout in seconds',
+        description: 'Default command execution timeout in seconds',
         default: 300,
         min: 30,
+      },
+      task_poll_interval: {
+        type: 'integer',
+        description: 'Seconds between task queue polls',
+        default: 2,
+        min: 1,
+      },
+      resume_pending_tasks_on_start: {
+        type: 'boolean',
+        description:
+          'Keep queued (pending) tasks across an agent restart instead of cancelling them at boot',
+        default: false,
       },
       orphan_retention: {
         type: 'integer',

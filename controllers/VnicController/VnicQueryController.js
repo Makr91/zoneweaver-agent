@@ -5,7 +5,7 @@
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import os from 'os';
 import { log } from '../../lib/Logger.js';
-import { executeCommand } from './utils/CommandHelper.js';
+import { executeCommand } from '../../lib/CommandManager.js';
 
 /**
  * @swagger

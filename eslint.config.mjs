@@ -10,6 +10,7 @@ export default [
       'node_modules/**/*', // Dependencies
       'dist/**/*', // Build output
       'build/**/*', // Build output
+      'ui/**/*', // Hyperweaver UI artifact (built elsewhere, deployed alongside)
       'coverage/**/*', // Test coverage
       '*.min.js', // Minified files
       'packaging/**/*', // Packaging files

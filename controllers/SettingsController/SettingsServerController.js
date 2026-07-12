@@ -9,6 +9,11 @@ import { log } from '../../lib/Logger.js';
  * /server/restart:
  *   post:
  *     summary: Restart the server
+ *     description: |
+ *       Answers immediately, then exits the process — SMF's restarter brings
+ *       the service back up with the reloaded configuration. No
+ *       self-referencing svcadm call (a service restarting itself races its
+ *       own contract kill); boot recovery closes out any in-flight tasks.
  *     tags: [Settings]
  *     security:
  *       - ApiKeyAuth: []
@@ -28,49 +33,21 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to initiate server restart
  */
 export const restartServer = (req, res) => {
-  void req;
   try {
-    // Send success response immediately before initiating restart
+    log.app.warn('Server restart requested — exiting for SMF-driven restart', {
+      user: req.entity.name,
+    });
+
     const response = res.json({
       success: true,
       message:
         'Server restart initiated. Please wait 30-60 seconds before reconnecting. The server will reload all configuration changes.',
     });
 
-    // Schedule restart in detached process after response is sent
-    // This ensures the HTTP response is delivered before the process is terminated
+    // Exit after the response flushes; SMF restarts the service.
     setTimeout(() => {
-      log.app.warn('Initiating server restart via SMF');
-
-      // Import exec here to avoid loading it at module level
-      import('child_process')
-        .then(({ exec }) => {
-          // Use pfexec to restart the SMF service in a detached process
-          exec(
-            'pfexec svcadm restart system/virtualization/zoneweaver-agent',
-            {
-              detached: true,
-              stdio: 'ignore',
-            },
-            (error, _stdout, _stderr) => {
-              void _stdout;
-              void _stderr;
-              // This callback likely won't execute since the process will be killed
-              // but we include it for completeness
-              if (error) {
-                log.app.error('Restart command error', {
-                  error: error.message,
-                });
-              }
-            }
-          );
-        })
-        .catch(err => {
-          log.app.error('Failed to import child_process for restart', {
-            error: err.message,
-          });
-        });
-    }, 1000); // 1 second delay to ensure HTTP response is fully sent
+      process.exit(0);
+    }, 1000);
 
     return response;
   } catch (error) {

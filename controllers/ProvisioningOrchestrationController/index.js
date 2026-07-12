@@ -13,3 +13,12 @@ export {
   updateProvisioningProfile,
   deleteProvisioningProfile,
 } from './ProvisioningProfileController.js';
+export {
+  listProvisioners,
+  getProvisionerDetails,
+  getProvisionerVersion,
+  importProvisioner,
+  deleteProvisioner,
+  deleteProvisionerVersion,
+  refreshProvisionerSpecs,
+} from './ProvisioningRegistryController.js';

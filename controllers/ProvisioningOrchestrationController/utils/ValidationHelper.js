@@ -52,13 +52,9 @@ export const validateProvisioningRequest = async (zoneName, zone, skipRecipe) =>
   const { extractCredentialsFromSettings, extractControlIP } =
     await import('../../../lib/ProvisionerConfigBuilder.js');
 
+  // settings.vagrant_user is optional — extractCredentialsFromSettings
+  // defaults the username to root (Hosts.rb's own default).
   const credentials = extractCredentialsFromSettings(zoneConfig.settings);
-  if (!credentials.username) {
-    return {
-      valid: false,
-      error: 'Credentials missing: settings.vagrant_user is required',
-    };
-  }
 
   const zoneIP = extractControlIP(zoneConfig.networks);
   if (!zoneIP) {

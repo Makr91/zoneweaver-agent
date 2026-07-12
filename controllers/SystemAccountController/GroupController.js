@@ -43,10 +43,6 @@ import { log } from '../../lib/Logger.js';
  *                 maximum: 2147483647
  *                 description: Group ID (100+ recommended for regular groups)
  *                 example: 1001
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this group
  *     responses:
  *       202:
  *         description: Group creation task created successfully
@@ -57,7 +53,8 @@ import { log } from '../../lib/Logger.js';
  */
 export const createSystemGroup = async (req, res) => {
   try {
-    const { groupname, gid, created_by = 'api' } = req.body;
+    const { groupname, gid } = req.body;
+    const createdBy = req.entity.name;
 
     // Validate required parameters
     if (!groupname) {
@@ -79,7 +76,7 @@ export const createSystemGroup = async (req, res) => {
     log.api.info('Group creation request received', {
       groupname,
       gid,
-      created_by,
+      created_by: createdBy,
     });
 
     // Create task using ResponseHelpers
@@ -89,7 +86,7 @@ export const createSystemGroup = async (req, res) => {
         groupname,
         gid,
       },
-      created_by,
+      createdBy,
       TaskPriority.MEDIUM
     );
 
@@ -97,7 +94,7 @@ export const createSystemGroup = async (req, res) => {
       task_id: task.id,
       groupname,
       gid,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `Group creation task created for ${groupname}`, task, {
@@ -110,7 +107,6 @@ export const createSystemGroup = async (req, res) => {
       error: error.message,
       stack: error.stack,
       groupname: req.body?.groupname,
-      created_by: req.body?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create group creation task', error.message);
   }
@@ -132,12 +128,6 @@ export const createSystemGroup = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Group name to delete
- *       - in: query
- *         name: created_by
- *         schema:
- *           type: string
- *           default: "api"
- *         description: User performing this deletion
  *     responses:
  *       202:
  *         description: Group deletion task created successfully
@@ -147,25 +137,25 @@ export const createSystemGroup = async (req, res) => {
 export const deleteSystemGroup = async (req, res) => {
   try {
     const { groupname } = req.params;
-    const { created_by = 'api' } = req.query;
+    const createdBy = req.entity.name;
 
     log.api.info('Group deletion request received', {
       groupname,
-      created_by,
+      created_by: createdBy,
     });
 
     // Create task using ResponseHelpers
     const task = await createSystemTask(
       'group_delete',
       { groupname },
-      created_by,
+      createdBy,
       TaskPriority.CRITICAL // Group deletion is critical priority
     );
 
     log.api.info('Group deletion task created', {
       task_id: task.id,
       groupname,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `Group deletion task created for ${groupname}`, task, {
@@ -176,7 +166,6 @@ export const deleteSystemGroup = async (req, res) => {
       error: error.message,
       stack: error.stack,
       groupname: req.params?.groupname,
-      created_by: req.query?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create group deletion task', error.message);
   }
@@ -216,10 +205,6 @@ export const deleteSystemGroup = async (req, res) => {
  *                 maximum: 2147483647
  *                 description: New Group ID
  *                 example: 1002
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User performing this modification
  *     responses:
  *       202:
  *         description: Group modification task created successfully
@@ -231,7 +216,8 @@ export const deleteSystemGroup = async (req, res) => {
 export const modifySystemGroup = async (req, res) => {
   try {
     const { groupname } = req.params;
-    const { new_groupname, new_gid, created_by = 'api' } = req.body;
+    const { new_groupname, new_gid } = req.body;
+    const createdBy = req.entity.name;
 
     // Validate new group name format if provided
     if (new_groupname) {
@@ -253,7 +239,7 @@ export const modifySystemGroup = async (req, res) => {
       groupname,
       new_groupname,
       new_gid,
-      created_by,
+      created_by: createdBy,
     });
 
     // Create task using ResponseHelpers
@@ -264,7 +250,7 @@ export const modifySystemGroup = async (req, res) => {
         new_groupname,
         new_gid,
       },
-      created_by,
+      createdBy,
       TaskPriority.MEDIUM
     );
 
@@ -272,7 +258,7 @@ export const modifySystemGroup = async (req, res) => {
       task_id: task.id,
       groupname,
       new_groupname,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `Group modification task created for ${groupname}`, task, {
@@ -289,7 +275,6 @@ export const modifySystemGroup = async (req, res) => {
       stack: error.stack,
       groupname: req.params?.groupname,
       new_groupname: req.body?.new_groupname,
-      created_by: req.body?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create group modification task', error.message);
   }

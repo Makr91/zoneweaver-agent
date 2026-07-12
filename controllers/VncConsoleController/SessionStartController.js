@@ -10,6 +10,7 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 import VncSessions from '../../models/VncSessionModel.js';
 import Zones from '../../models/ZoneModel.js';
+import { readZonecfgAttr } from '../../lib/ZoneConfigUtils.js';
 import {
   directSuccessResponse,
   errorResponse,
@@ -185,11 +186,16 @@ const validateAndFinalizeSession = async (req, res, options) => {
  * Create new VNC session
  */
 const createNewVncSession = async (req, res, zoneName) => {
-  // Get zone configuration for static port settings
-  const zone = await Zones.findOne({ where: { name: zoneName } });
-  const zoneConfig = zone?.configuration || {};
-  const staticPort = zoneConfig.settings?.consoleport;
-  const bindHost = zoneConfig.settings?.consolehost || '0.0.0.0';
+  // Static port/bind pins are custom zonecfg attrs — they ride the zone config
+  // itself (export/migrate with the zone; the PUT consoleport/consolehost
+  // knobs write them, create materializes settings.consoleport into them).
+  const [portAttr, hostAttr] = await Promise.all([
+    readZonecfgAttr(zoneName, 'consoleport'),
+    readZonecfgAttr(zoneName, 'consolehost'),
+  ]);
+  const parsedPort = Number(portAttr.value);
+  const staticPort = portAttr.exists && Number.isInteger(parsedPort) ? parsedPort : null;
+  const bindHost = hostAttr.exists && hostAttr.value ? hostAttr.value : '0.0.0.0';
 
   let webPort;
   let portSource = 'dynamic';

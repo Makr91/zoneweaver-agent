@@ -38,8 +38,6 @@ import { log } from '../../lib/Logger.js';
  *                 type: string
  *               force:
  *                 type: boolean
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Replace device task created
@@ -48,7 +46,7 @@ import { log } from '../../lib/Logger.js';
  */
 export const replaceDevice = async (req, res) => {
   const { pool } = req.params;
-  const { old_device, new_device, force = false, created_by = 'api' } = req.body;
+  const { old_device, new_device, force = false } = req.body;
 
   try {
     if (!pool) {
@@ -75,7 +73,7 @@ export const replaceDevice = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_replace_device',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -148,8 +146,6 @@ export const replaceDevice = async (req, res) => {
  *               expand:
  *                 type: boolean
  *                 description: Expand device to use all available space
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Online device task created
@@ -158,7 +154,7 @@ export const replaceDevice = async (req, res) => {
  */
 export const onlineDevice = async (req, res) => {
   const { pool } = req.params;
-  const { device, expand = false, created_by = 'api' } = req.body;
+  const { device, expand = false } = req.body;
 
   try {
     if (!pool) {
@@ -181,7 +177,7 @@ export const onlineDevice = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_online_device',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -251,8 +247,6 @@ export const onlineDevice = async (req, res) => {
  *               temporary:
  *                 type: boolean
  *                 description: Temporarily offline (will online on reboot)
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Offline device task created
@@ -261,7 +255,7 @@ export const onlineDevice = async (req, res) => {
  */
 export const offlineDevice = async (req, res) => {
   const { pool } = req.params;
-  const { device, temporary = false, created_by = 'api' } = req.body;
+  const { device, temporary = false } = req.body;
 
   try {
     if (!pool) {
@@ -284,7 +278,7 @@ export const offlineDevice = async (req, res) => {
       zone_name: 'system',
       operation: 'zpool_offline_device',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

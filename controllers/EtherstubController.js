@@ -5,36 +5,12 @@
  * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
-import { exec } from 'child_process';
-import util from 'util';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
 import yj from 'yieldable-json';
 import os from 'os';
 import { log } from '../lib/Logger.js';
-
-const execPromise = util.promisify(exec);
-
-/**
- * Execute command safely with proper error handling
- * @param {string} command - Command to execute
- * @returns {Promise<{success: boolean, output?: string, error?: string}>}
- */
-const executeCommand = async command => {
-  try {
-    const { stdout } = await execPromise(command, {
-      encoding: 'utf8',
-      timeout: 30000, // 30 second timeout
-    });
-    return { success: true, output: stdout.trim() };
-  } catch (error) {
-    return {
-      success: false,
-      error: error.message,
-      output: error.stdout || '',
-    };
-  }
-};
+import { executeCommand } from '../lib/CommandManager.js';
 
 /**
  * @swagger
@@ -211,10 +187,6 @@ export const getEtherstubDetails = async (req, res) => {
  *                 type: boolean
  *                 description: Create temporary etherstub (not persistent)
  *                 default: false
- *               created_by:
- *                 type: string
- *                 description: User creating this etherstub
- *                 default: "api"
  *     responses:
  *       202:
  *         description: Etherstub creation task created successfully
@@ -240,7 +212,7 @@ export const getEtherstubDetails = async (req, res) => {
  *         description: Failed to create etherstub task
  */
 export const createEtherstub = async (req, res) => {
-  const { name, temporary = false, created_by = 'api' } = req.body;
+  const { name, temporary = false } = req.body;
 
   try {
     // Validate required fields
@@ -272,7 +244,7 @@ export const createEtherstub = async (req, res) => {
       zone_name: 'system',
       operation: 'create_etherstub',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -339,12 +311,6 @@ export const createEtherstub = async (req, res) => {
  *           type: boolean
  *           default: false
  *         description: Force deletion even if VNICs exist on etherstub
- *       - in: query
- *         name: created_by
- *         schema:
- *           type: string
- *           default: "api"
- *         description: User deleting this etherstub
  *     responses:
  *       202:
  *         description: Etherstub deletion task created successfully
@@ -376,7 +342,7 @@ export const createEtherstub = async (req, res) => {
  */
 export const deleteEtherstub = async (req, res) => {
   const { etherstub } = req.params;
-  const { temporary = false, force = false, created_by = 'api' } = req.query;
+  const { temporary = false, force = false } = req.query;
 
   try {
     // Check if etherstub exists
@@ -408,7 +374,7 @@ export const deleteEtherstub = async (req, res) => {
       zone_name: 'system',
       operation: 'delete_etherstub',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -433,7 +399,7 @@ export const deleteEtherstub = async (req, res) => {
       etherstub,
       temporary: temporary === 'true' || temporary === true,
       force: forceParam,
-      created_by,
+      created_by: req.entity.name,
     });
 
     return res.status(202).json({

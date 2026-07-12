@@ -186,7 +186,7 @@ export const STORAGE_SCHEMA = {
         type: 'array',
         items: 'object',
         description:
-          'Registry sources ({name, type, url, username, api_key, organization, enabled, verify_ssl, default})',
+          'Registry sources ({name, url, auth_token, enabled, default, ca_file}) — auth_token is a raw registry service-account token (Bearer, the ONLY registry credential); ca_file joins a self-signed registry CA to the trust store (verification always on)',
         default: [],
       },
       download: {
@@ -239,8 +239,9 @@ export const STORAGE_SCHEMA = {
     properties: {
       versioninfo_url: {
         type: 'string',
-        description: 'URL to remote versioninfo.json for update checking',
-        default: '',
+        description: 'URL to the remote update-info JSON for update checking',
+        default:
+          'https://github.com/Makr91/zoneweaver-agent/releases/latest/download/update-info.json',
       },
       check_interval: {
         type: 'integer',

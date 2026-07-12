@@ -117,16 +117,6 @@ export const executeNetworkTask = (operation, metadata) => {
     dhcp_add_host: executeDhcpAddHostTask,
     dhcp_remove_host: executeDhcpRemoveHostTask,
     dhcp_service_control: executeDhcpServiceControlTask,
-    provisioning_network_setup: () => ({
-      success: true,
-      message: 'Provisioning network setup in progress',
-      keep_running: true,
-    }),
-    provisioning_network_teardown: () => ({
-      success: true,
-      message: 'Provisioning network teardown in progress',
-      keep_running: true,
-    }),
   };
 
   const handler = taskMap[operation];
@@ -215,12 +205,14 @@ export const executeZPoolTask = (operation, metadata) => {
  * Execute artifact-related tasks
  * @param {string} operation - Operation type
  * @param {string} metadata - Task metadata
+ * @param {Object} task - The task row itself — progress-updating executors
+ *   write it directly (no self-lookup guessing)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeArtifactTask = (operation, metadata) => {
+export const executeArtifactTask = (operation, metadata, task) => {
   switch (operation) {
     case 'artifact_download_url':
-      return executeArtifactDownloadTask(metadata);
+      return executeArtifactDownloadTask(metadata, task);
     case 'artifact_scan_all':
       return executeArtifactScanAllTask(metadata);
     case 'artifact_scan_location':
@@ -230,11 +222,11 @@ export const executeArtifactTask = (operation, metadata) => {
     case 'artifact_delete_folder':
       return executeArtifactDeleteFolderTask(metadata);
     case 'artifact_upload':
-      return executeArtifactUploadProcessTask(metadata);
+      return executeArtifactUploadProcessTask(metadata, task);
     case 'artifact_move':
-      return executeArtifactMoveTask(metadata);
+      return executeArtifactMoveTask(metadata, task);
     case 'artifact_copy':
-      return executeArtifactCopyTask(metadata);
+      return executeArtifactCopyTask(metadata, task);
     default:
       return { success: false, error: `Unknown artifact operation: ${operation}` };
   }
@@ -244,20 +236,22 @@ export const executeArtifactTask = (operation, metadata) => {
  * Execute template-related tasks
  * @param {string} operation - Operation type
  * @param {string} metadata - Task metadata
+ * @param {Object} task - The task row itself — progress-updating executors
+ *   write it directly (no self-lookup guessing)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeTemplateTask = (operation, metadata) => {
+export const executeTemplateTask = (operation, metadata, task) => {
   switch (operation) {
     case 'template_download':
-      return executeTemplateDownloadTask(metadata);
+      return executeTemplateDownloadTask(metadata, task);
     case 'template_delete':
       return executeTemplateDeleteTask(metadata);
     case 'template_upload':
-      return executeTemplatePublishTask(metadata);
+      return executeTemplatePublishTask(metadata, task);
     case 'template_export':
-      return executeTemplateExportTask(metadata);
+      return executeTemplateExportTask(metadata, task);
     case 'template_move':
-      return executeTemplateMoveTask(metadata);
+      return executeTemplateMoveTask(metadata, task);
     default:
       return { success: false, error: `Unknown template operation: ${operation}` };
   }

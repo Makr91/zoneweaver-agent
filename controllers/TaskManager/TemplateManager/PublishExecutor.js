@@ -11,7 +11,7 @@ import {
   createRegistryClient,
   findSourceConfig,
 } from '../../../lib/TemplateRegistryUtils.js';
-import { findRunningTask, updateTaskProgress } from './utils/ProgressHelper.js';
+import { updateTaskProgress } from './utils/ProgressHelper.js';
 import { createBoxArtifact } from './utils/BoxArtifactHelper.js';
 import { ensureRegistryStructure, uploadRegistryArtifact } from './utils/RegistryUploadHelper.js';
 
@@ -23,9 +23,10 @@ import { ensureRegistryStructure, uploadRegistryArtifact } from './utils/Registr
  * Execute template publish task (Phase III - Part 2 or Combined)
  * Uploads a .box file (from zone export or existing file) to the registry
  * @param {string} metadataJson - Task metadata as JSON string
+ * @param {Object} task - The task row (progress updates write it directly)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeTemplatePublishTask = async metadataJson => {
+export const executeTemplatePublishTask = async (metadataJson, task) => {
   log.task.debug('Template publish task starting');
   let tempDir = null;
 
@@ -48,11 +49,8 @@ export const executeTemplatePublishTask = async metadataJson => {
       box_name,
       version,
       description,
-      auth_token,
       snapshot_name,
     } = metadata;
-
-    const task = await findRunningTask('template_upload', zone_name || box_name);
 
     // Find source configuration
     const sourceConfig = findSourceConfig(source_name);
@@ -60,7 +58,7 @@ export const executeTemplatePublishTask = async metadataJson => {
       return { success: false, error: `Template source not found: ${source_name}` };
     }
 
-    const token = await getRegistryToken(sourceConfig, auth_token);
+    const token = getRegistryToken(sourceConfig);
     const client = createRegistryClient(sourceConfig, token);
 
     let uploadFilePath;
@@ -111,11 +109,22 @@ export const executeTemplatePublishTask = async metadataJson => {
 
     await updateTaskProgress(task, 95, { status: 'releasing_version' });
 
-    // 4. Release Version
-    await client.put(`/api/organization/${organization}/box/${box_name}`, {
-      name: box_name,
-      published: true,
-    });
+    // 4. Release Version — same conflict tolerance as the structure calls
+    // (Go's conflictOK): 400/409 = already released = success, narrated.
+    try {
+      await client.put(`/api/organization/${organization}/box/${box_name}`, {
+        name: box_name,
+        published: true,
+      });
+    } catch (releaseError) {
+      if (![400, 409].includes(releaseError.response?.status)) {
+        throw releaseError;
+      }
+      log.task.info('Release answered conflict — box already released', {
+        box_name,
+        status_code: releaseError.response.status,
+      });
+    }
 
     await updateTaskProgress(task, 100, { status: 'completed' });
 

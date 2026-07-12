@@ -141,7 +141,9 @@ export const getPoolDetails = async (req, res) => {
       return res.status(400).json({ error: 'Pool name is required' });
     }
 
-    const result = await executeCommand(`pfexec zpool get all -H -p ${pool}`);
+    // Flags MUST precede the property operand — `zpool get all -H -p <pool>`
+    // parses -H as a pool name and fails, which answered 404 for every real pool.
+    const result = await executeCommand(`pfexec zpool get -H -p all ${pool}`);
 
     if (!result.success) {
       return res.status(404).json({

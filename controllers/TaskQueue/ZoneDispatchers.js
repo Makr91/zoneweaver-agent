@@ -2,6 +2,9 @@ import {
   executeStartTask,
   executeStopTask,
   executeRestartTask,
+  executeResetTask,
+  executeSuspendTask,
+  executeResumeTask,
   executeDeleteTask,
   executeDiscoverTask,
 } from '../TaskManager/ZoneManager.js';
@@ -23,8 +26,16 @@ import {
   executeZoneWaitSSHTask,
   executeZoneProvisioningExtractTask,
   executeZoneSyncTask,
+  executeZoneSyncbackTask,
   executeZoneProvisionTask,
 } from '../TaskManager/ZoneProvisionManager.js';
+import { executeProvisionerImportTask } from '../TaskManager/ProvisionerImportManager.js';
+import { executeZoneProvisioningStageTask } from '../TaskManager/ProvisionerStageManager.js';
+import {
+  executeSnapshotTakeTask,
+  executeSnapshotRestoreTask,
+  executeSnapshotDeleteTask,
+} from '../TaskManager/ZoneSnapshotManager.js';
 import { getHostMonitoringService } from '../HostMonitoringService.js';
 import { log } from '../../lib/Logger.js';
 
@@ -43,10 +54,15 @@ export const TASK_OBJECT_OPERATIONS = {
   zone_modify: executeZoneModifyTask,
   zone_setup: executeZoneSetupTask,
   zone_provisioning_extract: executeZoneProvisioningExtractTask,
+  zone_provisioning_stage: executeZoneProvisioningStageTask,
+  provisioner_import: executeProvisionerImportTask,
+  snapshot_take: executeSnapshotTakeTask,
+  snapshot_restore: executeSnapshotRestoreTask,
+  snapshot_delete: executeSnapshotDeleteTask,
   zone_wait_ssh: executeZoneWaitSSHTask,
   zone_sync: executeZoneSyncTask,
+  zone_syncback: executeZoneSyncbackTask,
   zone_provision: executeZoneProvisionTask,
-  zone_clone_orchestration: () => ({ success: true, message: 'Clone orchestration completed' }),
 };
 
 /**
@@ -64,6 +80,12 @@ export const executeZoneTask = (operation, zoneName, metadata) => {
       return executeStopTask(zoneName);
     case 'restart':
       return executeRestartTask(zoneName);
+    case 'reset':
+      return executeResetTask(zoneName);
+    case 'suspend':
+      return executeSuspendTask(zoneName);
+    case 'resume':
+      return executeResumeTask(zoneName);
     case 'delete':
       return executeDeleteTask(zoneName, metadata);
     case 'discover':

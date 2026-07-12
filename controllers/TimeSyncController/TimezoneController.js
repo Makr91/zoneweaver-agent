@@ -89,9 +89,6 @@ export const getTimezone = async (req, res) => {
  *                 type: boolean
  *                 default: true
  *                 description: Create backup of existing config
- *               created_by:
- *                 type: string
- *                 default: "api"
  *     responses:
  *       202:
  *         description: Timezone update task created
@@ -100,7 +97,7 @@ export const getTimezone = async (req, res) => {
  */
 export const setTimezone = async (req, res) => {
   try {
-    const { timezone, backup_existing = true, created_by = 'api' } = req.body;
+    const { timezone, backup_existing = true } = req.body;
 
     if (!timezone || typeof timezone !== 'string') {
       return errorResponse(res, 400, 'timezone is required and must be a string');
@@ -121,7 +118,7 @@ export const setTimezone = async (req, res) => {
         timezone,
         backup_existing,
       },
-      created_by,
+      req.entity.name,
       TaskPriority.HIGH
     );
 

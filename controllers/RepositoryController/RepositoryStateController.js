@@ -22,17 +22,6 @@ import { log } from '../../lib/Logger.js';
  *         schema:
  *           type: string
  *         description: Name of the publisher to enable
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Repository enable task created successfully
@@ -43,7 +32,6 @@ import { log } from '../../lib/Logger.js';
  */
 export const enableRepository = async (req, res) => {
   const { name } = req.params;
-  const { created_by = 'api' } = req.body || {};
 
   try {
     if (!name) {
@@ -57,7 +45,7 @@ export const enableRepository = async (req, res) => {
       zone_name: 'system',
       operation: 'repository_enable',
       priority: TaskPriority.LOW,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -86,7 +74,6 @@ export const enableRepository = async (req, res) => {
       error: error.message,
       stack: error.stack,
       name,
-      created_by,
     });
     return res.status(500).json({
       error: 'Failed to create repository enable task',
@@ -111,17 +98,6 @@ export const enableRepository = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Name of the publisher to disable
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Repository disable task created successfully
@@ -132,7 +108,6 @@ export const enableRepository = async (req, res) => {
  */
 export const disableRepository = async (req, res) => {
   const { name } = req.params;
-  const { created_by = 'api' } = req.body || {};
 
   try {
     if (!name) {
@@ -146,7 +121,7 @@ export const disableRepository = async (req, res) => {
       zone_name: 'system',
       operation: 'repository_disable',
       priority: TaskPriority.LOW,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -175,7 +150,6 @@ export const disableRepository = async (req, res) => {
       error: error.message,
       stack: error.stack,
       name,
-      created_by,
     });
     return res.status(500).json({
       error: 'Failed to create repository disable task',

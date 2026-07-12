@@ -36,8 +36,6 @@ import { log } from '../../lib/Logger.js';
  *               recursive:
  *                 type: boolean
  *                 default: false
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Hold task created
@@ -50,7 +48,7 @@ import { log } from '../../lib/Logger.js';
  */
 export const holdSnapshot = async (req, res) => {
   const { snapshot } = req.params;
-  const { tag, recursive = false, created_by = 'api' } = req.body;
+  const { tag, recursive = false } = req.body;
 
   try {
     if (!snapshot) {
@@ -77,7 +75,7 @@ export const holdSnapshot = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_hold_snapshot',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -147,8 +145,6 @@ export const holdSnapshot = async (req, res) => {
  *               recursive:
  *                 type: boolean
  *                 default: false
- *               created_by:
- *                 type: string
  *     responses:
  *       202:
  *         description: Release task created
@@ -161,7 +157,7 @@ export const holdSnapshot = async (req, res) => {
  */
 export const releaseSnapshot = async (req, res) => {
   const { snapshot, tag } = req.params;
-  const { recursive = false, created_by = 'api' } = req.body;
+  const { recursive = false } = req.body;
 
   try {
     if (!snapshot) {
@@ -188,7 +184,7 @@ export const releaseSnapshot = async (req, res) => {
       zone_name: 'system',
       operation: 'zfs_release_snapshot',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

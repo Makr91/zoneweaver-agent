@@ -36,9 +36,6 @@ import { log } from '../../lib/Logger.js';
  *                 type: integer
  *                 default: 30
  *                 description: Sync timeout in seconds
- *               created_by:
- *                 type: string
- *                 default: "api"
  *     responses:
  *       202:
  *         description: Sync task created successfully
@@ -47,7 +44,7 @@ import { log } from '../../lib/Logger.js';
  */
 export const forceTimeSync = async (req, res) => {
   try {
-    const { server, timeout = 30, created_by = 'api' } = req.body || {};
+    const { server, timeout = 30 } = req.body || {};
 
     // Detect available service using ServiceManager utilities
     const serviceInfo = await detectTimeService();
@@ -67,7 +64,7 @@ export const forceTimeSync = async (req, res) => {
         server,
         timeout,
       },
-      created_by,
+      req.entity.name,
       TaskPriority.HIGH
     );
 
@@ -119,9 +116,6 @@ export const forceTimeSync = async (req, res) => {
  *                 type: boolean
  *                 default: true
  *                 description: Install target package if not present
- *               created_by:
- *                 type: string
- *                 default: "api"
  *     responses:
  *       202:
  *         description: System switch task created
@@ -132,12 +126,7 @@ export const forceTimeSync = async (req, res) => {
  */
 export const switchTimeSyncSystem = async (req, res) => {
   try {
-    const {
-      target_system,
-      preserve_servers = true,
-      install_if_needed = true,
-      created_by = 'api',
-    } = req.body;
+    const { target_system, preserve_servers = true, install_if_needed = true } = req.body;
 
     if (!target_system || !['ntp', 'chrony', 'ntpsec', 'none'].includes(target_system)) {
       return errorResponse(
@@ -192,7 +181,7 @@ export const switchTimeSyncSystem = async (req, res) => {
         install_if_needed,
         systems_info: systemsInfo,
       },
-      created_by,
+      req.entity.name,
       TaskPriority.HIGH
     );
 

@@ -66,10 +66,6 @@ import { log } from '../../lib/Logger.js';
  *               proxy:
  *                 type: string
  *                 description: Proxy URI for this publisher
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Repository addition task created successfully
@@ -107,7 +103,6 @@ export const addRepository = async (req, res) => {
     search_after,
     properties = {},
     proxy,
-    created_by = 'api',
   } = req.body;
 
   try {
@@ -135,7 +130,7 @@ export const addRepository = async (req, res) => {
       zone_name: 'system',
       operation: 'repository_add',
       priority: TaskPriority.MEDIUM,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -177,7 +172,6 @@ export const addRepository = async (req, res) => {
       stack: error.stack,
       name,
       origin,
-      created_by,
     });
     return res.status(500).json({
       error: 'Failed to create repository addition task',
@@ -225,7 +219,6 @@ export const addRepository = async (req, res) => {
  */
 export const removeRepository = async (req, res) => {
   const { name } = req.params;
-  const { created_by = 'api' } = req.query;
 
   try {
     if (!name) {
@@ -239,7 +232,7 @@ export const removeRepository = async (req, res) => {
       zone_name: 'system',
       operation: 'repository_remove',
       priority: TaskPriority.MEDIUM,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -268,7 +261,6 @@ export const removeRepository = async (req, res) => {
       error: error.message,
       stack: error.stack,
       name,
-      created_by,
     });
     return res.status(500).json({
       error: 'Failed to create repository removal task',
@@ -360,10 +352,6 @@ export const removeRepository = async (req, res) => {
  *                 type: boolean
  *                 default: false
  *                 description: Refresh publisher metadata after modification
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this task
  *     responses:
  *       202:
  *         description: Repository modification task created successfully
@@ -391,7 +379,6 @@ export const modifyRepository = async (req, res) => {
     proxy,
     reset_uuid = false,
     refresh = false,
-    created_by = 'api',
   } = req.body;
 
   try {
@@ -406,7 +393,7 @@ export const modifyRepository = async (req, res) => {
       zone_name: 'system',
       operation: 'repository_modify',
       priority: TaskPriority.MEDIUM,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -451,7 +438,6 @@ export const modifyRepository = async (req, res) => {
       error: error.message,
       stack: error.stack,
       name,
-      created_by,
     });
     return res.status(500).json({
       error: 'Failed to create repository modification task',

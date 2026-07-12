@@ -11,6 +11,7 @@ import util from 'util';
 import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import NatRules from '../models/NatRuleModel.js';
 import yj from 'yieldable-json';
 
 const execPromise = util.promisify(exec);
@@ -45,8 +46,9 @@ const getProvNetConfig = () => {
   const netConfig = provConfig.network || {};
   return {
     enabled: netConfig.enabled !== false,
-    etherstub_name: netConfig.etherstub_name || 'estub_vz_1',
-    host_vnic_name: netConfig.host_vnic_name || 'vnicp3_0',
+    // Fallbacks match the settings schema + shipped config defaults exactly.
+    etherstub_name: netConfig.etherstub_name || 'estub_provision',
+    host_vnic_name: netConfig.host_vnic_name || 'provision_interconnect0',
     subnet: netConfig.subnet || '10.190.190.0/24',
     host_ip: netConfig.host_ip || '10.190.190.1',
     netmask: netConfig.netmask || '255.255.255.0',
@@ -108,6 +110,111 @@ const detectActiveInterface = async () => {
   }
 
   return null;
+};
+
+/**
+ * @swagger
+ * /provisioning/bridged-interfaces:
+ *   get:
+ *     summary: List all valid VNIC parents
+ *     description: |
+ *       Every datalink a VNIC can be created over, grouped by class
+ *       (phys/aggr/etherstub/simnet/overlay). Aggregate MEMBER links are
+ *       excluded — their traffic rides the aggr. The provisioning etherstub is
+ *       included and badged `provisioning: true` (it is how provisioning
+ *       networks attach — never hidden). Link state is carried, never
+ *       filtered; pickers filter client-side (external = phys/aggr,
+ *       internal = etherstub).
+ *     tags: [Provisioning Network]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: VNIC parents grouped by class
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 interfaces:
+ *                   type: object
+ *                   properties:
+ *                     phys:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           link: { type: string }
+ *                           state: { type: string }
+ *                           provisioning: { type: boolean }
+ *                     aggr: { type: array, items: { type: object } }
+ *                     etherstub: { type: array, items: { type: object } }
+ *                     simnet: { type: array, items: { type: object } }
+ *                     overlay: { type: array, items: { type: object } }
+ *                 excluded_aggr_members:
+ *                   type: array
+ *                   items: { type: string }
+ *                 total:
+ *                   type: integer
+ *       500:
+ *         description: Failed to enumerate links
+ */
+export const getBridgedInterfaces = async (req, res) => {
+  void req;
+  try {
+    const netConfig = getProvNetConfig();
+    const vnicParentClasses = ['phys', 'aggr', 'etherstub', 'simnet', 'overlay'];
+
+    const linksResult = await executeCommand('pfexec dladm show-link -p -o link,class,state');
+    if (!linksResult.success) {
+      return res.status(500).json({
+        error: 'Failed to enumerate links',
+        details: linksResult.error,
+      });
+    }
+
+    // Aggregate MEMBER links carry the aggr's traffic — never valid parents.
+    const memberLinks = new Set();
+    const aggrResult = await executeCommand('pfexec dladm show-aggr -x -p -o link,port');
+    if (aggrResult.success && aggrResult.output) {
+      for (const line of aggrResult.output.split('\n')) {
+        const [, port] = line.split(':');
+        if (port) {
+          memberLinks.add(port);
+        }
+      }
+    }
+
+    const interfaces = { phys: [], aggr: [], etherstub: [], simnet: [], overlay: [] };
+    let total = 0;
+    for (const line of linksResult.output.split('\n')) {
+      if (!line.trim()) {
+        continue;
+      }
+      const [link, linkClass, state] = line.split(':');
+      if (!vnicParentClasses.includes(linkClass) || memberLinks.has(link)) {
+        continue;
+      }
+      const entry = { link, state };
+      if (link === netConfig.etherstub_name) {
+        entry.provisioning = true;
+      }
+      interfaces[linkClass].push(entry);
+      total++;
+    }
+
+    return res.json({
+      interfaces,
+      excluded_aggr_members: [...memberLinks],
+      total,
+    });
+  } catch (error) {
+    log.api.error('Failed to list bridged interfaces', { error: error.message });
+    return res.status(500).json({
+      error: 'Failed to enumerate links',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -327,6 +434,7 @@ export const setupProvisioningNetwork = async (req, res) => {
         target: '0/32',
         protocol: 'tcp/udp',
         type: 'portmap',
+        created_by: createdBy,
       });
 
       // 5. Enable IP Forwarding
@@ -373,8 +481,9 @@ export const setupProvisioningNetwork = async (req, res) => {
  *   delete:
  *     summary: Teardown provisioning network
  *     description: |
- *       Removes all provisioning network components in reverse order:
- *       DHCP, NAT rule, IP address, VNIC, etherstub.
+ *       Removes all provisioning network components in reverse setup order:
+ *       DHCP, NAT rule, interconnect forwarding (global forwarding and the
+ *       external bridge are never touched), IP address, VNIC, etherstub.
  *     tags: [Provisioning Network]
  *     security:
  *       - ApiKeyAuth: []
@@ -443,18 +552,36 @@ export const teardownProvisioningNetwork = async (req, res) => {
     // 1. Stop DHCP Service
     await queueTask('dhcp_service_control', { action: 'stop' });
 
-    // 2. Remove IP Address
+    // 2. Remove the NAT rule setup created (found by subnet in the NAT rules
+    // database — setup's create_nat_rule stored it). Skipping this orphaned an
+    // ipnat.conf rule on every setup/teardown cycle.
+    const natRule = await NatRules.findOne({ where: { subnet: netConfig.subnet } });
+    if (natRule) {
+      await queueTask('delete_nat_rule', { rule_id: natRule.id });
+    }
+
+    // 3. Disable forwarding on the interconnect ONLY — global forwarding and
+    // the external bridge stay untouched (other consumers may depend on them).
+    if (await componentExists('vnic', netConfig.host_vnic_name)) {
+      await queueTask('configure_forwarding', {
+        enabled: false,
+        interfaces: [netConfig.host_vnic_name],
+        global: false,
+      });
+    }
+
+    // 4. Remove IP Address
     const addrobj = `${netConfig.host_vnic_name}/v4static`;
     if (await componentExists('ip', addrobj)) {
       await queueTask('delete_ip_address', { addrobj });
     }
 
-    // 3. Remove VNIC
+    // 5. Remove VNIC
     if (await componentExists('vnic', netConfig.host_vnic_name)) {
       await queueTask('delete_vnic', { vnic: netConfig.host_vnic_name });
     }
 
-    // 4. Remove Etherstub
+    // 6. Remove Etherstub
     if (await componentExists('etherstub', netConfig.etherstub_name)) {
       await queueTask('delete_etherstub', { etherstub: netConfig.etherstub_name });
     }

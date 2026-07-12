@@ -391,3 +391,235 @@ export const triggerCleanup = async (req, res) => {
     return errorResponse(res, 500, 'Failed to trigger cleanup', error.message);
   }
 };
+
+const findDatabase = name => allDatabases.find(database => database.name === name);
+
+const listTableNames = async instance => {
+  const [tables] = await instance.query(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+  );
+  return tables.map(table => table.name);
+};
+
+/**
+ * @swagger
+ * /database/{db}/tables:
+ *   get:
+ *     summary: List a database's tables
+ *     description: |
+ *       Read-only explorer drill-down: the named per-datatype database's tables
+ *       with row counts and index names. Database names are the /database/stats
+ *       `databases[].name` values (core, metricsNetwork, metricsStorage,
+ *       metricsSystem). Only available for SQLite databases.
+ *     tags: [Database Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: db
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Tables retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 database:
+ *                   type: string
+ *                 tables:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       rows:
+ *                         type: integer
+ *                       indexes:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *       404:
+ *         description: Unknown database
+ */
+export const listDatabaseTables = async (req, res) => {
+  try {
+    if (config.getDatabase().dialect !== 'sqlite') {
+      return errorResponse(res, 400, 'Database explorer only available for SQLite');
+    }
+    const database = findDatabase(req.params.db);
+    if (!database) {
+      return errorResponse(
+        res,
+        404,
+        `Unknown database — one of: ${allDatabases.map(d => d.name).join(', ')}`
+      );
+    }
+    const names = await listTableNames(database.instance);
+    const [indexes] = await database.instance.query(
+      "SELECT name, tbl_name as 'table' FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    );
+    const tables = await Promise.all(
+      names.map(async name => {
+        const [[countResult]] = await database.instance.query(
+          `SELECT COUNT(*) as count FROM "${name}"`
+        );
+        return {
+          name,
+          rows: countResult.count,
+          indexes: indexes.filter(index => index.table === name).map(index => index.name),
+        };
+      })
+    );
+    return directSuccessResponse(res, 'Database tables retrieved successfully', {
+      database: database.name,
+      tables,
+    });
+  } catch (error) {
+    log.database.error('Error listing database tables', {
+      error: error.message,
+      database: req.params.db,
+    });
+    return errorResponse(res, 500, 'Failed to list database tables', error.message);
+  }
+};
+
+/**
+ * @swagger
+ * /database/{db}/tables/{table}/rows:
+ *   get:
+ *     summary: Browse a table's rows (read-only, paged)
+ *     description: |
+ *       Read-only row browser for the explorer drill-down — no arbitrary SQL.
+ *       The table must exist in the named database (validated against
+ *       sqlite_master, never interpolated raw). order_by takes a column name,
+ *       optionally suffixed :desc (e.g. `scan_timestamp:desc`).
+ *     tags: [Database Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: db
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: table
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *           maximum: 500
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *       - in: query
+ *         name: order_by
+ *         schema:
+ *           type: string
+ *         description: Column name, optionally with :desc (default order is the table's natural rowid order)
+ *     responses:
+ *       200:
+ *         description: Rows retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 database:
+ *                   type: string
+ *                 table:
+ *                   type: string
+ *                 columns:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 rows:
+ *                   type: array
+ *                   items:
+ *                     type: array
+ *                 total:
+ *                   type: integer
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
+ *                     hasMore:
+ *                       type: boolean
+ *       400:
+ *         description: Invalid order_by column
+ *       404:
+ *         description: Unknown database or table
+ */
+export const browseDatabaseTable = async (req, res) => {
+  try {
+    if (config.getDatabase().dialect !== 'sqlite') {
+      return errorResponse(res, 400, 'Database explorer only available for SQLite');
+    }
+    const database = findDatabase(req.params.db);
+    if (!database) {
+      return errorResponse(
+        res,
+        404,
+        `Unknown database — one of: ${allDatabases.map(d => d.name).join(', ')}`
+      );
+    }
+    const names = await listTableNames(database.instance);
+    const table = names.find(name => name === req.params.table);
+    if (!table) {
+      return errorResponse(res, 404, `Unknown table in ${database.name}`);
+    }
+
+    const [columnsInfo] = await database.instance.query(`PRAGMA table_info("${table}")`);
+    const columns = columnsInfo.map(column => column.name);
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+    let orderClause = '';
+    if (req.query.order_by) {
+      const [orderColumn, direction = 'asc'] = String(req.query.order_by).split(':');
+      if (!columns.includes(orderColumn)) {
+        return errorResponse(res, 400, `order_by must name a column of ${table}`);
+      }
+      const orderDirection = direction.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+      orderClause = ` ORDER BY "${orderColumn}" ${orderDirection}`;
+    }
+
+    const [[countResult]] = await database.instance.query(
+      `SELECT COUNT(*) as count FROM "${table}"`
+    );
+    const [rowObjects] = await database.instance.query(
+      `SELECT * FROM "${table}"${orderClause} LIMIT ${limit} OFFSET ${offset}`
+    );
+
+    return directSuccessResponse(res, 'Table rows retrieved successfully', {
+      database: database.name,
+      table,
+      columns,
+      rows: rowObjects.map(row => columns.map(column => row[column])),
+      total: countResult.count,
+      pagination: { limit, offset, hasMore: offset + rowObjects.length < countResult.count },
+    });
+  } catch (error) {
+    log.database.error('Error browsing database table', {
+      error: error.message,
+      database: req.params.db,
+      table: req.params.table,
+    });
+    return errorResponse(res, 500, 'Failed to browse database table', error.message);
+  }
+};

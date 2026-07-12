@@ -6,7 +6,7 @@ import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import yj from 'yieldable-json';
 import { setRebootRequired } from '../../lib/RebootManager.js';
 import { log } from '../../lib/Logger.js';
-import { executeCommand } from './utils/CommandHelper.js';
+import { executeCommand } from '../../lib/CommandManager.js';
 
 /**
  * @swagger
@@ -34,10 +34,6 @@ import { executeCommand } from './utils/CommandHelper.js';
  *                 type: boolean
  *                 description: Whether to apply hostname change immediately (requires reboot for permanent effect)
  *                 default: false
- *               created_by:
- *                 type: string
- *                 description: User or system creating this task
- *                 default: "api"
  *     responses:
  *       202:
  *         description: Hostname change task created successfully
@@ -74,7 +70,7 @@ import { executeCommand } from './utils/CommandHelper.js';
  *         description: Failed to create hostname change task
  */
 export const setHostname = async (req, res) => {
-  const { hostname, apply_immediately = false, created_by = 'api' } = req.body;
+  const { hostname, apply_immediately = false } = req.body;
 
   try {
     if (!hostname || typeof hostname !== 'string') {
@@ -113,7 +109,7 @@ export const setHostname = async (req, res) => {
       zone_name: 'system',
       operation: 'set_hostname',
       priority: TaskPriority.HIGH,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -214,10 +210,6 @@ export const setHostname = async (req, res) => {
  *                 type: boolean
  *                 description: Create address in down state
  *                 default: false
- *               created_by:
- *                 type: string
- *                 description: User creating this address
- *                 default: "api"
  *     responses:
  *       202:
  *         description: IP address creation task created successfully
@@ -255,7 +247,6 @@ export const createIPAddress = async (req, res) => {
     wait = 30,
     temporary = false,
     down = false,
-    created_by = 'api',
   } = req.body;
 
   try {
@@ -284,7 +275,7 @@ export const createIPAddress = async (req, res) => {
       zone_name: 'system',
       operation: 'create_ip_address',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -354,12 +345,6 @@ export const createIPAddress = async (req, res) => {
  *           type: boolean
  *           default: false
  *         description: Release DHCP lease before deletion
- *       - in: query
- *         name: created_by
- *         schema:
- *           type: string
- *           default: "api"
- *         description: User deleting this address
  *     responses:
  *       202:
  *         description: IP address deletion task created successfully
@@ -389,7 +374,7 @@ export const deleteIPAddress = async (req, res) => {
   const addrobj = Array.isArray(req.params.splat)
     ? req.params.splat.join('/')
     : req.params.splat || ''; // Express 5.x compatibility fix
-  const { release = false, created_by = 'api' } = req.query;
+  const { release = false } = req.query;
 
   try {
     // Check if address object exists in current system
@@ -407,7 +392,7 @@ export const deleteIPAddress = async (req, res) => {
       zone_name: 'system',
       operation: 'delete_ip_address',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -430,7 +415,7 @@ export const deleteIPAddress = async (req, res) => {
       task_id: task.id,
       addrobj,
       release: release === 'true' || release === true,
-      created_by,
+      created_by: req.entity.name,
     });
 
     return res.status(202).json({
@@ -482,15 +467,13 @@ export const enableIPAddress = async (req, res) => {
   const addrobj = Array.isArray(req.params.splat)
     ? req.params.splat.join('/')
     : req.params.splat || ''; // Express 5.x compatibility fix
-  const { created_by = 'api' } = req.body || {};
-
   try {
     // Create task for enabling IP address
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'enable_ip_address',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -554,15 +537,13 @@ export const disableIPAddress = async (req, res) => {
   const addrobj = Array.isArray(req.params.splat)
     ? req.params.splat.join('/')
     : req.params.splat || ''; // Express 5.x compatibility fix
-  const { created_by = 'api' } = req.body || {};
-
   try {
     // Create task for disabling IP address
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'disable_ip_address',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

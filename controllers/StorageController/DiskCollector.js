@@ -7,8 +7,13 @@
 
 import Disks from '../../models/DiskModel.js';
 import { log } from '../../lib/Logger.js';
-import { parseFormatOutput } from './utils/ParsingUtils.js';
-import { executeFormatList, executeZpoolStatus, safeExecuteCommand } from './utils/CommandUtils.js';
+import { parseDiskinfoInventory, applyFormatEnrichment } from './utils/ParsingUtils.js';
+import {
+  executeFormatList,
+  executeZpoolStatus,
+  executeDiskinfo,
+  safeExecuteCommand,
+} from './utils/CommandUtils.js';
 import { BatchProcessor, assignDisksToePools } from './utils/HostUtils.js';
 
 /**
@@ -24,26 +29,36 @@ class DiskCollector {
 
   /**
    * Collect disk inventory information
-   * @description Gathers physical disk information using format command
+   * @description diskinfo is the PRIMARY source (one machine-friendly table,
+   * clean exit code); format only enriches (firmware, its disk numbering) and
+   * its failure is non-fatal — the inventory must never answer empty because
+   * format's interactive exit status misbehaves under the service user. A
+   * diskinfo failure throws with the REAL error so the log names the cause.
    * @returns {Promise<Array>} Array of disk data objects
    */
   async collectDiskData() {
     try {
       const timeout = this.hostMonitoringConfig.performance.command_timeout * 1000;
 
-      // Get disk list using format command
+      const diskinfoOutput = await executeDiskinfo(timeout);
+      if (typeof diskinfoOutput !== 'string' || !diskinfoOutput.trim()) {
+        throw new Error('diskinfo answered no output');
+      }
+      const diskData = parseDiskinfoInventory(diskinfoOutput, this.hostname);
+      if (diskData.length === 0) {
+        throw new Error('diskinfo answered no parseable disk rows');
+      }
+
+      // Best-effort format enrichment (firmware + disk numbering)
       const formatOutput = await safeExecuteCommand(
         () => executeFormatList(timeout),
         'format disk list collection',
         log.monitoring,
         this.hostname
       );
-
-      if (!formatOutput) {
-        return [];
+      if (typeof formatOutput === 'string' && formatOutput.trim()) {
+        applyFormatEnrichment(diskData, formatOutput, this.hostname);
       }
-
-      const diskData = parseFormatOutput(formatOutput, this.hostname);
 
       // Cross-reference with zpool status to determine pool assignments
       const zpoolStatusOutput = await safeExecuteCommand(
@@ -53,7 +68,7 @@ class DiskCollector {
         this.hostname
       );
 
-      if (zpoolStatusOutput) {
+      if (typeof zpoolStatusOutput === 'string' && zpoolStatusOutput.trim()) {
         assignDisksToePools(diskData, zpoolStatusOutput);
       }
 

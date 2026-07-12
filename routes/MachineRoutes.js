@@ -10,14 +10,34 @@ import {
   startZone,
   stopZone,
   restartZone,
+  resetZone,
+  suspendZone,
+  resumeZone,
+  injectNmi,
   deleteZone,
   createZone,
   modifyZone,
+  clearZonePendingChanges,
+  applyZonePendingChanges,
   bulkStartZones,
   bulkStopZones,
   cloneZone,
+  listMachineSnapshots,
+  takeMachineSnapshot,
+  restoreMachineSnapshot,
+  deleteMachineSnapshot,
 } from '../controllers/ZoneManagement/index.js';
+import {
+  guestPing,
+  guestOSInfo,
+  guestNetwork,
+  guestExec,
+  guestExecStatus,
+  guestShutdown,
+  guestAgentSetup,
+} from '../controllers/GuestAgentController.js';
 import { getServerIds, getNextServerId } from '../controllers/ZoneServerIds.js';
+import { getMachineDefaults, getMachineOSTypes } from '../controllers/MachineDefaultsController.js';
 import {
   getZoneOrchestrationStatus,
   enableOrchestration,
@@ -51,7 +71,6 @@ import {
   stopTerminalSession,
   getTerminalSessionInfo,
   listTerminalSessions,
-  checkSessionHealth,
 } from '../controllers/TerminalSessionController.js';
 import {
   startZloginSession,
@@ -91,9 +110,44 @@ const registerLifecycleRoutes = router => {
   router.get('/machines/ids/next', verifyApiKey, getNextServerId); // Get next available server ID
   router.get('/machines/ids', verifyApiKey, getServerIds); // Get server ID usage information
 
+  // Create-wizard feeds (shared wire with the Go agent; literal paths before :machineName)
+  router.get('/machines/defaults', verifyApiKey, getMachineDefaults); // Create-time defaults + knob vocabularies
+  router.get('/machines/ostypes', verifyApiKey, getMachineOSTypes); // bhyve guest-type vocabulary
+
   // Zone Creation & Modification Routes (must come before parameterized routes)
   router.post('/machines', verifyApiKey, createZone); // Create a new zone
   router.put('/machines/:machineName', verifyApiKey, modifyZone); // Modify zone configuration
+
+  // Accrue-changes cancel + apply-now (shared contract with the Go agent)
+  router.delete('/machines/:machineName/pending-changes', verifyApiKey, clearZonePendingChanges);
+  router.post(
+    '/machines/:machineName/pending-changes/apply',
+    verifyApiKey,
+    applyZonePendingChanges
+  );
+
+  // Machine snapshots (machine-snapshots token — ZFS-native)
+  router.get('/machines/:machineName/snapshots', verifyApiKey, listMachineSnapshots);
+  router.post('/machines/:machineName/snapshots', verifyApiKey, takeMachineSnapshot);
+  router.post(
+    '/machines/:machineName/snapshots/:snapshotName/restore',
+    verifyApiKey,
+    restoreMachineSnapshot
+  );
+  router.delete(
+    '/machines/:machineName/snapshots/:snapshotName',
+    verifyApiKey,
+    deleteMachineSnapshot
+  );
+
+  // QEMU guest-agent channel (guest-agent token, config-gated by guest_agent.enabled)
+  router.get('/machines/:machineName/guest/ping', verifyApiKey, guestPing);
+  router.get('/machines/:machineName/guest/osinfo', verifyApiKey, guestOSInfo);
+  router.get('/machines/:machineName/guest/network', verifyApiKey, guestNetwork);
+  router.post('/machines/:machineName/guest/exec', verifyApiKey, guestExec);
+  router.get('/machines/:machineName/guest/exec/:pid', verifyApiKey, guestExecStatus);
+  router.post('/machines/:machineName/guest/shutdown', verifyApiKey, guestShutdown);
+  router.post('/machines/:machineName/guest-agent/setup', verifyApiKey, guestAgentSetup);
 
   // Zone Management Routes (parameterized routes come after specific routes)
   router.get('/machines', verifyApiKey, listZones); // List all zones
@@ -106,6 +160,10 @@ const registerLifecycleRoutes = router => {
   router.post('/machines/:machineName/start', verifyApiKey, startZone); // Start zone
   router.post('/machines/:machineName/stop', verifyApiKey, stopZone); // Stop zone
   router.post('/machines/:machineName/restart', verifyApiKey, restartZone); // Restart zone
+  router.post('/machines/:machineName/reset', verifyApiKey, resetZone); // Hard-bounce a running zone (Go verb)
+  router.post('/machines/:machineName/suspend', verifyApiKey, suspendZone); // Checkpoint state to disk (Go verb, bhyve)
+  router.post('/machines/:machineName/resume', verifyApiKey, resumeZone); // Boot from the suspend checkpoint
+  router.post('/machines/:machineName/nmi', verifyApiKey, injectNmi); // Inject NMI (bhyve diagnostic)
   router.delete('/machines/:machineName', verifyApiKey, deleteZone); // Delete zone
   router.post('/machines/:machineName/clone', verifyApiKey, cloneZone); // Clone zone
 
@@ -114,8 +172,13 @@ const registerLifecycleRoutes = router => {
   router.get('/machines/:name/provision/status', verifyApiKey, getZoneProvisioningStatus); // Get provisioning status
   router.post('/machines/:name/sync', verifyApiKey, syncZone); // Sync provisioning files ad-hoc
   router.post('/machines/:name/run-provisioners', verifyApiKey, runProvisioners); // Run provisioners ad-hoc
+};
 
-  // Task Management Routes
+/**
+ * Register the task queue routes.
+ * @param {import('express').Router} router - Application router
+ */
+const registerTaskRoutes = router => {
   router.get('/tasks', verifyApiKey, listTasks); // List tasks (supports ?sort=&order= params)
   router.get('/tasks/stats', verifyApiKey, getTaskStats); // Get task statistics
   router.delete('/tasks/completed', verifyApiKey, clearCompletedTasks); // Hard-delete all completed/failed/cancelled tasks
@@ -136,12 +199,12 @@ const registerConsoleRoutes = router => {
   router.get('/machines/:machineName/vnc/screenshot', verifyApiKey, getVncScreenshot); // Capture VNC console screenshot (PNG)
   router.get('/vnc/sessions', verifyApiKey, listVncSessions); // List all VNC sessions
 
-  // Terminal Routes
-  router.post('/terminal/start', verifyApiKey, startTerminalSession);
-  router.get('/terminal/sessions', verifyApiKey, listTerminalSessions);
-  router.get('/terminal/sessions/:terminal_cookie/health', verifyApiKey, checkSessionHealth);
-  router.get('/terminal/sessions/:sessionId', verifyApiKey, getTerminalSessionInfo);
-  router.delete('/terminal/sessions/:sessionId/stop', verifyApiKey, stopTerminalSession);
+  // Host terminal routes (/term family — one wire with the Go agent; the
+  // /term/{id} WebSocket upgrade is handled outside Express)
+  router.post('/term/start', verifyApiKey, startTerminalSession);
+  router.get('/term/sessions', verifyApiKey, listTerminalSessions);
+  router.get('/term/sessions/:sessionId', verifyApiKey, getTerminalSessionInfo);
+  router.delete('/term/sessions/:sessionId/stop', verifyApiKey, stopTerminalSession);
 
   // Zlogin Routes
   router.post('/machines/:machineName/zlogin/start', verifyApiKey, startZloginSession);
@@ -162,5 +225,6 @@ const registerConsoleRoutes = router => {
  */
 export const registerMachineRoutes = router => {
   registerLifecycleRoutes(router);
+  registerTaskRoutes(router);
   registerConsoleRoutes(router);
 };

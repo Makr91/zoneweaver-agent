@@ -19,7 +19,10 @@ import { buildProvisioningTaskChain } from './utils/TaskChainBuilder.js';
  *       2. Run zlogin recipe (zone_setup) to configure network
  *       3. Wait for SSH to become available (zone_wait_ssh)
  *       4. Sync provisioning files to the machine (zone_sync)
- *       5. Execute provisioners (zone_provision)
+ *       5. Execute provisioners (zone_provision) — playbooks honor their
+ *          `run` directive against the machine's provision history
+ *          (`always` = every run; `once`/unset = only when never provisioned;
+ *          `not_first` = only after a prior successful provision)
  *
  *       Prerequisites:
  *       - Machine must have provisioning config set via PUT /machines/:name
@@ -157,20 +160,38 @@ export const getProvisioningStatus = async (req, res) => {
     const tasks = await Tasks.findAll({
       where: {
         zone_name: zoneName,
-        operation: ['zone_setup', 'zone_wait_ssh', 'zone_sync', 'zone_provision'],
+        operation: [
+          'zone_provision_orchestration',
+          'zone_provisioning_extract',
+          'zone_setup',
+          'zone_wait_ssh',
+          'zone_sync_parent',
+          'zone_sync',
+          'zone_provision_parent',
+          'zone_provision',
+        ],
       },
       order: [['created_at', 'DESC']],
       limit: 20,
     });
 
-    const provisioning = zone.configuration?.provisioning || {};
+    let zoneConfig = zone.configuration || {};
+    if (typeof zoneConfig === 'string') {
+      try {
+        zoneConfig = JSON.parse(zoneConfig);
+      } catch (e) {
+        log.api.warn('Failed to parse zone configuration', { error: e.message });
+        zoneConfig = {};
+      }
+    }
+    const provisionerState = zoneConfig.provisioner_state || {};
 
     return res.json({
       success: true,
       machine_name: zoneName,
-      provisioning_configured: !!zone.configuration?.provisioning,
-      provisioning_status: provisioning.status || 'not_started',
-      last_provisioned_at: provisioning.last_provisioned_at,
+      provisioning_configured: Boolean(zoneConfig.provisioner),
+      provisioning_status: provisionerState.last_provisioned_at ? 'provisioned' : 'not_started',
+      last_provisioned_at: provisionerState.last_provisioned_at || null,
       recent_tasks: tasks,
     });
   } catch (error) {

@@ -61,12 +61,22 @@ export const executeZfsListDataset = (datasetName, timeout) =>
   executeCommand(`zfs list -H "${datasetName}"`, { timeout });
 
 /**
- * Execute format command to list disks
+ * Execute format command to list disks — enrichment feed only; the parser
+ * selects the numbered disk lines itself (a grep in the pipeline made the
+ * whole command's exit code ride grep's match count).
  * @param {number} timeout - Command timeout in milliseconds
  * @returns {Promise<string>} Command output
  */
-export const executeFormatList = timeout =>
-  executeCommand('echo | pfexec format | grep "^[ ]*[0-9]"', { timeout });
+export const executeFormatList = timeout => executeCommand('echo | pfexec format', { timeout });
+
+/**
+ * Execute diskinfo in compact+headerless+parsable mode — diskinfo(8)'s
+ * script-facing form: one row per disk, TYPE DISK VID PID SERIAL SIZE(bytes)
+ * FLRS LOCATION(chassis,bay). Global zone only (the agent is).
+ * @param {number} timeout - Command timeout in milliseconds
+ * @returns {Promise<string>} Command output
+ */
+export const executeDiskinfo = timeout => executeCommand('pfexec diskinfo -cHp', { timeout });
 
 /**
  * Execute zpool list command for extended pool information

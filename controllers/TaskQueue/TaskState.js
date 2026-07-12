@@ -1,7 +1,9 @@
 import config from '../../config/ConfigLoader.js';
 
 /**
- * @fileoverview Shared mutable state for the task queue system
+ * @fileoverview Shared mutable state for the task queue system. Per-task run
+ * controls and the executor async context live in lib/TaskContext.js (they
+ * are consumed from lib code too).
  */
 
 /**

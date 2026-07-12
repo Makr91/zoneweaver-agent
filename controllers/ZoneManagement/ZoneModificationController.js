@@ -3,10 +3,287 @@ import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
 import { validateZoneName } from '../../lib/ZoneValidation.js';
 import { validateZoneModificationResources } from '../../lib/ResourceValidation.js';
+import {
+  mergePendingChanges,
+  clearPendingChanges,
+  mergeSettingsKeys,
+  setSnapshotPolicy,
+  readZonecfgAttr,
+} from '../../lib/ZoneConfigUtils.js';
+import { executeCommand } from '../../lib/CommandManager.js';
+import { isGuestAgentEnabled } from '../../lib/QemuGuestAgent.js';
+import { applyGuestAgentToggle } from '../GuestAgentController.js';
+import { getSystemZoneStatus } from './ZoneQueryController.js';
 
 /**
  * @fileoverview Zone modification controller
  */
+
+const CREDENTIAL_FIELDS = ['vagrant_user', 'vagrant_user_pass', 'vagrant_user_private_key_path'];
+
+// Agent-owned custom zonecfg attrs (the boot_priority pattern): the value
+// rides the zone config itself — it exports/migrates with the zone — and no
+// boot path consumes it, so writes apply SYNCHRONOUSLY through zonecfg's
+// offline store (never task/accrue). Readers look at the config fresh:
+// orchestration reads boot_priority at host power events, vnc/start reads
+// consoleport/consolehost when it spawns `zadm vnc`. null/'' removes the attr.
+const ZONE_ATTR_FIELDS = ['boot_priority', 'consoleport', 'consolehost'];
+
+/**
+ * Validate the direct-attr fields; answers the 400 (and returns false) on the
+ * first invalid value, so callers just bail.
+ */
+const validateZoneAttrFields = (body, res) => {
+  const numericRules = [
+    ['boot_priority', 1, 100, 'boot_priority must be an integer 1-100 (null clears; default 95)'],
+    [
+      'consoleport',
+      1025,
+      65535,
+      'consoleport must be an integer 1025-65535 (null clears — back to the dynamic pool)',
+    ],
+  ];
+  for (const [field, min, max, message] of numericRules) {
+    const value = body[field];
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    const num = Number(value);
+    if (!Number.isInteger(num) || num < min || num > max) {
+      res.status(400).json({ error: message });
+      return false;
+    }
+  }
+  return true;
+};
+
+/**
+ * Apply the direct-attr fields present in the body via ONE batched zonecfg
+ * transaction (select-or-add per attr, remove on null/''), through the
+ * offline store. Returns the applied field names.
+ * @throws {Error} When the zonecfg apply fails
+ */
+const applyZoneAttrFields = async (zoneName, body) => {
+  const fields = ZONE_ATTR_FIELDS.filter(field => body[field] !== undefined);
+  if (fields.length === 0) {
+    return [];
+  }
+  const reads = await Promise.all(fields.map(field => readZonecfgAttr(zoneName, field)));
+  const commands = fields
+    .map((field, i) => {
+      const raw = body[field];
+      const value = raw === null || raw === '' ? null : String(raw);
+      const { exists } = reads[i];
+      if (value === null) {
+        return exists ? `remove attr name=${field};` : null;
+      }
+      return exists
+        ? `select attr name=${field}; set value=\\"${value}\\"; end;`
+        : `add attr; set name=${field}; set value=\\"${value}\\"; set type=string; end;`;
+    })
+    .filter(Boolean);
+  if (commands.length > 0) {
+    const result = await executeCommand(`pfexec zonecfg -z ${zoneName} "${commands.join(' ')}"`);
+    if (!result.success) {
+      throw new Error(`Failed to apply ${fields.join(', ')}: ${result.error}`);
+    }
+  }
+  return fields;
+};
+
+const STOPPED_STATUSES = ['configured', 'incomplete', 'installed', 'down', 'not_found'];
+
+const parsePendingSet = zone => {
+  let zoneConfig = zone.configuration || {};
+  if (typeof zoneConfig === 'string') {
+    try {
+      zoneConfig = JSON.parse(zoneConfig);
+    } catch {
+      zoneConfig = {};
+    }
+  }
+  return zoneConfig.pending_changes || {};
+};
+
+const queueModifyTask = (zoneName, metadata, createdBy) =>
+  Tasks.create({
+    zone_name: zoneName,
+    operation: 'zone_modify',
+    priority: TaskPriority.MEDIUM,
+    created_by: createdBy,
+    metadata: JSON.stringify(metadata),
+    status: 'pending',
+  });
+
+const applyImmediateFields = async (zone, zoneName, body) => {
+  if (body.notes !== undefined) {
+    await zone.update({ notes: body.notes || null });
+  }
+  if (body.tags !== undefined) {
+    await zone.update({ tags: Array.isArray(body.tags) ? body.tags : null });
+  }
+  if (body.snapshots !== undefined) {
+    await setSnapshotPolicy(
+      zoneName,
+      body.snapshots && body.snapshots.type ? body.snapshots : null
+    );
+  }
+  const credentialUpdates = {};
+  for (const field of CREDENTIAL_FIELDS) {
+    if (body[field] !== undefined) {
+      credentialUpdates[field] = body[field];
+    }
+  }
+  if (Object.keys(credentialUpdates).length > 0) {
+    await mergeSettingsKeys(zoneName, credentialUpdates);
+  }
+};
+
+/**
+ * Store the provisioner config immediately (DB only) so the provision endpoint
+ * sees it without waiting for the task. Returns the completed response object
+ * when provisioner is the ONLY change (caller answers it), or null to continue
+ * the normal modify flow.
+ * @param {import('../../models/ZoneModel.js').default} zone - Zone record
+ * @param {string} zoneName - Zone name
+ * @param {Object} body - Request body
+ * @param {string[]} changeFields - The recognized change fields
+ * @returns {Promise<Object|null>}
+ */
+const applyProvisionerImmediate = async (zone, zoneName, body, changeFields) => {
+  if (!body.provisioner) {
+    return null;
+  }
+  let currentConfig = zone.configuration || {};
+  if (typeof currentConfig === 'string') {
+    try {
+      currentConfig = JSON.parse(currentConfig);
+    } catch (parseError) {
+      log.database.warn('Failed to parse current zone configuration', {
+        error: parseError.message,
+      });
+      currentConfig = {};
+    }
+  }
+  await zone.update({ configuration: { ...currentConfig, provisioner: body.provisioner } });
+
+  const otherChanges = changeFields
+    .filter(f => f !== 'provisioner')
+    .some(field => body[field] !== undefined);
+  if (otherChanges) {
+    return null;
+  }
+  return {
+    success: true,
+    machine_name: zoneName,
+    operation: 'zone_modify',
+    status: 'completed',
+    message: 'Provisioner configuration updated successfully.',
+    requires_restart: false,
+  };
+};
+
+const extractInfrastructureBody = (body, changeFields) => {
+  const infrastructure = {};
+  const excluded = [
+    'provisioner',
+    'notes',
+    'tags',
+    'snapshots',
+    'guest_agent',
+    ...CREDENTIAL_FIELDS,
+    ...ZONE_ATTR_FIELDS,
+  ];
+  for (const [key, value] of Object.entries(body)) {
+    if (excluded.includes(key) || !changeFields.includes(key)) {
+      continue;
+    }
+    infrastructure[key] = value;
+  }
+  return infrastructure;
+};
+
+/**
+ * Handle the guest_agent toggle field (shared contract with the Go agent):
+ * applied SYNCHRONOUSLY through zonecfg's offline store regardless of power
+ * state — never accrues, never queues; the caller's answer carries
+ * requires_restart. Gate/validation problems answer the request here.
+ * @param {import('express').Request} req - Request
+ * @param {import('express').Response} res - Response
+ * @param {string} zoneName - Zone name
+ * @returns {Promise<{applied: boolean, response?: object}>}
+ */
+const handleGuestAgentField = async (req, res, zoneName) => {
+  if (req.body.guest_agent === undefined) {
+    return { applied: false };
+  }
+  if (!isGuestAgentEnabled()) {
+    return {
+      applied: false,
+      response: res.status(503).json({ error: 'Guest agent channel is disabled' }),
+    };
+  }
+  if (typeof req.body.guest_agent !== 'boolean') {
+    return {
+      applied: false,
+      response: res.status(400).json({ error: 'guest_agent must be a boolean' }),
+    };
+  }
+  await applyGuestAgentToggle(zoneName, req.body.guest_agent);
+  return { applied: true };
+};
+
+/**
+ * The accrue-changes contract (shared with the Go agent): against a zone that
+ * is not powered off, infrastructure changes ACCRUE into
+ * configuration.pending_changes and apply at the next agent-driven power
+ * cycle. Answers the pending_power_cycle payload, or null to queue normally.
+ */
+const maybeAccrueChanges = async (zoneName, infrastructureBody, warnings) => {
+  if (Object.keys(infrastructureBody).length === 0) {
+    return null;
+  }
+  const currentStatus = await getSystemZoneStatus(zoneName);
+  if (STOPPED_STATUSES.includes(currentStatus)) {
+    return null;
+  }
+  const merged = await mergePendingChanges(zoneName, infrastructureBody);
+  const response = {
+    success: true,
+    machine_name: zoneName,
+    operation: 'zone_modify',
+    status: 'pending_power_cycle',
+    requires_restart: true,
+    pending_changes: merged,
+    message:
+      'Machine is not powered off — changes stored and will apply at the next agent-driven power cycle (stop, start, or restart). DELETE /machines/{name}/pending-changes cancels them.',
+  };
+  if (warnings.length > 0) {
+    response.resource_warnings = warnings;
+  }
+  return response;
+};
+
+/**
+ * Queue a zone_modify task carrying the accrued pending set (the accrue
+ * contract's apply half; _apply_pending makes the executor clear it on
+ * success). Null when nothing is pending or queueing failed.
+ */
+export const queuePendingApply = async (zone, createdBy) => {
+  const pending = parsePendingSet(zone);
+  if (Object.keys(pending).length === 0) {
+    return null;
+  }
+  try {
+    return await queueModifyTask(zone.name, { ...pending, _apply_pending: true }, createdBy);
+  } catch (error) {
+    log.database.error('Failed to queue pending-changes apply', {
+      zone_name: zone.name,
+      error: error.message,
+    });
+    return null;
+  }
+};
 
 /**
  * @swagger
@@ -14,9 +291,13 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
  *   put:
  *     summary: Modify machine configuration
  *     description: |
- *       Queues a task to modify an existing machine's (zone's) configuration via `zonecfg`.
- *       Changes are applied to the zone config but take effect on next zone boot.
- *       The zone can continue running while modifications are queued.
+ *       Modifies an existing machine's (zone's) configuration. notes/tags and the SSH
+ *       credentials family apply immediately (DB only); the provisioner document stores
+ *       immediately. Infrastructure changes against a POWERED-OFF zone queue a zonecfg
+ *       task; against anything else they ACCRUE into configuration.pending_changes and
+ *       the answer is status pending_power_cycle — they apply at the next agent-driven
+ *       power cycle (DELETE /machines/{name}/pending-changes cancels,
+ *       POST /machines/{name}/pending-changes/apply applies to a powered-off zone).
  *       At least one modification field must be provided.
  *     tags: [Zone Management]
  *     security:
@@ -75,6 +356,54 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
  *                 type: string
  *                 description: xHCI USB controller
  *                 example: "on"
+ *               uefivars:
+ *                 type: string
+ *                 description: Persistent UEFI variables (zadm bool attr, brand default on)
+ *                 example: "on"
+ *               rng:
+ *                 type: string
+ *                 description: virtio RNG device (zadm bool attr, brand default off)
+ *                 example: "off"
+ *               boot_priority:
+ *                 type: integer
+ *                 nullable: true
+ *                 minimum: 1
+ *                 maximum: 100
+ *                 description: |
+ *                   Orchestration boot/shutdown priority (custom zonecfg attr; default 95
+ *                   when unset). Higher starts earlier and stops later. Applies IMMEDIATELY
+ *                   through zonecfg's offline store — no task, no restart (orchestration
+ *                   reads it at host power events). null clears back to the default.
+ *                 example: 50
+ *               consoleport:
+ *                 type: integer
+ *                 nullable: true
+ *                 minimum: 1025
+ *                 maximum: 65535
+ *                 description: |
+ *                   Pinned noVNC web-console port (custom zonecfg attr). Applies IMMEDIATELY;
+ *                   takes effect at the next VNC session start. null clears — the zone goes
+ *                   back to the agent's dynamic port pool (vnc.web_port_range_*).
+ *                 example: 6001
+ *               consolehost:
+ *                 type: string
+ *                 nullable: true
+ *                 description: |
+ *                   noVNC web-console bind address (custom zonecfg attr; unset = 0.0.0.0).
+ *                   Applies IMMEDIATELY; takes effect at the next VNC session start.
+ *                 example: "127.0.0.1"
+ *               bootorder:
+ *                 type: string
+ *                 description: |
+ *                   bhyve boot order — compact `cd`/`dc` (the ONLY compact forms) or
+ *                   comma-separated device tokens: bootdisk, disk[N], cdrom[N],
+ *                   net[N][=pxe|http], path[N], boot[N], shell (zadm bhyveBootDev
+ *                   grammar). Passes to zonecfg verbatim.
+ *                 example: "cdrom0,bootdisk"
+ *               bootnext:
+ *                 type: string
+ *                 description: One-shot boot device for the NEXT boot only (same vocabulary)
+ *                 example: "cdrom0"
  *               autoboot:
  *                 type: boolean
  *                 description: Auto-boot zone on system startup
@@ -108,24 +437,81 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
  *                     threads: 1
  *               add_nics:
  *                 type: array
- *                 description: NICs to add to the zone
+ *                 description: |
+ *                   NICs to add. A bare {physical} with no global_nic attaches a
+ *                   dedicated physical/pre-created link as-is. props entries become
+ *                   zonecfg net PROPERTIES (bhyve netprop names — promiscphys,
+ *                   promiscrxonly, promiscsap, promiscmulti, vqsize, mtu,
+ *                   feature_mask, backend, netif).
  *                 items:
  *                   type: object
  *                   properties:
  *                     physical:
  *                       type: string
- *                       description: VNIC name
+ *                       description: VNIC or physical link name
  *                       example: "vnic1"
  *                     global_nic:
  *                       type: string
- *                       description: Bridge/physical NIC for on-demand creation
+ *                       description: Bridge/physical NIC for on-demand creation (omit for dedicated physical links)
  *                       example: "igb0"
+ *                     vlan_id:
+ *                       type: integer
+ *                     mac_addr:
+ *                       type: string
+ *                     allowed_address:
+ *                       type: string
+ *                     address:
+ *                       type: string
+ *                       description: zonecfg net address property
+ *                     defrouter:
+ *                       type: string
+ *                       description: zonecfg net defrouter property
+ *                     props:
+ *                       type: object
+ *                       description: net resource properties (name → value)
+ *                       example: { "promiscphys": "on" }
  *               remove_nics:
  *                 type: array
  *                 description: VNIC names to remove
  *                 items:
  *                   type: string
  *                   example: "vnic0"
+ *               update_nics:
+ *                 type: array
+ *                 description: |
+ *                   Edit existing net resources in place, selected by physical.
+ *                   Provided keys SET the property; omitted keys keep their value.
+ *                   Clearing a property is not part of this wire — detach + re-add.
+ *                 items:
+ *                   type: object
+ *                   required: [physical]
+ *                   properties:
+ *                     physical:
+ *                       type: string
+ *                       description: The net resource's physical VNIC name (selector)
+ *                       example: "vnic1"
+ *                     global_nic:
+ *                       type: string
+ *                       example: "igb0"
+ *                     vlan_id:
+ *                       type: integer
+ *                       example: 20
+ *                     mac_addr:
+ *                       type: string
+ *                       example: "02:08:20:ab:cd:ef"
+ *                     allowed_address:
+ *                       type: string
+ *                       example: "10.0.0.15/24"
+ *                     address:
+ *                       type: string
+ *                       description: zonecfg net address property
+ *                     defrouter:
+ *                       type: string
+ *                       description: zonecfg net defrouter property
+ *                     props:
+ *                       type: object
+ *                       description: net properties to REPLACE (current pair removed, new pair added)
+ *                       example: { "promiscphys": "on" }
  *               add_disks:
  *                 type: array
  *                 description: Disks to add (new zvols or existing datasets)
@@ -148,6 +534,23 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
  *                     size:
  *                       type: string
  *                       example: "100G"
+ *               resize_disks:
+ *                 type: array
+ *                 description: |
+ *                   GROW disk zvols, selected by disk attr name (bootdisk, disk0, …).
+ *                   Grow-only — a size smaller than or equal to the current volsize is
+ *                   refused (shrinking destroys data). Never applied live: accrues
+ *                   (pending_power_cycle) unless the zone is powered off.
+ *                 items:
+ *                   type: object
+ *                   required: [name, size]
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                       example: "disk0"
+ *                     size:
+ *                       type: string
+ *                       example: "100G"
  *               remove_disks:
  *                 type: array
  *                 description: Disk attribute names to remove (e.g. "disk0")
@@ -156,19 +559,53 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
  *                   example: "disk0"
  *               add_cdroms:
  *                 type: array
- *                 description: ISO images to attach
+ *                 description: ISO images to attach — raw path OR a cached-ISO filename resolved through the artifact registry (one of the two per entry)
  *                 items:
  *                   type: object
  *                   properties:
  *                     path:
  *                       type: string
  *                       example: "/iso/install.iso"
+ *                     iso:
+ *                       type: string
+ *                       description: Cached ISO filename from the artifact registry (GET /artifacts/iso)
+ *                       example: "debian-12.5.0-amd64-netinst.iso"
  *               remove_cdroms:
  *                 type: array
  *                 description: CDROM attribute names to remove (e.g. "cdrom0")
  *                 items:
  *                   type: string
  *                   example: "cdrom0"
+ *               add_filesystems:
+ *                 type: array
+ *                 description: Filesystem mounts to add (generic lofs shares into the zone)
+ *                 items:
+ *                   type: object
+ *                   required: [special]
+ *                   properties:
+ *                     special:
+ *                       type: string
+ *                       description: Host path to mount
+ *                       example: "/data/wipelogs"
+ *                     dir:
+ *                       type: string
+ *                       description: In-zone mount point (defaults to special)
+ *                       example: "/data/wipelogs"
+ *                     type:
+ *                       type: string
+ *                       default: "lofs"
+ *                     options:
+ *                       type: array
+ *                       description: Mount options (default [nodevices]; add ro for read-only)
+ *                       items:
+ *                         type: string
+ *                       example: ["ro", "nodevices"]
+ *               remove_filesystems:
+ *                 type: array
+ *                 description: Filesystem mounts to remove, by in-zone dir
+ *                 items:
+ *                   type: string
+ *                   example: "/data/wipelogs"
  *               notes:
  *                 type: string
  *                 nullable: true
@@ -202,6 +639,27 @@ import { validateZoneModificationResources } from '../../lib/ResourceValidation.
  *                 type: object
  *                 description: Provisioner configuration object
  *                 example: { "type": "ansible", "playbook": "site.yml" }
+ *               guest_agent:
+ *                 type: boolean
+ *                 description: |
+ *                   Wire (true) or remove (false) the QEMU guest-agent virtio-console
+ *                   channel. Applies synchronously through zonecfg's offline store
+ *                   regardless of power state — the answer carries requires_restart:
+ *                   true and the change reaches the guest at its next boot. Gated by
+ *                   the guest_agent.enabled setting. Current state rides GET
+ *                   /machines/{machineName} as knob_current.guest_agent.
+ *               vagrant_user:
+ *                 type: string
+ *                 nullable: true
+ *                 description: SSH username (merges into configuration.settings immediately; null or empty clears)
+ *               vagrant_user_pass:
+ *                 type: string
+ *                 nullable: true
+ *                 description: SSH password (DB-immediate; never lands in task metadata)
+ *               vagrant_user_private_key_path:
+ *                 type: string
+ *                 nullable: true
+ *                 description: SSH private key path, absolute or relative to the provisioning dataset (DB-immediate)
  *           examples:
  *             change_resources:
  *               summary: Change RAM and vCPUs
@@ -285,17 +743,31 @@ export const modifyZone = async (req, res) => {
       'vnc',
       'acpi',
       'xhci',
+      'uefivars',
+      'rng',
+      'bootorder',
+      'bootnext',
       'autoboot',
+      'cpu_configuration',
+      'complex_cpu_conf',
       'add_nics',
       'remove_nics',
+      'update_nics',
       'add_disks',
+      'resize_disks',
       'remove_disks',
       'add_cdroms',
       'remove_cdroms',
+      'add_filesystems',
+      'remove_filesystems',
       'cloud_init',
       'provisioner',
       'notes',
       'tags',
+      'snapshots',
+      'guest_agent',
+      ...CREDENTIAL_FIELDS,
+      ...ZONE_ATTR_FIELDS,
     ];
     const hasChanges = changeFields.some(field => req.body[field] !== undefined);
 
@@ -303,65 +775,55 @@ export const modifyZone = async (req, res) => {
       return res.status(400).json({ error: 'No modification fields specified' });
     }
 
-    // Handle notes update immediately (DB only, no zone config task needed)
-    if (req.body.notes !== undefined) {
-      await zone.update({ notes: req.body.notes || null });
+    if (!validateZoneAttrFields(req.body, res)) {
+      return undefined;
     }
 
-    // Handle tags update immediately (DB only, no zone config task needed)
-    if (req.body.tags !== undefined) {
-      const tags = Array.isArray(req.body.tags) ? req.body.tags : null;
-      await zone.update({ tags });
+    const guestAgent = await handleGuestAgentField(req, res, zoneName);
+    if (guestAgent.response) {
+      return guestAgent.response;
     }
+    const guestAgentApplied = guestAgent.applied;
 
-    // If only DB-only fields were changed, return early
-    const dbOnlyFields = ['notes', 'tags'];
+    await applyImmediateFields(zone, zoneName, req.body);
+    const appliedAttrs = await applyZoneAttrFields(zoneName, req.body);
+
+    // If only immediately-applied fields were changed, return early
+    const dbOnlyFields = [
+      'notes',
+      'tags',
+      'snapshots',
+      'guest_agent',
+      ...CREDENTIAL_FIELDS,
+      ...ZONE_ATTR_FIELDS,
+    ];
     const hasDbOnlyChanges = dbOnlyFields.some(f => req.body[f] !== undefined);
     const hasOtherChanges = changeFields
       .filter(f => !dbOnlyFields.includes(f))
       .some(field => req.body[field] !== undefined);
     if (hasDbOnlyChanges && !hasOtherChanges) {
-      return res.json({
+      const response = {
         success: true,
         machine_name: zoneName,
         operation: 'zone_modify',
         status: 'completed',
-        message: 'Zone metadata updated successfully.',
-        requires_restart: false,
-      });
+        message: guestAgentApplied
+          ? 'Zone updated — the guest-agent channel change applies at the next zone boot.'
+          : 'Zone metadata updated successfully.',
+        requires_restart: guestAgentApplied,
+      };
+      if (appliedAttrs.length > 0) {
+        response.applied_attrs = appliedAttrs;
+      }
+      return res.json(response);
     }
 
-    // Handle provisioner config update immediately (DB only)
-    // This ensures the config is available for the provision endpoint without waiting for the task
-    if (req.body.provisioner) {
-      let currentConfig = zone.configuration || {};
-      if (typeof currentConfig === 'string') {
-        try {
-          currentConfig = JSON.parse(currentConfig);
-        } catch (parseError) {
-          log.database.warn('Failed to parse current zone configuration', {
-            error: parseError.message,
-          });
-          currentConfig = {};
-        }
-      }
-      const newConfig = { ...currentConfig, provisioner: req.body.provisioner };
-      await zone.update({ configuration: newConfig });
-
-      // If this is the only change, we can return early without queuing a task
-      const otherChanges = changeFields
-        .filter(f => f !== 'provisioner')
-        .some(field => req.body[field] !== undefined);
-      if (!otherChanges) {
-        return res.json({
-          success: true,
-          machine_name: zoneName,
-          operation: 'zone_modify',
-          status: 'completed',
-          message: 'Provisioner configuration updated successfully.',
-          requires_restart: false,
-        });
-      }
+    // Provisioner config stores immediately (DB only) so the provision
+    // endpoint sees it without waiting for the task. Answers the completed
+    // response when provisioner is the ONLY change, else null to continue.
+    const provisionerOnly = await applyProvisionerImmediate(zone, zoneName, req.body, changeFields);
+    if (provisionerOnly) {
+      return res.json(provisionerOnly);
     }
 
     // Validate resource availability for modifications (e.g., add_disks)
@@ -373,15 +835,18 @@ export const modifyZone = async (req, res) => {
       });
     }
 
+    const infrastructureBody = extractInfrastructureBody(req.body, changeFields);
+    const pendingResponse = await maybeAccrueChanges(
+      zoneName,
+      infrastructureBody,
+      resourceValidation.warnings
+    );
+    if (pendingResponse) {
+      return res.json(pendingResponse);
+    }
+
     // Create the zone_modify task
-    const modifyTask = await Tasks.create({
-      zone_name: zoneName,
-      operation: 'zone_modify',
-      priority: TaskPriority.MEDIUM,
-      created_by: req.entity.name,
-      metadata: JSON.stringify(req.body),
-      status: 'pending',
-    });
+    const modifyTask = await queueModifyTask(zoneName, infrastructureBody, req.entity.name);
 
     const modifyResponse = {
       success: true,
@@ -403,5 +868,119 @@ export const modifyZone = async (req, res) => {
       user: req.entity.name,
     });
     return res.status(500).json({ error: 'Failed to queue zone modification task' });
+  }
+};
+
+/**
+ * @swagger
+ * /machines/{machineName}/pending-changes:
+ *   delete:
+ *     summary: Cancel the machine's accrued pending changes
+ *     description: Clears the set a PUT against a non-powered-off machine stored.
+ *     tags: [Zone Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: machineName
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Pending changes cleared
+ *       404:
+ *         description: Machine not found
+ */
+export const clearZonePendingChanges = async (req, res) => {
+  try {
+    const { machineName: zoneName } = req.params;
+    if (!validateZoneName(zoneName)) {
+      return res.status(400).json({ error: 'Invalid zone name' });
+    }
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (!zone) {
+      return res.status(404).json({ error: 'Machine not found' });
+    }
+    const clearedKeys = (await clearPendingChanges(zoneName)) || [];
+    log.api.info('Pending changes cleared', {
+      zone_name: zoneName,
+      keys: clearedKeys.length,
+      user: req.entity.name,
+    });
+    return res.json({
+      success: true,
+      machine_name: zoneName,
+      cleared_keys: clearedKeys,
+      message: 'Pending changes cleared',
+    });
+  } catch (error) {
+    log.database.error('Failed to clear pending changes', {
+      error: error.message,
+      zone_name: req.params.machineName,
+    });
+    return res.status(500).json({ error: 'Failed to clear pending changes' });
+  }
+};
+
+/**
+ * @swagger
+ * /machines/{machineName}/pending-changes/apply:
+ *   post:
+ *     summary: Apply the accrued pending changes now
+ *     description: Queues the apply against a powered-off machine — they apply automatically at the next agent-driven power cycle otherwise.
+ *     tags: [Zone Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: machineName
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Apply task queued
+ *       400:
+ *         description: Nothing pending, or the machine is not powered off
+ */
+export const applyZonePendingChanges = async (req, res) => {
+  try {
+    const { machineName: zoneName } = req.params;
+    if (!validateZoneName(zoneName)) {
+      return res.status(400).json({ error: 'Invalid zone name' });
+    }
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (!zone) {
+      return res.status(404).json({ error: 'Machine not found' });
+    }
+    if (Object.keys(parsePendingSet(zone)).length === 0) {
+      return res.status(400).json({ error: 'No pending changes to apply' });
+    }
+    const currentStatus = await getSystemZoneStatus(zoneName);
+    if (!STOPPED_STATUSES.includes(currentStatus)) {
+      return res.status(400).json({
+        error:
+          'Machine must be powered off to apply pending changes now — they apply automatically at the next agent-driven power cycle',
+      });
+    }
+    const task = await queuePendingApply(zone, req.entity.name);
+    if (!task) {
+      return res.status(500).json({ error: 'Failed to queue pending-changes apply' });
+    }
+    return res.json({
+      success: true,
+      task_id: task.id,
+      machine_name: zoneName,
+      operation: 'zone_modify',
+      status: 'pending',
+      message: 'Pending changes apply queued',
+    });
+  } catch (error) {
+    log.database.error('Failed to apply pending changes', {
+      error: error.message,
+      zone_name: req.params.machineName,
+    });
+    return res.status(500).json({ error: 'Failed to apply pending changes' });
   }
 };

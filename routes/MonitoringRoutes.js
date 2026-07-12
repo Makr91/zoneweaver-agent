@@ -18,6 +18,7 @@ import {
   getCPUStats,
   getMemoryStats,
   getSystemLoadMetrics,
+  getZoneUsageMetrics,
 } from '../controllers/HostMonitoringController/index.js';
 import {
   listSwapAreas,
@@ -70,6 +71,7 @@ export const registerMonitoringRoutes = router => {
   router.get('/monitoring/system/cpu', verifyApiKey, getCPUStats); // Get CPU performance statistics
   router.get('/monitoring/system/memory', verifyApiKey, getMemoryStats); // Get memory usage statistics
   router.get('/monitoring/system/load', verifyApiKey, getSystemLoadMetrics); // Get system load and activity metrics
+  router.get('/monitoring/zones/usage', verifyApiKey, getZoneUsageMetrics); // Per-zone CPU/memory/VFS-I/O time series
 
   // Swap Management Routes
   router.get('/system/swap/areas', verifyApiKey, listSwapAreas); // Get detailed swap area information

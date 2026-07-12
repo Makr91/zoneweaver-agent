@@ -20,8 +20,8 @@ import {
   executeArtifactTask,
   executeTemplateTask,
 } from './StorageNetworkDispatchers.js';
-import { PARENT_OPERATIONS } from './OperationCategories.js';
 import { runningTasks, runningCategories } from './TaskState.js';
+import { taskControls, taskContext } from '../../lib/TaskContext.js';
 import { isVncEnabledAtBoot } from '../VncConsoleController/utils/VncCleanupService.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log, createTimer } from '../../lib/Logger.js';
@@ -45,17 +45,12 @@ const executeTask = async task => {
       return await TASK_OBJECT_OPERATIONS[operation](task);
     }
 
-    // Parent task operations (track subtasks)
-    if (PARENT_OPERATIONS.includes(operation)) {
-      return {
-        success: true,
-        message: `${operation.replace(/_/g, ' ')} tracking subtasks`,
-        keep_running: true,
-      };
-    }
-
     // Zone operations
-    if (['start', 'stop', 'restart', 'delete', 'discover'].includes(operation)) {
+    if (
+      ['start', 'stop', 'restart', 'reset', 'suspend', 'resume', 'delete', 'discover'].includes(
+        operation
+      )
+    ) {
       return await executeZoneTask(operation, zone_name, task.metadata);
     }
 
@@ -153,16 +148,16 @@ const executeTask = async task => {
       return await executeFileTask(operation, task.metadata);
     }
     if (operation.startsWith('artifact_')) {
-      return await executeArtifactTask(operation, task.metadata);
+      return await executeArtifactTask(operation, task.metadata, task);
     }
     if (operation.startsWith('template_')) {
-      return await executeTemplateTask(operation, task.metadata);
+      return await executeTemplateTask(operation, task.metadata, task);
     }
     if (operation.startsWith('system_host_')) {
       return await executeSystemHostTask(operation, task.metadata);
     }
     if (operation === 'process_trace') {
-      return await executeProcessTraceTask(task.metadata);
+      return await executeProcessTraceTask(task.metadata, task.onData);
     }
     if (operation === 'vnc_start') {
       return await executeVncStartTask(zone_name);
@@ -194,7 +189,11 @@ const executeTask = async task => {
 };
 
 /**
- * Update parent task progress based on current child task status
+ * Update parent task progress based on current child task status.
+ * Parents are pure anchors (born running, never dispatched — the Go queue's
+ * model): the rollup drives their state and flips them to the terminal
+ * status once every child is done — failed (all children failed/cancelled),
+ * completed_with_errors (some did), or completed.
  * @param {string} parentTaskId - Parent task ID to update
  */
 export const updateParentTaskProgress = async parentTaskId => {
@@ -216,8 +215,14 @@ export const updateParentTaskProgress = async parentTaskId => {
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
 
   let parentStatus = 'running';
-  if (done === total) {
-    parentStatus = failed > 0 ? 'completed_with_errors' : 'completed';
+  if (total > 0 && done === total) {
+    if (failed === total) {
+      parentStatus = 'failed';
+    } else if (failed > 0) {
+      parentStatus = 'completed_with_errors';
+    } else {
+      parentStatus = 'completed';
+    }
   }
 
   const parentUpdate = {
@@ -230,13 +235,19 @@ export const updateParentTaskProgress = async parentTaskId => {
     },
   };
 
-  if (done === total) {
-    parentUpdate.status = failed === total ? 'failed' : 'completed';
+  if (parentStatus !== 'running') {
+    parentUpdate.status = parentStatus;
     parentUpdate.completed_at = new Date();
-    runningTasks.delete(parentTask.id);
   }
 
   await parentTask.update(parentUpdate);
+
+  // Anchors nest (a provisioning orchestration holds sync/provision anchors):
+  // a parent reaching its terminal state is a child completing from ITS
+  // parent's point of view — recompute up the chain.
+  if (parentStatus !== 'running' && parentTask.parent_task_id) {
+    await updateParentTaskProgress(parentTask.parent_task_id);
+  }
 };
 
 /**
@@ -251,20 +262,33 @@ export const executeAndHandleTask = async (task, operationCategory) => {
     taskOutputManager.write(task.id, chunk);
   };
 
-  // Execute task with performance timing
+  // Execute inside the task's async context so CommandManager registers every
+  // spawned child against this task (the running-cancel kill target), with
+  // performance timing.
   const taskTimer = createTimer(`Task execution: ${task.operation}`);
-  const result = await executeTask(task);
+  const result = await taskContext.run({ taskId: task.id }, () => executeTask(task));
   const executionTime = taskTimer.end();
 
-  // Update task status with progress
+  // A cancel marked the control while the executor ran (and killed its
+  // children) — the row lands in cancelled with its output preserved (D-F).
+  const cancelled = taskControls.get(task.id)?.cancelled === true;
+  taskControls.delete(task.id);
+
+  let status = 'failed';
+  if (cancelled) {
+    status = 'cancelled';
+  } else if (result.success) {
+    status = 'completed';
+  }
+
   const updateData = {
-    status: result.success ? 'completed' : 'failed',
+    status,
     completed_at: new Date(),
-    error_message: result.error || null,
+    error_message: cancelled ? null : result.error || null,
   };
 
   // Set progress to 100% for successful tasks (unless already set by task execution)
-  if (result.success && task.progress_percent < 100) {
+  if (status === 'completed' && task.progress_percent < 100) {
     updateData.progress_percent = 100;
     updateData.progress_info = {
       status: 'completed',
@@ -297,9 +321,20 @@ export const executeAndHandleTask = async (task, operationCategory) => {
     });
   }
 
+  if (status === 'cancelled') {
+    log.task.info('Task cancelled', {
+      task_id: task.id,
+      operation: task.operation,
+      zone_name: task.zone_name,
+      duration_ms: executionTime,
+    });
+    return;
+  }
+
   if (result.success) {
-    // Auto-start VNC for zones that have VNC enabled at boot after successful zone start
-    if (task.operation === 'start' && task.zone_name !== 'system') {
+    // Auto-start VNC for zones that have VNC enabled at boot after a
+    // successful zone start (reset and resume boot the zone too)
+    if (['start', 'reset', 'resume'].includes(task.operation) && task.zone_name !== 'system') {
       try {
         const vncEnabled = await isVncEnabledAtBoot(task.zone_name);
         if (vncEnabled) {

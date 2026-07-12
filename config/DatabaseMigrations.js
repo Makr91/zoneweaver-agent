@@ -1,9 +1,8 @@
 /**
  * @fileoverview Database Migration Utilities for Zoneweaver Agent
- * @description Schema setup for the per-datatype database files, plus a
- * migration framework retained for future production releases. There are
- * currently NO pending migrations — the schema comes entirely from model
- * sync on the fresh per-datatype files.
+ * @description Schema setup for the per-datatype database files, plus the
+ * release migrations existing installs need (cookie-era session tables,
+ * disks.removable). Fresh files get the full schema from model sync.
  * @author Mark Gilbert
  * @license: https://zoneweaver-agent.startcloud.com/license/
  */
@@ -17,6 +16,10 @@ import '../models/TemplateModel.js';
 import '../models/RecipeModel.js';
 import '../models/ProvisioningProfileModel.js';
 import '../models/SSHSessionModel.js';
+import TerminalSessions from '../models/TerminalSessionModel.js';
+import LogStreamSession from '../models/LogStreamSessionModel.js';
+import Disks from '../models/DiskModel.js';
+import '../models/ZoneMetricsModel.js';
 
 /**
  * Database Migration Helper Class
@@ -98,15 +101,94 @@ class DatabaseMigrations {
 
   /**
    * Run all pending migrations
-   * @description No pending migrations — model sync on the per-datatype files
-   * builds the current schema in full. When production migrations become
-   * necessary, make this async again and gate each one on tableExists/
-   * columnExists against the database instance that owns the table.
-   * @returns {boolean} True if all migrations successful
+   * @returns {Promise<boolean>} True if all migrations successful
    */
-  runMigrations() {
-    log.database.info('No pending database migrations');
+  async runMigrations() {
+    await this.migrateTerminalSessionsToTermContract();
+    await this.migrateLogStreamSessionsToTicketContract();
+    await this.migrateDisksInventoryColumns();
     return true;
+  }
+
+  /**
+   * disks: the diskinfo -cHp inventory added removable/faulty/chassis/bay.
+   * Disk rows are ephemeral (the storage interval re-scans them), so like the
+   * session tables this drops the pre-inventory table and syncs the current
+   * schema — no ALTER fragility, and a skip is LOUD (the silent
+   * column-add failure left host-1162 answering "no such column: removable"
+   * on every disks read and write).
+   */
+  async migrateDisksInventoryColumns() {
+    const storage = allDatabases.find(({ name }) => name === 'metricsStorage' || name === 'shared');
+    if (!storage) {
+      log.database.error('disks inventory migration skipped — no metricsStorage database');
+      return;
+    }
+    try {
+      const queryInterface = storage.instance.getQueryInterface();
+      const table = await queryInterface.describeTable('disks');
+      if (!table.removable || !table.faulty || !table.chassis || !table.bay) {
+        await queryInterface.dropTable('disks');
+        await Disks.sync();
+        log.database.info(
+          'disks migrated to the diskinfo inventory schema (removable/faulty/chassis/bay)'
+        );
+      }
+    } catch (error) {
+      // Table absent on fresh installs — initializeTables creates it with the
+      // current schema. Anything else must be visible.
+      log.database.warn('disks inventory migration skipped', { error: error.message });
+    }
+  }
+
+  /**
+   * terminal_sessions: the cookie-era schema (terminal_cookie NOT NULL UNIQUE)
+   * predates the /term contract, where sessions are minted by id alone.
+   * Session rows are ephemeral — PTYs never survive an agent restart — so the
+   * migration drops the old table and syncs the current schema in its place.
+   */
+  async migrateTerminalSessionsToTermContract() {
+    const core = allDatabases.find(({ name }) => name === 'core' || name === 'shared');
+    if (!core) {
+      return;
+    }
+    try {
+      const queryInterface = core.instance.getQueryInterface();
+      const table = await queryInterface.describeTable('terminal_sessions');
+      if (table.terminal_cookie) {
+        await queryInterface.dropTable('terminal_sessions');
+        await TerminalSessions.sync();
+        log.database.info('terminal_sessions migrated to the /term schema (cookie column dropped)');
+      }
+    } catch {
+      // Table absent — initializeTables creates it with the current schema.
+    }
+  }
+
+  /**
+   * log_stream_sessions: the cookie-era schema carried a cookie NOT NULL
+   * column; WS auth is ticket-based now. Stream rows are ephemeral (tail
+   * processes never survive a restart), so drop and resync like
+   * terminal_sessions.
+   */
+  async migrateLogStreamSessionsToTicketContract() {
+    const core = allDatabases.find(({ name }) => name === 'core' || name === 'shared');
+    if (!core) {
+      return;
+    }
+    try {
+      const queryInterface = core.instance.getQueryInterface();
+      const table = await queryInterface.describeTable('log_stream_sessions');
+      if (table.cookie) {
+        await queryInterface.dropTable('log_stream_sessions');
+        await LogStreamSession.sync();
+        log.database.info(
+          'log_stream_sessions migrated to the ticket schema (cookie column dropped)'
+        );
+      }
+    } catch {
+      // Table absent — initializeTables creates it with the current schema.
+    }
   }
 
   /**

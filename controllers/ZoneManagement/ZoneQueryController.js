@@ -2,7 +2,12 @@ import Zones from '../../models/ZoneModel.js';
 import Tasks from '../../models/TaskModel.js';
 import VncSessions from '../../models/VncSessionModel.js';
 import { executeCommand } from '../../lib/CommandManager.js';
-import { getZoneConfig as fetchZoneConfig } from '../../lib/ZoneConfigUtils.js';
+import {
+  getZoneConfig as fetchZoneConfig,
+  overlayDocumentSections,
+  readZonecfgAttr,
+} from '../../lib/ZoneConfigUtils.js';
+import { isGuestAgentEnabled, hasGuestAgentChannel } from '../../lib/QemuGuestAgent.js';
 import { errorResponse } from '../SystemHostController/utils/ResponseHelpers.js';
 import { log } from '../../lib/Logger.js';
 import { validateZoneName } from '../../lib/ZoneValidation.js';
@@ -143,6 +148,41 @@ export const listZones = async (req, res) => {
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Task'
+ *                 pending_changes:
+ *                   type: object
+ *                   nullable: true
+ *                   description: Accrued modify changes awaiting the next agent-driven power cycle (null when none)
+ *                 knob_current:
+ *                   type: object
+ *                   description: |
+ *                     Live per-knob current state (shared prefill contract with the Go
+ *                     agent). A key is present only when it has a real answer.
+ *                   properties:
+ *                     guest_agent:
+ *                       type: boolean
+ *                       description: Whether the zone's configuration carries the virtio-console qga channel (key present only while guest_agent.enabled is on)
+ *                     vnc:
+ *                       type: string
+ *                       description: The RAW zonecfg vnc attr string — exactly the PUT vocabulary (on/off/wait/options string); key absent when the attr is unset (brand default off)
+ *                       example: "on"
+ *                     bootorder:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       description: The zonecfg bootorder attr parsed into device tokens (join with commas to rebuild the PUT string); key absent when the attr is unset — the UEFI bootrom then applies its own NVRAM order, which has no static token list
+ *                       example: ["cdrom0", "bootdisk"]
+ *                     boot_priority:
+ *                       type: integer
+ *                       description: Orchestration boot/shutdown priority (custom zonecfg attr); key absent when unset — effective default 95
+ *                       example: 50
+ *                     consoleport:
+ *                       type: integer
+ *                       description: Pinned noVNC web-console port (custom zonecfg attr); key absent when unset — the dynamic pool applies
+ *                       example: 6001
+ *                     consolehost:
+ *                       type: string
+ *                       description: noVNC web-console bind address (custom zonecfg attr); key absent when unset — 0.0.0.0 applies
+ *                       example: "127.0.0.1"
  *       404:
  *         description: Zone not found
  *       500:
@@ -217,6 +257,16 @@ export const getZoneDetails = async (req, res) => {
       zone.reload(),
     ]);
 
+    // The document store is authoritative: overlay the DB-owned Hosts.yml
+    // sections (settings/networks/disks/provisioner/…) onto the live zadm view
+    // so the answered configuration always reflects the stored document.
+    overlayDocumentSections(zone.configuration, configuration, zoneName);
+
+    const pendingChanges =
+      configuration.pending_changes && Object.keys(configuration.pending_changes).length > 0
+        ? configuration.pending_changes
+        : null;
+
     // Log configuration details if successfully loaded
     if (configuration && Object.keys(configuration).length > 0) {
       log.monitoring.debug('Zone configuration loaded successfully', {
@@ -234,13 +284,55 @@ export const getZoneDetails = async (req, res) => {
       activeVncSession.console_url = `${req.protocol}://${req.get('host')}/machines/${zoneName}/vnc/console`;
     }
 
-    return res.json({
+    const detail = {
       machine_info: zone.toJSON(),
       configuration,
       active_vnc_session: activeVncSession,
       pending_tasks: pendingTasks,
       system_status: currentStatus,
-    });
+      pending_changes: pendingChanges,
+    };
+    // knob_current (the Go agent's prefill contract, minimal mirror): a key
+    // is present only when it has a real answer. guest_agent derives LIVE from
+    // the zadm view while the guest-agent surface is enabled; vnc is the RAW
+    // zonecfg attr string — exactly the PUT vocabulary, never zadm's
+    // decomposed object (absent attr = key absent = brand default off).
+    detail.knob_current = {};
+    if (isGuestAgentEnabled()) {
+      detail.knob_current.guest_agent = hasGuestAgentChannel(configuration);
+    }
+    const [vncAttr, bootorderAttr, bootPriorityAttr, consoleportAttr, consolehostAttr] =
+      await Promise.all([
+        readZonecfgAttr(zoneName, 'vnc'),
+        readZonecfgAttr(zoneName, 'bootorder'),
+        readZonecfgAttr(zoneName, 'boot_priority'),
+        readZonecfgAttr(zoneName, 'consoleport'),
+        readZonecfgAttr(zoneName, 'consolehost'),
+      ]);
+    if (vncAttr.exists) {
+      detail.knob_current.vnc = vncAttr.value;
+    }
+    // bootorder as a parsed token list (comma-separated device tokens on the
+    // wire); absent attr = key absent = the UEFI bootrom's own NVRAM order.
+    if (bootorderAttr.exists) {
+      detail.knob_current.bootorder = bootorderAttr.value
+        .split(',')
+        .map(token => token.trim())
+        .filter(Boolean);
+    }
+    // Agent-owned custom attrs (the PUT boot_priority/consoleport/consolehost
+    // knobs). Numeric knobs serve as numbers; key absent = attr unset
+    // (boot_priority then defaults to 95, consoleport to the dynamic pool).
+    if (bootPriorityAttr.exists && Number.isInteger(Number(bootPriorityAttr.value))) {
+      detail.knob_current.boot_priority = Number(bootPriorityAttr.value);
+    }
+    if (consoleportAttr.exists && Number.isInteger(Number(consoleportAttr.value))) {
+      detail.knob_current.consoleport = Number(consoleportAttr.value);
+    }
+    if (consolehostAttr.exists && consolehostAttr.value) {
+      detail.knob_current.consolehost = consolehostAttr.value;
+    }
+    return res.json(detail);
   } catch (error) {
     log.database.error('Database error getting zone details', {
       error: error.message,
@@ -294,6 +386,13 @@ export const getZoneConfig = async (req, res) => {
 
     // Get zone configuration using shared utility
     const zoneConfig = await fetchZoneConfig(zoneName);
+
+    // Overlay the DB-owned document sections — same authority rule as
+    // GET /machines/{name}: the document store wins over zadm output.
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (zone) {
+      overlayDocumentSections(zone.configuration, zoneConfig, zoneName);
+    }
 
     return res.json({
       machine_name: zoneName,

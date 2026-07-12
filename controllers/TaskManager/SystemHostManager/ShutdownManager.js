@@ -6,9 +6,12 @@
  */
 
 import yj from 'yieldable-json';
+import config from '../../../config/ConfigLoader.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log, createTimer } from '../../../lib/Logger.js';
 import { executeZoneShutdownOrchestration } from '../../../lib/ZoneOrchestrationManager.js';
+
+const COMMAND_TIMEOUT_MS = (config.get('system_host.command_timeout_seconds') || 300) * 1000;
 
 /**
  * Execute system host shutdown task
@@ -93,7 +96,7 @@ export const executeSystemHostShutdownTask = async metadataJson => {
     });
 
     // Execute the shutdown command
-    const result = await executeCommand(command, 300000); // 5 min timeout ## SHOULD NOT BE HARDCODED, ALL LIMITS SHOULD BE CONFIGURATION IN THE CONFIG.YML
+    const result = await executeCommand(command, COMMAND_TIMEOUT_MS);
 
     const duration = taskTimer.end();
 
@@ -205,7 +208,7 @@ export const executeSystemHostPoweroffTask = async metadataJson => {
     });
 
     // Execute the poweroff command
-    const result = await executeCommand(command, 300000); // 5 min timeout
+    const result = await executeCommand(command, COMMAND_TIMEOUT_MS);
 
     const duration = taskTimer.end();
 

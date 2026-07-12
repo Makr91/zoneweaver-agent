@@ -1,10 +1,14 @@
 import yj from 'yieldable-json';
+import config from '../../config/ConfigLoader.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 
 /**
  * Package Manager for Package Operations
  * Handles package installation, uninstallation, updates, and metadata refresh
  */
+
+const INSTALL_TIMEOUT_MS = (config.get('packages.install_timeout_seconds') || 600) * 1000;
+const UPDATE_TIMEOUT_MS = (config.get('packages.update_timeout_seconds') || 1800) * 1000;
 
 /**
  * Execute package installation task
@@ -41,7 +45,7 @@ export const executePkgInstallTask = async metadataJson => {
     // Add packages
     command += ` ${packages.join(' ')}`;
 
-    const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout ## SHOULD BE CONFIGURABLE IN CONFIG.YAML!!
+    const result = await executeCommand(command, INSTALL_TIMEOUT_MS);
 
     if (result.success) {
       return {
@@ -89,7 +93,7 @@ export const executePkgUninstallTask = async metadataJson => {
     // Add packages
     command += ` ${packages.join(' ')}`;
 
-    const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout ## SHOULD BE CONFIGURABLE IN CONFIG.YAML!!
+    const result = await executeCommand(command, INSTALL_TIMEOUT_MS);
 
     if (result.success) {
       return {
@@ -150,7 +154,7 @@ export const executePkgUpdateTask = async metadataJson => {
       command += ` ${packages.join(' ')}`;
     }
 
-    const result = await executeCommand(command, 30 * 60 * 1000); // 30 minute timeout ## SHOULD BE CONFIGURABLE IN CONFIG.YAML!!
+    const result = await executeCommand(command, UPDATE_TIMEOUT_MS);
 
     if (result.success) {
       return {

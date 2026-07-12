@@ -138,9 +138,7 @@ export const executeZoneSetupTask = async task => {
       }
     }
 
-    // NEW STRUCTURE: Read from zone.configuration.networks (Hosts.yml structure)
-    // OLD STRUCTURE: Read from zone.configuration.metadata.networks (legacy)
-    const networksArray = zoneConfigFromDB?.networks || zoneConfigFromDB?.metadata?.networks;
+    const networksArray = zoneConfigFromDB?.networks;
 
     if (networksArray && Array.isArray(networksArray)) {
       networksArray.forEach((networkMeta, index) => {
@@ -174,7 +172,6 @@ export const executeZoneSetupTask = async task => {
       log.task.info('Merged network metadata from zone configuration', {
         zone_name,
         network_count: networksArray.length,
-        source: zoneConfigFromDB?.networks ? 'networks' : 'metadata.networks',
       });
     }
 

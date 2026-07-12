@@ -15,5 +15,9 @@ export {
   parseComprehensiveIOStats,
 } from './PoolParsingUtils.js';
 export { parseDatasetListOutput, parseDatasetPropertiesOutput } from './DatasetParsingUtils.js';
-export { parseFormatOutput } from './DiskParsingUtils.js';
+export {
+  parseFormatOutput,
+  parseDiskinfoInventory,
+  applyFormatEnrichment,
+} from './DiskParsingUtils.js';
 export { parseARCStatsOutput } from './ARCParsingUtils.js';

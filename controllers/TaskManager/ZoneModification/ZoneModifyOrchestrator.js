@@ -7,8 +7,11 @@
 
 import yj from 'yieldable-json';
 import { log } from '../../../lib/Logger.js';
-import { getZoneConfig, syncZoneToDatabase } from '../../../lib/ZoneConfigUtils.js';
-import Zones from '../../../models/ZoneModel.js';
+import {
+  getZoneConfig,
+  syncZoneToDatabase,
+  clearPendingChanges,
+} from '../../../lib/ZoneConfigUtils.js';
 import { updateTaskProgress } from '../../../lib/TaskProgressHelper.js';
 import {
   applyAttributeChangesIfNeeded,
@@ -97,27 +100,20 @@ export const executeZoneModifyTask = async task => {
       await syncZoneToDatabase(zoneName);
     }
 
-    // Handle provisioning config update (DB only)
-    if (metadata.provisioning) {
-      await updateTaskProgress(task, 90, { status: 'updating_provisioning_config' });
-      const zone = await Zones.findOne({ where: { name: zoneName } });
-      if (zone) {
-        let currentConfig = zone.configuration || {};
-        if (typeof currentConfig === 'string') {
-          try {
-            currentConfig = JSON.parse(currentConfig);
-          } catch (e) {
-            log.task.warn('Failed to parse current zone configuration', { error: e.message });
-            currentConfig = {};
-          }
-        }
-        const newConfig = { ...currentConfig, provisioning: metadata.provisioning };
-        await zone.update({ configuration: newConfig });
-        changes.push('provisioning');
+    await finalizeModification(zoneName, task, changes);
+
+    // Accrued pending changes (the _apply_pending marker) clear on success —
+    // a failed apply keeps them pending for the next power cycle.
+    if (metadata._apply_pending === true) {
+      try {
+        await clearPendingChanges(zoneName);
+      } catch (clearError) {
+        log.task.warn('Pending-changes clear failed (they will re-apply next cycle)', {
+          zone_name: zoneName,
+          error: clearError.message,
+        });
       }
     }
-
-    await finalizeModification(zoneName, task, changes);
 
     return {
       success: true,

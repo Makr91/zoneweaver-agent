@@ -9,6 +9,7 @@
 import { readFileSync } from 'fs';
 import { log } from '../../../lib/Logger.js';
 import config from '../../../config/ConfigLoader.js';
+import { createSessionBufferWriter } from '../../../lib/SessionBuffer.js';
 
 /**
  * Active SSH connections: sessionId → { conn: ssh2.Client, stream: ssh2.Channel }
@@ -122,24 +123,15 @@ export const cleanupConnection = sessionId => {
  */
 export const setupSSHPiping = (ws, session, stream) => {
   const sessionId = session.id;
+  const bufferWriter = createSessionBufferWriter(session);
 
-  // Pipe SSH stdout to WebSocket and update session buffer
-  stream.on('data', async data => {
+  // Pipe SSH stdout to WebSocket and buffer it (debounced flush)
+  stream.on('data', data => {
     const text = data.toString();
     if (ws.readyState === ws.OPEN) {
       ws.send(text);
     }
-
-    try {
-      const currentBuffer = session.session_buffer || '';
-      const newBuffer = (currentBuffer + text).split('\n').slice(-1000).join('\n');
-      await session.update({ session_buffer: newBuffer, last_activity: new Date() });
-    } catch (error) {
-      log.websocket.error('Error updating SSH session buffer', {
-        session_id: sessionId,
-        error: error.message,
-      });
-    }
+    bufferWriter.append(text);
   });
 
   // Pipe SSH stderr to WebSocket
@@ -151,7 +143,7 @@ export const setupSSHPiping = (ws, session, stream) => {
   });
 
   // Handle WebSocket input → SSH
-  ws.on('message', async data => {
+  ws.on('message', data => {
     const text = data.toString();
 
     // Check for JSON control messages (resize)
@@ -166,18 +158,11 @@ export const setupSSHPiping = (ws, session, stream) => {
     }
 
     stream.write(text);
-    try {
-      await session.update({ last_activity: new Date() });
-    } catch (error) {
-      log.websocket.error('Error updating SSH activity timestamp', {
-        session_id: sessionId,
-        error: error.message,
-      });
-    }
+    bufferWriter.touch();
   });
 
   // Handle WebSocket close → close SSH
-  ws.on('close', (code, reason) => {
+  ws.on('close', async (code, reason) => {
     log.websocket.info('SSH WebSocket closed', {
       session_id: sessionId,
       zone_name: session.zone_name,
@@ -185,6 +170,7 @@ export const setupSSHPiping = (ws, session, stream) => {
       reason: reason || 'none',
     });
     cleanupConnection(sessionId);
+    await bufferWriter.close();
     session.update({ status: 'closed' });
   });
 
@@ -196,6 +182,7 @@ export const setupSSHPiping = (ws, session, stream) => {
       error: error.message,
     });
     cleanupConnection(sessionId);
+    bufferWriter.close();
   });
 
   // Update session access time

@@ -5,30 +5,25 @@
  * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
-import { execSync } from 'child_process';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import yj from 'yieldable-json';
 import { log } from '../../lib/Logger.js';
+import { executeCommand } from '../../lib/CommandManager.js';
 
 /**
- * Execute command safely with proper error handling
- * @param {string} command - Command to execute
- * @returns {{success: boolean, output?: string, error?: string}}
+ * Validate that every named link exists as a physical interface (parallel —
+ * one slow dladm answer never serializes the rest).
+ * @param {string[]} links - Physical link names
+ * @returns {Promise<string|null>} The first missing link, or null when all exist
  */
-const executeCommand = command => {
-  try {
-    const output = execSync(command, {
-      encoding: 'utf8',
-      timeout: 30000, // 30 second timeout
-    });
-    return { success: true, output: output.trim() };
-  } catch (error) {
-    return {
-      success: false,
-      error: error.message,
-      output: error.stdout || '',
-    };
-  }
+const findMissingPhysicalLink = async links => {
+  const checks = await Promise.all(
+    links.map(async link => ({
+      link,
+      exists: (await executeCommand(`pfexec dladm show-phys ${link}`)).success,
+    }))
+  );
+  return checks.find(check => !check.exists)?.link || null;
 };
 
 /**
@@ -83,10 +78,6 @@ const executeCommand = command => {
  *                 type: boolean
  *                 description: Create temporary aggregate (not persistent)
  *                 default: false
- *               created_by:
- *                 type: string
- *                 description: User creating this aggregate
- *                 default: "api"
  *     responses:
  *       202:
  *         description: Aggregate creation task created successfully
@@ -126,7 +117,6 @@ export const createAggregate = async (req, res) => {
       lacp_timer = 'short',
       unicast_address,
       temporary = false,
-      created_by = 'api',
     } = req.body;
 
     // Validate required fields
@@ -177,7 +167,7 @@ export const createAggregate = async (req, res) => {
     }
 
     // Check if aggregate already exists
-    const existsResult = executeCommand(`pfexec dladm show-aggr ${name}`);
+    const existsResult = await executeCommand(`pfexec dladm show-aggr ${name}`);
     if (existsResult.success) {
       return res.status(400).json({
         error: `Aggregate ${name} already exists`,
@@ -185,13 +175,11 @@ export const createAggregate = async (req, res) => {
     }
 
     // Validate that all links exist and are physical interfaces
-    for (const link of links) {
-      const linkResult = executeCommand(`pfexec dladm show-phys ${link}`);
-      if (!linkResult.success) {
-        return res.status(400).json({
-          error: `Physical link ${link} not found or not available`,
-        });
-      }
+    const missingLink = await findMissingPhysicalLink(links);
+    if (missingLink) {
+      return res.status(400).json({
+        error: `Physical link ${missingLink} not found or not available`,
+      });
     }
 
     // Create task for aggregate creation
@@ -199,7 +187,7 @@ export const createAggregate = async (req, res) => {
       zone_name: 'system',
       operation: 'create_aggregate',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -265,12 +253,6 @@ export const createAggregate = async (req, res) => {
  *           type: boolean
  *           default: false
  *         description: Delete only temporary configuration
- *       - in: query
- *         name: created_by
- *         schema:
- *           type: string
- *           default: "api"
- *         description: User deleting this aggregate
  *     responses:
  *       202:
  *         description: Aggregate deletion task created successfully
@@ -303,17 +285,16 @@ export const deleteAggregate = async (req, res) => {
 
   try {
     const { aggregate } = req.params;
-    const { temporary = false, created_by = 'api' } = req.query;
+    const { temporary = false } = req.query;
 
     log.api.debug('Aggregate deletion - parsed parameters', {
       aggregate,
       temporary,
-      created_by,
     });
 
     // Check if aggregate exists
     log.api.debug('Checking if aggregate exists', { aggregate });
-    const existsResult = executeCommand(`pfexec dladm show-aggr ${aggregate}`);
+    const existsResult = await executeCommand(`pfexec dladm show-aggr ${aggregate}`);
     log.api.debug('Aggregate existence check result', {
       aggregate,
       exists: existsResult.success,
@@ -337,7 +318,7 @@ export const deleteAggregate = async (req, res) => {
       zone_name: 'system',
       operation: 'delete_aggregate',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
@@ -422,10 +403,6 @@ export const deleteAggregate = async (req, res) => {
  *                 type: boolean
  *                 description: Temporary modification (not persistent)
  *                 default: false
- *               created_by:
- *                 type: string
- *                 description: User making this modification
- *                 default: "api"
  *     responses:
  *       202:
  *         description: Aggregate link modification task created successfully
@@ -439,7 +416,7 @@ export const deleteAggregate = async (req, res) => {
 export const modifyAggregateLinks = async (req, res) => {
   try {
     const { aggregate } = req.params;
-    const { operation, links, temporary = false, created_by = 'api' } = req.body;
+    const { operation, links, temporary = false } = req.body;
 
     // Validate required fields
     if (!operation || !links || !Array.isArray(links) || links.length === 0) {
@@ -456,7 +433,7 @@ export const modifyAggregateLinks = async (req, res) => {
     }
 
     // Check if aggregate exists
-    const existsResult = executeCommand(`pfexec dladm show-aggr ${aggregate}`);
+    const existsResult = await executeCommand(`pfexec dladm show-aggr ${aggregate}`);
     if (!existsResult.success) {
       return res.status(404).json({
         error: `Aggregate ${aggregate} not found`,
@@ -466,13 +443,11 @@ export const modifyAggregateLinks = async (req, res) => {
 
     // If adding links, validate that they exist and are physical interfaces
     if (operation === 'add') {
-      for (const link of links) {
-        const linkResult = executeCommand(`pfexec dladm show-phys ${link}`);
-        if (!linkResult.success) {
-          return res.status(400).json({
-            error: `Physical link ${link} not found or not available`,
-          });
-        }
+      const missingLink = await findMissingPhysicalLink(links);
+      if (missingLink) {
+        return res.status(400).json({
+          error: `Physical link ${missingLink} not found or not available`,
+        });
       }
     }
 
@@ -481,7 +456,7 @@ export const modifyAggregateLinks = async (req, res) => {
       zone_name: 'system',
       operation: 'modify_aggregate_links',
       priority: TaskPriority.NORMAL,
-      created_by,
+      created_by: req.entity.name,
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(

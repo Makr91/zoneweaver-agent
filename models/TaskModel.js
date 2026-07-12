@@ -45,6 +45,11 @@ const { DataTypes } = Sequelize;
  *             - zone_modify
  *             - zone_setup
  *             - zone_provisioning_extract
+ *             - zone_provisioning_stage
+ *             - provisioner_import
+ *             - snapshot_take
+ *             - snapshot_restore
+ *             - snapshot_delete
  *             - zone_wait_ssh
  *             - zone_sync
  *             - zone_sync_parent
@@ -171,7 +176,11 @@ const { DataTypes } = Sequelize;
  *           example: "start"
  *         status:
  *           type: string
- *           description: Current task status
+ *           description: >-
+ *             Current task status (shared vocabulary with the Go agent). A
+ *             parent whose children PARTIALLY failed lands in
+ *             completed_with_errors — a real terminal status, not just a
+ *             progress_info note.
  *           enum: [pending, prepared, running, completed, completed_with_errors, failed, cancelled]
  *           example: "pending"
  *         priority:

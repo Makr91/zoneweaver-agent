@@ -75,11 +75,19 @@ export const startSSHSession = async (req, res) => {
       });
     }
 
-    // Extract zone IP address from networks
-    const sshHost = extractControlIP(zoneConfig.networks);
+    // SSH target ladder (the Go agent's shape, bhyve rungs): the guest
+    // agent's LIVE addresses first — they survive DHCP renewals and stale
+    // documents (discovery refreshes guest_info every tick) — then the
+    // document's control IP.
+    const liveIPs =
+      zoneConfig.guest_info?.agent_responding && Array.isArray(zoneConfig.guest_info.ips)
+        ? zoneConfig.guest_info.ips
+        : [];
+    const sshHost = liveIPs[0] || extractControlIP(zoneConfig.networks);
     if (!sshHost) {
       return res.status(400).json({
-        error: 'Zone IP address not found. Set is_control: true on a network with an address.',
+        error:
+          'Zone IP address not found. No live guest-agent address; set is_control: true on a network with an address.',
       });
     }
 

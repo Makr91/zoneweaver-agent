@@ -166,9 +166,6 @@ export const getTimeSyncConfig = async (req, res) => {
  *                 type: boolean
  *                 default: true
  *                 description: Restart service after config update
- *               created_by:
- *                 type: string
- *                 default: "api"
  *     responses:
  *       202:
  *         description: Configuration update task created
@@ -179,12 +176,7 @@ export const getTimeSyncConfig = async (req, res) => {
  */
 export const updateTimeSyncConfig = async (req, res) => {
   try {
-    const {
-      config_content,
-      backup_existing = true,
-      restart_service = true,
-      created_by = 'api',
-    } = req.body;
+    const { config_content, backup_existing = true, restart_service = true } = req.body;
 
     if (!config_content || typeof config_content !== 'string') {
       return errorResponse(res, 400, 'config_content is required and must be a string');
@@ -209,7 +201,7 @@ export const updateTimeSyncConfig = async (req, res) => {
         backup_existing,
         restart_service,
       },
-      created_by,
+      req.entity.name,
       TaskPriority.HIGH
     );
 

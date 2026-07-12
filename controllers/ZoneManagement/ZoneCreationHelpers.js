@@ -4,6 +4,7 @@ import Template from '../../models/TemplateModel.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import config from '../../config/ConfigLoader.js';
+import { findSourceConfig, queryLatestBoxVersion } from '../../lib/TemplateRegistryUtils.js';
 
 /**
  * @fileoverview Zone creation helper functions - template resolution, naming, sub-task creation
@@ -82,7 +83,6 @@ export const resolveBoxToTemplate = async (settings, disks) => {
         requested_version: requestedVersion,
         architecture,
         hint: 'Download template first using POST /templates/pull',
-        note: 'For private boxes, include "auth_token" parameter in the download request',
         download_example: {
           source_name: defaultSource?.name || 'Default Registry',
           organization: org,
@@ -311,21 +311,41 @@ export const handleAutoDownload = async (
   startAfterCreate,
   createdBy
 ) => {
-  const parentTask = await Tasks.create({
-    zone_name: finalZoneName,
-    operation: 'zone_create_orchestration',
-    priority: TaskPriority.MEDIUM,
-    created_by: createdBy,
-    metadata: JSON.stringify(requestBody),
-    status: 'pending',
-  });
-
   const sourceResult = determineSourceFromBoxUrl(settings.box_url);
   if (!sourceResult.success) {
     throw new Error(sourceResult.error);
   }
 
   const [org, boxName] = settings.box.split('/');
+
+  // Download-honesty rule: the download URL embeds the version verbatim, so
+  // 'latest' must resolve to a concrete version BEFORE anything is queued —
+  // and before the parent task exists, so a failed resolution leaves nothing
+  // behind.
+  let version = settings.box_version || 'latest';
+  if (version === 'latest') {
+    const sourceConfig = findSourceConfig(sourceResult.source_name);
+    if (!sourceConfig) {
+      throw new Error(`Template source '${sourceResult.source_name}' not found or disabled`);
+    }
+    version = await queryLatestBoxVersion(org, boxName, sourceConfig);
+    log.api.info('Resolved latest box version for auto-download', {
+      box: settings.box,
+      version,
+    });
+  }
+
+  // The orchestration parent is a pure anchor: born running, never
+  // dispatched; the child rollup drives its state (the Go queue's model).
+  const parentTask = await Tasks.create({
+    zone_name: finalZoneName,
+    operation: 'zone_create_orchestration',
+    priority: TaskPriority.MEDIUM,
+    created_by: createdBy,
+    metadata: JSON.stringify(requestBody),
+    status: 'running',
+    started_at: new Date(),
+  });
 
   const downloadTask = await Tasks.create({
     zone_name: 'system',
@@ -337,10 +357,9 @@ export const handleAutoDownload = async (
       source_name: sourceResult.source_name,
       organization: org,
       box_name: boxName,
-      version: settings.box_version || 'latest',
+      version,
       provider: 'zone',
       architecture: settings.box_arch || 'amd64',
-      auth_token: settings.box_auth_token,
     }),
     status: 'pending',
   });

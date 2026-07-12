@@ -6,10 +6,13 @@
  */
 
 import yj from 'yieldable-json';
+import config from '../../../config/ConfigLoader.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log, createTimer } from '../../../lib/Logger.js';
 import { clearRebootRequired } from '../../../lib/RebootManager.js';
 import { executeZoneShutdownOrchestration } from '../../../lib/ZoneOrchestrationManager.js';
+
+const COMMAND_TIMEOUT_MS = (config.get('system_host.command_timeout_seconds') || 300) * 1000;
 
 /**
  * Execute system host restart task
@@ -110,7 +113,7 @@ export const executeSystemHostRestartTask = async metadataJson => {
     }
 
     // Execute the restart command
-    const result = await executeCommand(command, 300000); // 5 min timeout
+    const result = await executeCommand(command, COMMAND_TIMEOUT_MS);
 
     const duration = taskTimer.end();
 
@@ -192,7 +195,7 @@ export const executeSystemHostRebootTask = async metadataJson => {
     }
 
     // Execute the reboot command
-    const result = await executeCommand(command, 300000); // 5 min timeout
+    const result = await executeCommand(command, COMMAND_TIMEOUT_MS);
 
     const duration = taskTimer.end();
 
@@ -273,7 +276,7 @@ export const executeSystemHostRebootFastTask = async metadataJson => {
     }
 
     // Execute the fast reboot command
-    const result = await executeCommand(command, 300000); // 5 min timeout
+    const result = await executeCommand(command, COMMAND_TIMEOUT_MS);
 
     const duration = taskTimer.end();
 

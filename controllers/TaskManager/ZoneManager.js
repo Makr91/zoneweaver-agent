@@ -9,6 +9,9 @@ import {
   executeStartTask,
   executeStopTask,
   executeRestartTask,
+  executeResetTask,
+  executeSuspendTask,
+  executeResumeTask,
 } from './Zone/ZoneLifecycleTasks.js';
 import { executeDeleteTask } from './Zone/ZoneDeletionTasks.js';
 import { executeDiscoverTask } from './Zone/ZoneDiscoveryTask.js';
@@ -17,6 +20,9 @@ export {
   executeStartTask,
   executeStopTask,
   executeRestartTask,
+  executeResetTask,
+  executeSuspendTask,
+  executeResumeTask,
   executeDeleteTask,
   executeDiscoverTask,
 };

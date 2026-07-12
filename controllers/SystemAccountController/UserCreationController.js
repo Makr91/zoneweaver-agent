@@ -121,10 +121,6 @@ import { log } from '../../lib/Logger.js';
  *                 type: boolean
  *                 default: false
  *                 description: Prevent creation of ZFS dataset for home directory
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User creating this account
  *     responses:
  *       202:
  *         description: User creation task created successfully
@@ -154,8 +150,8 @@ export const createSystemUser = async (req, res) => {
       create_personal_group = true,
       force_zfs = false,
       prevent_zfs = false,
-      created_by = 'api',
     } = req.body;
+    const createdBy = req.entity.name;
 
     // Validate required parameters
     if (!username) {
@@ -199,7 +195,7 @@ export const createSystemUser = async (req, res) => {
       uid,
       gid,
       create_personal_group,
-      created_by,
+      created_by: createdBy,
       has_rbac: authorizations.length > 0 || profiles.length > 0 || roles.length > 0,
     });
 
@@ -226,7 +222,7 @@ export const createSystemUser = async (req, res) => {
         force_zfs,
         prevent_zfs,
       },
-      created_by,
+      createdBy,
       TaskPriority.MEDIUM
     );
 
@@ -234,7 +230,7 @@ export const createSystemUser = async (req, res) => {
       task_id: task.id,
       username,
       uid,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `User creation task created for ${username}`, task, {
@@ -248,7 +244,6 @@ export const createSystemUser = async (req, res) => {
       error: error.message,
       stack: error.stack,
       username: req.body?.username,
-      created_by: req.body?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create user creation task', error.message);
   }
@@ -353,10 +348,6 @@ export const createSystemUser = async (req, res) => {
  *                 type: boolean
  *                 default: false
  *                 description: Prevent ZFS dataset for new home directory
- *               created_by:
- *                 type: string
- *                 default: "api"
- *                 description: User performing this modification
  *     responses:
  *       202:
  *         description: User modification task created successfully
@@ -385,8 +376,8 @@ export const modifySystemUser = async (req, res) => {
       new_project,
       force_zfs = false,
       prevent_zfs = false,
-      created_by = 'api',
     } = req.body;
+    const createdBy = req.entity.name;
 
     // Validate new username format if provided
     if (new_username) {
@@ -429,7 +420,7 @@ export const modifySystemUser = async (req, res) => {
       new_username,
       new_uid,
       move_home,
-      created_by,
+      created_by: createdBy,
       has_rbac: new_authorizations.length > 0 || new_profiles.length > 0 || new_roles.length > 0,
     });
 
@@ -455,7 +446,7 @@ export const modifySystemUser = async (req, res) => {
         force_zfs,
         prevent_zfs,
       },
-      created_by,
+      createdBy,
       TaskPriority.MEDIUM
     );
 
@@ -463,7 +454,7 @@ export const modifySystemUser = async (req, res) => {
       task_id: task.id,
       username,
       new_username,
-      created_by,
+      created_by: createdBy,
     });
 
     return taskCreatedResponse(res, `User modification task created for ${username}`, task, {
@@ -483,7 +474,6 @@ export const modifySystemUser = async (req, res) => {
       stack: error.stack,
       username: req.params?.username,
       new_username: req.body?.new_username,
-      created_by: req.body?.created_by,
     });
     return errorResponse(res, 500, 'Failed to create user modification task', error.message);
   }

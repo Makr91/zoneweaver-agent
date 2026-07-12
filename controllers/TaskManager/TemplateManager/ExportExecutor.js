@@ -5,7 +5,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
-import { findRunningTask, updateTaskProgress } from './utils/ProgressHelper.js';
+import { updateTaskProgress } from './utils/ProgressHelper.js';
 import { createBoxArtifact } from './utils/BoxArtifactHelper.js';
 
 /**
@@ -16,9 +16,10 @@ import { createBoxArtifact } from './utils/BoxArtifactHelper.js';
  * Execute template export task (Phase III - Part 1)
  * Exports a zone to a local .box file
  * @param {string} metadataJson - Task metadata as JSON string
+ * @param {Object} task - The task row (progress updates write it directly)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeTemplateExportTask = async metadataJson => {
+export const executeTemplateExportTask = async (metadataJson, task) => {
   log.task.debug('Template export task starting');
   let tempDir = null;
 
@@ -34,8 +35,6 @@ export const executeTemplateExportTask = async metadataJson => {
     });
 
     const { zone_name, snapshot_name, filename } = metadata;
-
-    const task = await findRunningTask('template_export', zone_name);
 
     // Create temp directory
     tempDir = path.join(os.tmpdir(), `template_export_${crypto.randomUUID()}`);

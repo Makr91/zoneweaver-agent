@@ -161,6 +161,7 @@ export const executeCreateNatRuleTask = async metadataJson => {
       protocol = 'tcp/udp',
       type = 'portmap',
       description,
+      created_by,
     } = metadata;
 
     if (!bridge || !subnet) {
@@ -202,7 +203,7 @@ export const executeCreateNatRuleTask = async metadataJson => {
       protocol,
       type,
       raw_rule: rule,
-      created_by: 'api', // Or from metadata if passed
+      created_by,
       description,
     });
 
@@ -313,8 +314,11 @@ export const executeDeleteNatRuleTask = async metadataJson => {
 
 /**
  * Execute IP forwarding configuration task
- * Enables/disables global IPv4 forwarding and per-interface forwarding
- * @param {string} metadataJson - JSON string with { enabled, interfaces }
+ * Enables/disables global IPv4 forwarding and per-interface forwarding.
+ * `global: false` limits the change to the named interfaces — the teardown
+ * path uses it so removing the provisioning network never cuts off other
+ * forwarding consumers on the host.
+ * @param {string} metadataJson - JSON string with { enabled, interfaces, global }
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 export const executeConfigureForwardingTask = async metadataJson => {
@@ -329,11 +333,11 @@ export const executeConfigureForwardingTask = async metadataJson => {
       });
     });
 
-    const { enabled, interfaces } = metadata;
+    const { enabled, interfaces, global: touchGlobal = true } = metadata;
     const errors = [];
 
     // Configure global IPv4 forwarding
-    if (enabled !== undefined) {
+    if (enabled !== undefined && touchGlobal) {
       const action = enabled ? '-e' : '-d';
       const routeResult = await executeCommand(`pfexec routeadm -u ${action} ipv4-forwarding`);
       if (!routeResult.success) {
@@ -359,7 +363,9 @@ export const executeConfigureForwardingTask = async metadataJson => {
     if (errors.length > 0) {
       log.task.warn('IP forwarding configuration had errors', { errors });
       return {
-        success: errors.length < (interfaces || []).length + (enabled !== undefined ? 1 : 0),
+        success:
+          errors.length <
+          (interfaces || []).length + (enabled !== undefined && touchGlobal ? 1 : 0),
         message: `IP forwarding configured with ${errors.length} error(s)`,
         errors,
       };

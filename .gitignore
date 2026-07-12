@@ -47,6 +47,9 @@ jspm_packages/
 # Generated OpenAPI spec (published as a release asset at build)
 openapi.json
 
+# Hyperweaver UI artifact (built in hyperweaver-ui, baked in at package build)
+ui/
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 

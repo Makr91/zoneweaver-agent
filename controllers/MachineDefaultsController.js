@@ -13,6 +13,9 @@ import { isGuestAgentEnabled } from '../lib/QemuGuestAgent.js';
  * which enumerates the host's firmware images live.
  */
 
+/** The zadm bool vocabulary (Validator::bool) — every boolean knob takes any of these. */
+const BOOL_VALUES = ['true', 'false', 'on', 'off', 'yes', 'no', '1', '0'];
+
 /**
  * knob_values: every closed-vocabulary knob's allowed values (the UI's
  * dropdown feed), keyed like the wire. Presence MEANS dropdown; free-form and
@@ -40,6 +43,67 @@ const KNOB_VALUES = {
   'nics.nic_type': ['external', 'internal', 'carp', 'management', 'host'],
   'disks.boot.source.type': ['template', 'scratch'],
   'disks.boot.source.clone_strategy': ['clone', 'copy'],
+  // NIC brand-props (the zonecfg net-resource properties consumed by bhyve's
+  // network backends — NOT dladm link properties; MAC/IP spoofing is the dladm
+  // `protection` prop, see GET /network/vnics/{vnic}/properties).
+  'nics.props.promiscphys': BOOL_VALUES,
+  'nics.props.promiscsap': BOOL_VALUES,
+  'nics.props.promiscmulti': BOOL_VALUES,
+  'nics.props.promiscrxonly': BOOL_VALUES,
+  'nics.props.backend': ['dlpi'],
+  'nics.props.netif': ['virtio', 'virtio-net-viona', 'virtio-net', 'e1000'],
+  // Ring sizes are powers of two; bhyve(8) bounds them at [2, 32768] and zadm's
+  // schema at [4, 32768] — serve the intersection zadm will accept.
+  'nics.props.vqsize': [
+    '4',
+    '8',
+    '16',
+    '32',
+    '64',
+    '128',
+    '256',
+    '512',
+    '1024',
+    '2048',
+    '4096',
+    '8192',
+    '16384',
+    '32768',
+  ],
+};
+
+/**
+ * NIC brand-prop DEFAULTS — what an UNSET net property actually runs with.
+ * VERBATIM from bhyve(8) "Other Network Backend Settings" and the viona
+ * backend options (Mark's man-page paste is the source of truth here; do NOT
+ * infer these — three of the four promisc flags default ON, which is the
+ * opposite of the obvious guess).
+ */
+const NIC_PROP_DEFAULTS = {
+  'nics.props.promiscphys': 'false',
+  'nics.props.promiscsap': 'true',
+  'nics.props.promiscmulti': 'true',
+  'nics.props.promiscrxonly': 'true',
+  // viona ring sizes: vqsize sets BOTH rings; the per-ring defaults differ
+  // (TX 256, RX 1024), so there is no single honest "vqsize default" — the
+  // per-ring truth is served instead.
+  'nics.props.txvqsize': '256',
+  'nics.props.rxvqsize': '1024',
+  'nics.props.qpair': '8',
+  'nics.props.speed': '1000',
+};
+
+/**
+ * Which brand-props each network backend actually consumes (bhyve(8)): the
+ * accelerated viona backend takes the ring/queue knobs, the legacy virtio and
+ * e1000 backends take the promiscuous-mode knobs. A prop set against the wrong
+ * backend is simply ignored by bhyve — the UI should only offer what applies.
+ */
+const NIC_PROPS_BY_NETIF = {
+  'virtio-net-viona': ['feature_mask', 'vqsize', 'txvqsize', 'rxvqsize', 'qpair', 'speed'],
+  virtio: ['promiscphys', 'promiscsap', 'promiscmulti', 'promiscrxonly', 'backend', 'mtu'],
+  'virtio-net': ['promiscphys', 'promiscsap', 'promiscmulti', 'promiscrxonly', 'backend', 'mtu'],
+  e1000: ['promiscphys', 'promiscsap', 'promiscmulti', 'promiscrxonly', 'backend'],
 };
 
 /**
@@ -247,7 +311,8 @@ export const getMachineDefaults = async (req, res) => {
       guest_agent_enabled: isGuestAgentEnabled(),
     },
     knob_values: { ...KNOB_VALUES, ...zadmVocab, 'zones.bootrom': bootroms },
-    knob_defaults: { ...KNOB_DEFAULTS, ...brandDefaults },
+    knob_defaults: { ...KNOB_DEFAULTS, ...brandDefaults, ...NIC_PROP_DEFAULTS },
+    nic_props_by_netif: NIC_PROPS_BY_NETIF,
     notes: {
       settings:
         'hostname + domain are REQUIRED (they form the FQDN). vcpus/memory omitted fall through to the bhyve brand defaults (1 vCPU, 256M) — set them explicitly for real guests. box_version/box_arch/sync_method are this agent’s fallbacks.',
@@ -260,7 +325,9 @@ export const getMachineDefaults = async (req, res) => {
       knob_values:
         "Value vocabularies for enum knobs, keyed like the wire (flat dotted keys). A knob present here is a dropdown; a knob absent is free-form or numeric. Values pass to zonecfg unvalidated — unknown values stay legal (the brand answers). LIVE-sourced: zones.bootrom enumerates /usr/share/bhyve/firmware (BHYVE_VARS excluded); zones.diskif + zones.netif parse the host's own zadm Schema/Bhyve.pm. hostbridge additionally accepts vendor=N,device=N. bootorder/bootnext take compact cd|dc or comma-separated device tokens (bootdisk, disk[N], cdrom[N], net[N][=pxe|http], path[N], boot[N], shell).",
       knob_defaults:
-        'The value an UNSET attr effectively runs with, flat dotted keys — parsed LIVE from the brand boot program (/usr/lib/brand/bhyve/boot defaults dict; statics as off-platform fallback). NOT zadm schema defaults, which differ on bootrom/diskif/netif and apply only to zadm-materialized configs. Knobs with no fixed default (bootorder — firmware NVRAM order; memreserve) are absent.',
+        'The value an UNSET attr effectively runs with, flat dotted keys — parsed LIVE from the brand boot program (/usr/lib/brand/bhyve/boot defaults dict; statics as off-platform fallback). NOT zadm schema defaults, which differ on bootrom/diskif/netif and apply only to zadm-materialized configs. Knobs with no fixed default (bootorder — firmware NVRAM order; memreserve) are absent. The nics.props.* entries come from bhyve(8) and are NOT guessable: promiscphys defaults FALSE, but promiscsap/promiscmulti/promiscrxonly all default TRUE.',
+      nic_props_by_netif:
+        "Which brand-props each network backend actually consumes (bhyve(8)). The accelerated viona backend takes the ring/queue knobs (feature_mask, vqsize, txvqsize, rxvqsize, qpair, speed); the legacy virtio and e1000 backends take the promiscuous-mode knobs. Offer only the props that apply to a NIC's effective netif — bhyve ignores the rest. NOTE: `mtu` and `backend` are legal zonecfg net properties (zadm's schema accepts them and the brand passes them through verbatim), but bhyve(8) does NOT document them as network-backend options — only the four promisc flags are listed. So no default is served for them, and they may be no-ops; label them as undocumented rather than showing an invented default. MAC/IP spoofing is NOT among these: it is the dladm `protection` LINK property (GET/PUT /network/vnics/{vnic}/properties). WARN before enabling promiscphys — it is known to break host→VM traffic on this platform (illumos-omnios#1039, open).",
     },
   });
 };

@@ -2,6 +2,46 @@ import { executeCommand } from '../../lib/CommandManager.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import yj from 'yieldable-json';
 import { log } from '../../lib/Logger.js';
+import { parseSizeToBytes } from '../../lib/MachineDiskResize.js';
+
+/**
+ * A volsize DECREASE truncates the volume — every byte past the new end is
+ * gone, and a guest filesystem living there is destroyed. This endpoint is a
+ * raw `zfs set` passthrough, so it must gate the truncate itself: a browser
+ * confirmation is not a gate (Mark's ruling). GROWING passes straight through.
+ *
+ * The safe path for a machine's disks is PUT /machines/{name} resize_disks,
+ * which also refuses to shrink a RUNNING machine and reports whether the guest
+ * needs a power cycle to see the change.
+ * @param {string} name - Dataset name
+ * @param {Object} properties - Properties being set
+ * @param {boolean} allowShrink - Explicit caller opt-in
+ * @returns {Promise<string|null>} A refusal message, or null when allowed
+ */
+const volsizeShrinkRefusal = async (name, properties, allowShrink) => {
+  if (properties.volsize === undefined || allowShrink === true) {
+    return null;
+  }
+  const targetBytes = parseSizeToBytes(properties.volsize);
+  if (!targetBytes) {
+    return `volsize '${properties.volsize}' is not a valid ZFS size`;
+  }
+  const current = await executeCommand(`pfexec zfs get -H -p -o value volsize ${name}`);
+  if (!current.success) {
+    // Not a volume (or unreadable) — nothing to truncate, let zfs answer.
+    return null;
+  }
+  const currentBytes = Number(current.output.trim());
+  if (!Number.isFinite(currentBytes) || targetBytes >= currentBytes) {
+    return null;
+  }
+  return (
+    `Refusing to shrink ${name}: volsize ${properties.volsize} is smaller than the current ${currentBytes} bytes. ` +
+    'This TRUNCATES the volume — everything past the new end is destroyed, and a guest filesystem on it will not survive. ' +
+    'Set allow_shrink: true to proceed anyway. For a machine disk, prefer PUT /machines/{name} resize_disks, which also ' +
+    'refuses to shrink a running machine.'
+  );
+};
 
 /**
  * @fileoverview ZFS dataset lifecycle controllers - create, destroy, set properties
@@ -226,9 +266,20 @@ export const destroyDataset = async (req, res) => {
  *             properties:
  *               properties:
  *                 type: object
+ *               allow_shrink:
+ *                 type: boolean
+ *                 default: false
+ *                 description: |
+ *                   Required to DECREASE volsize. A shrink TRUNCATES the volume — every byte
+ *                   past the new end is destroyed and a guest filesystem on it will not
+ *                   survive. Growing needs nothing. For a machine's disk prefer
+ *                   PUT /machines/{name} resize_disks, which additionally refuses to shrink a
+ *                   RUNNING machine and reports whether the guest needs a power cycle.
  *     responses:
  *       202:
  *         description: Property update task created
+ *       400:
+ *         description: Invalid properties, or a volsize shrink without allow_shrink
  *       404:
  *         description: Dataset not found
  *       500:
@@ -236,7 +287,7 @@ export const destroyDataset = async (req, res) => {
  */
 export const setDatasetProperties = async (req, res) => {
   const { name } = req.params;
-  const { properties } = req.body;
+  const { properties, allow_shrink } = req.body;
 
   try {
     if (!name) {
@@ -253,6 +304,11 @@ export const setDatasetProperties = async (req, res) => {
         error: `Dataset ${name} not found`,
         details: result.error,
       });
+    }
+
+    const refusal = await volsizeShrinkRefusal(name, properties, allow_shrink);
+    if (refusal) {
+      return res.status(400).json({ error: refusal });
     }
 
     const task = await Tasks.create({

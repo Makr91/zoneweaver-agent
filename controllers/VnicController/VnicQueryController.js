@@ -192,7 +192,12 @@ export const getVNICDetails = async (req, res) => {
  * /network/vnics/{vnic}/stats:
  *   get:
  *     summary: Get VNIC statistics
- *     description: Returns live statistics for a specific VNIC using dladm show-vnic -s
+ *     description: |
+ *       Live cumulative counters for a VNIC, from `dladm show-link -s`. (NOT
+ *       `show-vnic -s`: that subcommand has no ipackets/rbytes/ierrors/… fields
+ *       at all — it answers "unknown output fields" and this endpoint returned
+ *       zeros for every VNIC. show-link's stat table carries them and accepts a
+ *       VNIC as its link, verified on host-1162.)
  *     tags: [VNIC Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -203,15 +208,14 @@ export const getVNICDetails = async (req, res) => {
  *         schema:
  *           type: string
  *         description: VNIC name
- *       - in: query
- *         name: interval
- *         schema:
- *           type: integer
- *           default: 1
- *         description: Interval between samples (for continuous monitoring)
  *     responses:
  *       200:
- *         description: VNIC statistics retrieved successfully
+ *         description: |
+ *           A single snapshot of the link's CUMULATIVE counters (since the link came up).
+ *           To chart a rate, take two snapshots and difference them — this endpoint does
+ *           not sample. (It previously advertised an `interval` query parameter and echoed
+ *           it back as if it had; it never sampled, so the parameter is gone rather than
+ *           left lying.)
  *         content:
  *           application/json:
  *             schema:
@@ -239,9 +243,6 @@ export const getVNICDetails = async (req, res) => {
  *                 timestamp:
  *                   type: string
  *                   format: date-time
- *                 interval:
- *                   type: integer
- *                   description: Sampling interval echoed from the request
  *       404:
  *         description: VNIC not found
  *       500:
@@ -249,12 +250,15 @@ export const getVNICDetails = async (req, res) => {
  */
 export const getVNICStats = async (req, res) => {
   const { vnic } = req.params;
-  const { interval = 1 } = req.query;
 
   try {
-    // Get live statistics from dladm
+    // show-LINK, not show-vnic: `dladm show-vnic -s` has no packet/byte fields
+    // (it rejects every one of them as an unknown output field, whatever the
+    // flag order), so this endpoint answered zeros for every VNIC. show-link's
+    // stat table has them and takes a VNIC as its link. Options precede the
+    // operand, as illumos requires.
     const result = await executeCommand(
-      `pfexec dladm show-vnic ${vnic} -s -p -o link,ipackets,rbytes,ierrors,opackets,obytes,oerrors`
+      `pfexec dladm show-link -s -p -o link,ipackets,rbytes,ierrors,opackets,obytes,oerrors ${vnic}`
     );
 
     if (!result.success) {
@@ -264,7 +268,9 @@ export const getVNICStats = async (req, res) => {
       });
     }
 
-    const [link, ipackets, rbytes, ierrors, opackets, obytes, oerrors] = result.output.split(':');
+    const [link, ipackets, rbytes, ierrors, opackets, obytes, oerrors] = result.output
+      .trim()
+      .split(':');
 
     const statistics = {
       link,
@@ -280,7 +286,6 @@ export const getVNICStats = async (req, res) => {
       vnic,
       statistics,
       timestamp: new Date().toISOString(),
-      interval: parseInt(interval),
     });
   } catch (error) {
     log.api.error('Error getting VNIC statistics', {
@@ -296,11 +301,68 @@ export const getVNICStats = async (req, res) => {
 };
 
 /**
+ * Split one `dladm` parseable record into its fields.
+ *
+ * Per dladm(8) "Parsable Output Format": fields are colon-separated, a literal
+ * colon inside a value is escaped as `\:`, and a literal backslash as `\\`. A
+ * regex split cannot do this correctly — a value ENDING in an escaped
+ * backslash (`…\\`) makes a lookbehind read the real delimiter as escaped and
+ * swallow it — so the scan below consumes escapes explicitly.
+ * @param {string} line - One parseable output line
+ * @returns {string[]} The record's fields, unescaped
+ */
+const splitDladmRecord = line => {
+  const fields = [];
+  let current = '';
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '\\' && i + 1 < line.length) {
+      // The escaped character is literal, whatever it is (`\:` or `\\`).
+      current += line[i + 1];
+      i++;
+    } else if (char === ':') {
+      fields.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  fields.push(current);
+  return fields;
+};
+
+/**
+ * Normalize one dladm field. Per dladm(8): an unset value prints as `--` (and
+ * as empty in parseable mode), a value dladm cannot determine prints as `?`,
+ * and a property with no default prints as `--`. All three mean "no usable
+ * value here" — they answer null rather than leaking a sentinel the UI would
+ * render as if it were real.
+ * @param {string} field - Raw field
+ * @returns {string|null} The value, or null when unset/unknown
+ */
+const dladmValue = field => {
+  const value = (field || '').trim();
+  return value === '' || value === '--' || value === '?' ? null : value;
+};
+
+/**
  * @swagger
  * /network/vnics/{vnic}/properties:
  *   get:
- *     summary: Get VNIC properties
- *     description: Returns link properties for a specific VNIC using dladm show-linkprop
+ *     summary: Get VNIC link properties (current + default + possible)
+ *     description: |
+ *       The VNIC's own dladm LINK properties — `protection` (mac-nospoof,
+ *       ip-nospoof, dhcp-nospoof, restricted), maxbw, priority, allowed-ips,
+ *       mtu, promisc-filtered, … Each carries its CURRENT value, its DEFAULT,
+ *       and its POSSIBLE values, so a UI can render true values and real
+ *       dropdowns.
+ *
+ *       NOT to be confused with the bhyve brand's zonecfg NET-RESOURCE
+ *       properties (promiscphys, vqsize, feature_mask, …), which configure the
+ *       viona device and ride PUT /machines/{name} update_nics. Different
+ *       family, different store. MAC/IP spoofing lives HERE, in `protection`.
+ *
+ *       Write with PUT on this same path.
  *     tags: [VNIC Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -315,7 +377,7 @@ export const getVNICStats = async (req, res) => {
  *         name: property
  *         schema:
  *           type: string
- *         description: Specific property to get (omit for all properties)
+ *         description: Comma-separated property names (omit for all properties)
  *     responses:
  *       200:
  *         description: VNIC properties retrieved successfully
@@ -333,12 +395,21 @@ export const getVNICStats = async (req, res) => {
  *                     properties:
  *                       property:
  *                         type: string
+ *                         example: "protection"
  *                       value:
  *                         type: string
+ *                         nullable: true
+ *                         description: Current value (null when unset)
  *                       default:
  *                         type: string
+ *                         nullable: true
+ *                         description: The value that applies when unset (null when dladm reports none)
  *                       possible:
- *                         type: string
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *                         description: Allowed values. A numeric range arrives as one entry ("60-1500").
+ *                         example: ["mac-nospoof", "restricted", "ip-nospoof", "dhcp-nospoof"]
  *                 timestamp:
  *                   type: string
  *                   format: date-time
@@ -352,13 +423,15 @@ export const getVNICProperties = async (req, res) => {
   const { property } = req.query;
 
   try {
-    // Build command with optional property filter
-    let command = `pfexec dladm show-linkprop ${vnic} -p -o property,value,default,possible`;
-    if (property) {
-      command += ` -p ${property}`;
-    }
-
-    const result = await executeCommand(command);
+    // Options MUST precede the operand, and machine-parseable output for
+    // show-linkprop is -c (its -p is --prop=, which takes a property LIST).
+    // The old command put the VNIC first and used -p with no argument, so it
+    // never produced the colon-separated records this parser expects — same
+    // flag-order class as the zpool-get 404.
+    const propFilter = property ? ` -p ${property}` : '';
+    const result = await executeCommand(
+      `pfexec dladm show-linkprop -c -o property,value,default,possible${propFilter} ${vnic}`
+    );
 
     if (!result.success) {
       return res.status(404).json({
@@ -371,14 +444,16 @@ export const getVNICProperties = async (req, res) => {
       .split('\n')
       .filter(line => line.trim())
       .map(line => {
-        const [prop, value, defaultVal, possible] = line.split(':');
+        const [prop, value, defaultVal, possible] = splitDladmRecord(line);
+        const possibleValues = dladmValue(possible);
         return {
           property: prop,
-          value,
-          default: defaultVal,
-          possible,
+          value: dladmValue(value),
+          default: dladmValue(defaultVal),
+          possible: possibleValues ? possibleValues.split(',') : [],
         };
-      });
+      })
+      .filter(entry => entry.property);
 
     return res.json({
       vnic,

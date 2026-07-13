@@ -23,8 +23,16 @@ import { parseZoneConfig, cleanupConnection } from './utils/SSHHelpers.js';
  * /machines/{machineName}/ssh/start:
  *   post:
  *     summary: Start an SSH terminal session
- *     description: Creates an SSH terminal session for the specified machine (zone).
- *                  Returns session ID for WebSocket connection at /ssh/{sessionId}.
+ *     description: |
+ *       Creates an SSH terminal session for the machine. Answer carries the session id
+ *       for the `/ssh/{sessionId}` WebSocket.
+ *
+ *       A guest can hold SEVERAL addresses (multi-homed, or a floating/secondary IP), and
+ *       the agent cannot tell which one is routable from here — so it does not guess past
+ *       the first. The answer always lists every candidate in `ip_candidates` (guest-agent
+ *       live addresses first, then the document's control IP) and reports which one it
+ *       used in `ip_index`. If that one is unreachable, retry with the next index — this
+ *       is how a UI offers "try the next address".
  *     tags: [SSH Terminal]
  *     security:
  *       - ApiKeyAuth: []
@@ -34,15 +42,37 @@ import { parseZoneConfig, cleanupConnection } from './utils/SSHHelpers.js';
  *         required: true
  *         schema:
  *           type: string
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ip_index:
+ *                 type: integer
+ *                 default: 0
+ *                 description: Which of `ip_candidates` to connect to (0-based). Out of range answers 400 WITH the candidate list.
  *     responses:
  *       200:
  *         description: SSH session created successfully.
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/SSHSession'
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SSHSession'
+ *                 - type: object
+ *                   properties:
+ *                     ip_candidates:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["172.17.205.146", "172.17.6.43"]
+ *                     ip_index:
+ *                       type: integer
+ *                       example: 0
  *       400:
- *         description: Machine not running or SSH credentials not configured.
+ *         description: Machine not running, no credentials, no reachable address, or ip_index out of range (the body then carries ip_candidates).
  *       404:
  *         description: Machine not found.
  *       500:
@@ -75,21 +105,38 @@ export const startSSHSession = async (req, res) => {
       });
     }
 
-    // SSH target ladder (the Go agent's shape, bhyve rungs): the guest
-    // agent's LIVE addresses first — they survive DHCP renewals and stale
-    // documents (discovery refreshes guest_info every tick) — then the
-    // document's control IP.
+    // SSH target ladder (the Go agent's shape, bhyve rungs): the guest agent's
+    // LIVE addresses first — they survive DHCP renewals and stale documents
+    // (discovery refreshes guest_info every tick) — then the document's
+    // control IP. A multi-homed guest offers several and NOTHING here can tell
+    // which is routable from this host, so the caller picks by index and the
+    // whole list always rides the answer.
     const liveIPs =
       zoneConfig.guest_info?.agent_responding && Array.isArray(zoneConfig.guest_info.ips)
         ? zoneConfig.guest_info.ips
         : [];
-    const sshHost = liveIPs[0] || extractControlIP(zoneConfig.networks);
-    if (!sshHost) {
+    const controlIP = extractControlIP(zoneConfig.networks);
+    const candidates = [...liveIPs];
+    if (controlIP && !candidates.includes(controlIP)) {
+      candidates.push(controlIP);
+    }
+
+    if (candidates.length === 0) {
       return res.status(400).json({
         error:
           'Zone IP address not found. No live guest-agent address; set is_control: true on a network with an address.',
       });
     }
+
+    const requested = req.body?.ip_index;
+    const index = requested === undefined ? 0 : parseInt(requested, 10);
+    if (!Number.isInteger(index) || index < 0 || index >= candidates.length) {
+      return res.status(400).json({
+        error: `ip_index ${requested} is out of range — this machine has ${candidates.length} candidate address(es)`,
+        ip_candidates: candidates,
+      });
+    }
+    const sshHost = candidates[index];
 
     // Each call creates an independent session — multiple users can SSH to the same zone
     // Create new session
@@ -105,10 +152,16 @@ export const startSSHSession = async (req, res) => {
       session_id: session.id,
       zone_name: zoneName,
       ssh_host: sshHost,
+      ip_index: index,
+      ip_candidates: candidates,
       ssh_username: credentials.username,
     });
 
-    return res.json(session);
+    return res.json({
+      ...session.toJSON(),
+      ip_candidates: candidates,
+      ip_index: index,
+    });
   } catch (error) {
     log.websocket.error('Error starting SSH session', {
       error: error.message,

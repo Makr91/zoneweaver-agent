@@ -17,6 +17,57 @@ import { validateZoneName } from '../../lib/ZoneValidation.js';
  */
 
 /**
+ * The zonecfg net-resource keys that are NOT brand properties — everything
+ * else on a net resource is a bhyve backend prop (promiscphys, vqsize, …).
+ */
+const NET_RESOURCE_KEYS = new Set([
+  'physical',
+  'global-nic',
+  'global_nic',
+  'vlan-id',
+  'vlan_id',
+  'mac-addr',
+  'mac_addr',
+  'allowed-address',
+  'allowed_address',
+  'address',
+  'defrouter',
+  'over',
+]);
+
+/**
+ * Build knob_current.nics — each NIC's effective netif and its CURRENTLY SET
+ * brand props (the zonecfg net-resource properties bhyve's network backend
+ * consumes). An unset prop is ABSENT here; what it runs with instead is
+ * knob_defaults['nics.props.*'] on GET /machines/defaults, and which props
+ * apply to a given backend is nic_props_by_netif there.
+ *
+ * These are NOT dladm link properties — MAC/IP spoofing lives in the dladm
+ * `protection` prop (GET/PUT /network/vnics/{vnic}/properties).
+ * @param {Object} configuration - Live zone configuration (zadm view)
+ * @returns {Array<{physical: string, netif: string|undefined, props: Object}>}
+ */
+const buildNicKnobCurrent = configuration => {
+  const nets = Array.isArray(configuration?.net) ? configuration.net : [];
+  return nets.filter(Boolean).map(net => {
+    const props = {};
+    for (const [key, value] of Object.entries(net)) {
+      if (!NET_RESOURCE_KEYS.has(key) && key !== 'netif' && value !== undefined) {
+        props[key] = value;
+      }
+    }
+    const entry = { physical: net.physical, props };
+    // The per-NIC netif overrides the zone-level netif attr; when neither is
+    // set the brand default applies (knob_defaults['zones.netif']).
+    const netif = net.netif || configuration?.netif;
+    if (netif) {
+      entry.netif = netif;
+    }
+    return entry;
+  });
+};
+
+/**
  * Get current zone status from system using CommandManager
  * @param {string} zoneName - Name of the zone
  * @returns {Promise<string>} Zone status
@@ -183,6 +234,30 @@ export const listZones = async (req, res) => {
  *                       type: string
  *                       description: noVNC web-console bind address (custom zonecfg attr); key absent when unset — 0.0.0.0 applies
  *                       example: "127.0.0.1"
+ *                     nics:
+ *                       type: array
+ *                       description: |
+ *                         Per-NIC brand properties CURRENTLY SET (the zonecfg net-resource
+ *                         properties bhyve's network backend consumes). An unset prop is
+ *                         ABSENT — what it runs with instead is knob_defaults['nics.props.*']
+ *                         on GET /machines/defaults, and which props apply to a NIC's backend
+ *                         is nic_props_by_netif there. NOT dladm link properties: MAC/IP
+ *                         spoofing is the dladm `protection` prop
+ *                         (GET/PUT /network/vnics/{vnic}/properties).
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           physical:
+ *                             type: string
+ *                             example: "vnice3_8009_0"
+ *                           netif:
+ *                             type: string
+ *                             description: Effective backend (per-NIC netif, else the zone-level netif attr); absent when neither is set — the brand default applies
+ *                             example: "virtio-net-viona"
+ *                           props:
+ *                             type: object
+ *                             description: Brand props explicitly set on this NIC
+ *                             example: { "promiscphys": "on" }
  *       404:
  *         description: Zone not found
  *       500:
@@ -332,6 +407,7 @@ export const getZoneDetails = async (req, res) => {
     if (consolehostAttr.exists && consolehostAttr.value) {
       detail.knob_current.consolehost = consolehostAttr.value;
     }
+    detail.knob_current.nics = buildNicKnobCurrent(configuration);
     return res.json(detail);
   } catch (error) {
     log.database.error('Database error getting zone details', {

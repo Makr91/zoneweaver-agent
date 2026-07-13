@@ -9,7 +9,9 @@ import {
   mergeSettingsKeys,
   setSnapshotPolicy,
   readZonecfgAttr,
+  getZoneConfig,
 } from '../../lib/ZoneConfigUtils.js';
+import { resizeMachineDisks } from '../../lib/MachineDiskResize.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { isGuestAgentEnabled } from '../../lib/QemuGuestAgent.js';
 import { applyGuestAgentToggle } from '../GuestAgentController.js';
@@ -92,6 +94,40 @@ const applyZoneAttrFields = async (zoneName, body) => {
 };
 
 const STOPPED_STATUSES = ['configured', 'incomplete', 'installed', 'down', 'not_found'];
+
+/**
+ * resize_disks applies IMMEDIATELY — it never accrues (Mark's ruling: gate the
+ * truncate, ungate the grow). A grow lands live: virtio-blk and nvme register a
+ * blockif resize callback and the guest sees the new capacity at once; ahci does
+ * not, so the answer carries requires_restart for those. A shrink is refused
+ * unless it is asked for explicitly AND the machine is powered off.
+ * @param {import('express').Response} res - Response
+ * @param {string} zoneName - Zone name
+ * @param {Array} entries - resize_disks entries
+ * @returns {Promise<{applied?: Object, response?: object}>}
+ */
+const handleResizeDisks = async (res, zoneName, entries) => {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return { response: res.status(400).json({ error: 'resize_disks must be a non-empty array' }) };
+  }
+  const [zoneConfig, currentStatus] = await Promise.all([
+    getZoneConfig(zoneName),
+    getSystemZoneStatus(zoneName),
+  ]);
+  try {
+    const applied = await resizeMachineDisks({
+      zoneName,
+      zoneConfig,
+      entries,
+      poweredOff: STOPPED_STATUSES.includes(currentStatus),
+    });
+    return { applied };
+  } catch (error) {
+    // Every refusal here is a caller error with an actionable message
+    // (shrink without the flag, shrink while running, grow the pool can't back).
+    return { response: res.status(400).json({ error: error.message }) };
+  }
+};
 
 const parsePendingSet = zone => {
   let zoneConfig = zone.configuration || {};
@@ -183,6 +219,45 @@ const applyProvisionerImmediate = async (zone, zoneName, body, changeFields) => 
   };
 };
 
+/**
+ * Build the `status: completed` answer for a PUT that changed ONLY
+ * immediately-applied fields (nothing queued, nothing accrued). Folds in
+ * whatever the guest-agent toggle, resize, and attr writes actually did.
+ * @param {string} zoneName - Zone name
+ * @param {boolean} guestAgentApplied - Whether the guest-agent toggle changed state
+ * @param {Object|null} resized - resize_disks result, or null
+ * @param {string[]} appliedAttrs - Direct-attr fields written
+ * @returns {Object} The response body
+ */
+const buildImmediateResponse = (zoneName, guestAgentApplied, resized, appliedAttrs) => {
+  const messages = [];
+  if (guestAgentApplied) {
+    messages.push('The guest-agent channel change applies at the next machine boot.');
+  }
+  if (resized) {
+    messages.push(
+      resized.requires_restart
+        ? 'Disks resized — this machine runs an ahci/ide backend, which reads its capacity only at attach, so the guest sees the new size after a power cycle.'
+        : 'Disks resized — the guest sees the new size immediately.'
+    );
+  }
+  const response = {
+    success: true,
+    machine_name: zoneName,
+    operation: 'zone_modify',
+    status: 'completed',
+    message: messages.length > 0 ? messages.join(' ') : 'Zone metadata updated successfully.',
+    requires_restart: guestAgentApplied || Boolean(resized?.requires_restart),
+  };
+  if (appliedAttrs.length > 0) {
+    response.applied_attrs = appliedAttrs;
+  }
+  if (resized) {
+    response.resized_disks = resized.results;
+  }
+  return response;
+};
+
 const extractInfrastructureBody = (body, changeFields) => {
   const infrastructure = {};
   const excluded = [
@@ -191,6 +266,8 @@ const extractInfrastructureBody = (body, changeFields) => {
     'tags',
     'snapshots',
     'guest_agent',
+    // Applied immediately in the controller — never accrued, never queued.
+    'resize_disks',
     ...CREDENTIAL_FIELDS,
     ...ZONE_ATTR_FIELDS,
   ];
@@ -537,10 +614,25 @@ export const queuePendingApply = async (zone, createdBy) => {
  *               resize_disks:
  *                 type: array
  *                 description: |
- *                   GROW disk zvols, selected by disk attr name (bootdisk, disk0, …).
- *                   Grow-only — a size smaller than or equal to the current volsize is
- *                   refused (shrinking destroys data). Never applied live: accrues
- *                   (pending_power_cycle) unless the zone is powered off.
+ *                   Resize disk zvols, selected by disk name (bootdisk, disk0, …). Applied
+ *                   IMMEDIATELY — this never accrues and never queues a task.
+ *
+ *                   GROW: lands live. virtio-blk and nvme register a blockif resize
+ *                   callback, so the guest sees the new capacity at once (verified on a
+ *                   running machine). ahci/ahci-hd/ide bake their capacity into the
+ *                   IDENTIFY data at attach and never refresh it, so for those the answer
+ *                   carries `requires_restart: true` on that disk. The ONLY gate on a grow
+ *                   is capacity: a grow the pool cannot back is refused (400) because it
+ *                   would over-provision the pool into a guest-corrupting ENOSPC —
+ *                   `allow_overprovision: true` overrides for deliberate thin provisioning.
+ *
+ *                   SHRINK: gated hard. It TRUNCATES the volume — everything past the new
+ *                   end is destroyed and the guest filesystem will most likely not boot.
+ *                   Requires `allow_shrink: true` AND a powered-off machine; either
+ *                   missing is a 400 naming the reason.
+ *
+ *                   The answer carries `resized_disks[]` ({name, dataset, diskif,
+ *                   previous_bytes, resized_to, shrunk?, requires_restart}).
  *                 items:
  *                   type: object
  *                   required: [name, size]
@@ -551,6 +643,14 @@ export const queuePendingApply = async (zone, createdBy) => {
  *                     size:
  *                       type: string
  *                       example: "100G"
+ *                     allow_shrink:
+ *                       type: boolean
+ *                       default: false
+ *                       description: Required to shrink. DESTRUCTIVE — truncates the volume. Also requires the machine to be powered off.
+ *                     allow_overprovision:
+ *                       type: boolean
+ *                       default: false
+ *                       description: Allow a grow the pool cannot currently back (deliberate thin provisioning).
  *               remove_disks:
  *                 type: array
  *                 description: Disk attribute names to remove (e.g. "disk0")
@@ -785,15 +885,25 @@ export const modifyZone = async (req, res) => {
     }
     const guestAgentApplied = guestAgent.applied;
 
+    let resized = null;
+    if (req.body.resize_disks !== undefined) {
+      const resize = await handleResizeDisks(res, zoneName, req.body.resize_disks);
+      if (resize.response) {
+        return resize.response;
+      }
+      resized = resize.applied;
+    }
+
     await applyImmediateFields(zone, zoneName, req.body);
     const appliedAttrs = await applyZoneAttrFields(zoneName, req.body);
 
-    // If only immediately-applied fields were changed, return early
+    // Immediately-applied fields: nothing queues, nothing accrues.
     const dbOnlyFields = [
       'notes',
       'tags',
       'snapshots',
       'guest_agent',
+      'resize_disks',
       ...CREDENTIAL_FIELDS,
       ...ZONE_ATTR_FIELDS,
     ];
@@ -802,20 +912,7 @@ export const modifyZone = async (req, res) => {
       .filter(f => !dbOnlyFields.includes(f))
       .some(field => req.body[field] !== undefined);
     if (hasDbOnlyChanges && !hasOtherChanges) {
-      const response = {
-        success: true,
-        machine_name: zoneName,
-        operation: 'zone_modify',
-        status: 'completed',
-        message: guestAgentApplied
-          ? 'Zone updated — the guest-agent channel change applies at the next zone boot.'
-          : 'Zone metadata updated successfully.',
-        requires_restart: guestAgentApplied,
-      };
-      if (appliedAttrs.length > 0) {
-        response.applied_attrs = appliedAttrs;
-      }
-      return res.json(response);
+      return res.json(buildImmediateResponse(zoneName, guestAgentApplied, resized, appliedAttrs));
     }
 
     // Provisioner config stores immediately (DB only) so the provision

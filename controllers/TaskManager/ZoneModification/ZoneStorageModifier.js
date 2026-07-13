@@ -144,85 +144,6 @@ const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
   }
 };
 
-const SIZE_FACTORS = { '': 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5 };
-
-/**
- * Parse a ZFS size string (e.g. 100G, 1.5T, 524288) to bytes.
- * @param {string|number} size - Size value
- * @returns {number|null} Bytes, or null when unparseable
- */
-const parseSizeToBytes = size => {
-  const match = String(size)
-    .trim()
-    .match(/^(?<num>\d+(?:\.\d+)?)(?<unit>[KMGTP]?)B?$/i);
-  if (!match) {
-    return null;
-  }
-  return Math.round(parseFloat(match.groups.num) * SIZE_FACTORS[match.groups.unit.toUpperCase()]);
-};
-
-/**
- * Resize zone disks (GROW-ONLY — shrinking a zvol destroys data past the new
- * end, so smaller-or-equal targets are refused). Entries select the disk by
- * its ATTR name (bootdisk, disk0, …); the attr's value is the zvol dataset.
- * Never applied live by design: the accrue pipeline holds this until the zone
- * is off (Mark's ruling).
- * @param {string} zoneName - Zone name
- * @param {Object} zoneConfig - Current zone configuration
- * @param {Array} entries - Array of {name, size}
- */
-const resizeDisks = async (zoneName, zoneConfig, entries, onData = null) => {
-  const jobs = entries.map(async entry => {
-    if (!entry.name || !entry.size) {
-      throw new Error('resize_disks entries need name (disk attr) and size');
-    }
-    const attr = Array.isArray(zoneConfig.attr)
-      ? zoneConfig.attr.find(a => a.name === entry.name)
-      : null;
-    if (!attr || !attr.value) {
-      throw new Error(`${entry.name} is not a disk attr on this zone`);
-    }
-    const diskPath = attr.value;
-
-    const targetBytes = parseSizeToBytes(entry.size);
-    if (!targetBytes) {
-      throw new Error(`resize_disks size '${entry.size}' is not a valid ZFS size`);
-    }
-
-    const currentResult = await executeCommand(
-      `pfexec zfs get -H -p -o value volsize ${diskPath}`,
-      undefined,
-      onData
-    );
-    if (!currentResult.success) {
-      throw new Error(`Cannot read current size of ${diskPath}: ${currentResult.error}`);
-    }
-    const currentBytes = parseInt(currentResult.output.trim(), 10);
-
-    if (targetBytes === currentBytes) {
-      return { name: entry.name, path: diskPath, skipped: 'already that size' };
-    }
-    if (targetBytes < currentBytes) {
-      throw new Error(
-        `Refusing to SHRINK ${entry.name} (${diskPath}): ${entry.size} < current ${currentBytes} bytes — shrinking a zvol destroys data`
-      );
-    }
-
-    const setResult = await executeCommand(
-      `pfexec zfs set volsize=${entry.size} ${diskPath}`,
-      undefined,
-      onData
-    );
-    if (!setResult.success) {
-      throw new Error(`Failed to resize ${entry.name} (${diskPath}): ${setResult.error}`);
-    }
-    return { name: entry.name, path: diskPath, resized_to: entry.size };
-  });
-
-  const results = await Promise.all(jobs);
-  log.task.info('Resized zone disks', { zone_name: zoneName, results });
-};
-
 /**
  * Remove disks from zone configuration
  * @param {string} zoneName - Zone name
@@ -410,12 +331,8 @@ export const handleStorageModifications = async (
     await syncZoneToDatabase(zoneName);
   }
 
-  if (metadata.resize_disks?.length > 0) {
-    await updateTaskProgress(task, 65, { status: 'resizing_disks' });
-    await resizeDisks(zoneName, zoneConfig, metadata.resize_disks, onData);
-    changes.push('resize_disks');
-    await syncZoneToDatabase(zoneName);
-  }
+  // resize_disks is NOT handled here: it applies immediately in the controller
+  // (lib/MachineDiskResize.js) — it never accrues and never queues.
 
   if (metadata.remove_disks?.length > 0) {
     await updateTaskProgress(task, 70, { status: 'removing_disks' });

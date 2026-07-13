@@ -67,7 +67,9 @@ const queueSnapshotTask = async (req, res, operation, metadata, message) => {
  * /machines/{machineName}/snapshots:
  *   get:
  *     summary: List the machine's snapshots
- *     description: Every snapshot across the zone's ZFS tree (root dataset recursively plus out-of-tree media), any producer, grouped by snapshot name with hold counts.
+ *     description: |
+ *       Every snapshot across the machine's ZFS tree (root dataset recursively plus
+ *       out-of-tree media), whatever produced it, grouped by snapshot name.
  *     tags: [Machine Snapshots]
  *     security:
  *       - ApiKeyAuth: []
@@ -80,6 +82,42 @@ const queueSnapshotTask = async (req, res, operation, metadata, message) => {
  *     responses:
  *       200:
  *         description: Snapshot list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 machine_name:
+ *                   type: string
+ *                 total:
+ *                   type: integer
+ *                 snapshots:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       description:
+ *                         type: string
+ *                         nullable: true
+ *                         description: The description given at take time (a ZFS user property); null when none
+ *                       created:
+ *                         type: string
+ *                         format: date-time
+ *                       datasets:
+ *                         type: integer
+ *                         description: How many datasets carry this snapshot
+ *                       dataset_names:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *                         description: The datasets carrying it — the hold/release API is dataset-level (/storage/snapshots/{dataset}@{name}/holds), so these are the handles you act on
+ *                       used_bytes:
+ *                         type: integer
+ *                       holds:
+ *                         type: integer
+ *                         description: Total ZFS holds (userrefs) across those datasets
  */
 export const listMachineSnapshots = async (req, res) => {
   const zone = await findZone(req, res);
@@ -89,16 +127,17 @@ export const listMachineSnapshots = async (req, res) => {
   try {
     const zoneConfig = await getZoneConfig(zone.name);
     const targets = collectSnapshotTargets(zoneConfig);
+    // The description rides a ZFS user property that snapshot_take writes —
+    // it has to be READ BACK here, or a caller's description is written and
+    // then lost forever. dataset_names must ride too: the hold/release API is
+    // dataset-level, so a bare count leaves a caller unable to act on it.
+    const FIELDS = 'name,creation,used,userrefs,zoneweaver:description';
     const commands = [];
     if (targets.root) {
-      commands.push(
-        `pfexec zfs list -H -p -t snapshot -o name,creation,used,userrefs -r ${targets.root}`
-      );
+      commands.push(`pfexec zfs list -H -p -t snapshot -o ${FIELDS} -r ${targets.root}`);
     }
     for (const dataset of targets.externals) {
-      commands.push(
-        `pfexec zfs list -H -p -t snapshot -o name,creation,used,userrefs -d 1 ${dataset}`
-      );
+      commands.push(`pfexec zfs list -H -p -t snapshot -o ${FIELDS} -d 1 ${dataset}`);
     }
 
     const grouped = new Map();
@@ -108,21 +147,29 @@ export const listMachineSnapshots = async (req, res) => {
         continue;
       }
       for (const line of result.output.split('\n')) {
-        const [full, creation, used, userrefs] = line.trim().split('\t');
+        const [full, creation, used, userrefs, description] = line.trim().split('\t');
         if (!full || !full.includes('@')) {
           continue;
         }
-        const [, name] = full.split('@');
+        const [dataset, name] = full.split('@');
         const entry = grouped.get(name) || {
           name,
+          description: null,
           created: null,
           datasets: 0,
+          dataset_names: [],
           used_bytes: 0,
           holds: 0,
         };
         entry.datasets += 1;
+        entry.dataset_names.push(dataset);
         entry.used_bytes += Number(used) || 0;
         entry.holds += Number(userrefs) || 0;
+        // zfs prints an unset user property as '-'; the description is written
+        // on the zone-root snapshot only, so take the first real one.
+        if (!entry.description && description && description !== '-') {
+          entry.description = description;
+        }
         const created = Number(creation) ? new Date(Number(creation) * 1000).toISOString() : null;
         if (created && (!entry.created || created < entry.created)) {
           entry.created = created;

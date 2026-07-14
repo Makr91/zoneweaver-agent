@@ -36,6 +36,40 @@ const NET_RESOURCE_KEYS = new Set([
 ]);
 
 /**
+ * Extract the brand props set on one zadm `net` resource, robust to how zadm
+ * renders them (not host-verified, so handle both shapes it plausibly emits):
+ *   - flat scalar keys on the net object (promiscphys: "on", vqsize: "1024"),
+ *   - and/or a `property`/`properties` array of {name, value} (the raw zonecfg
+ *     `add property (name=…,value=…)` shape).
+ * Only SCALAR values become props — a nested object/array is never leaked as if
+ * it were a property value, so an unexpected rendering yields an empty/partial
+ * props map rather than garbage.
+ * @param {Object} net - One net resource from the zadm view
+ * @returns {Object} Brand props by name
+ */
+const extractNetProps = net => {
+  const props = {};
+  const isScalar = value =>
+    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+
+  for (const [key, value] of Object.entries(net)) {
+    if (key === 'property' || key === 'properties') {
+      const entries = Array.isArray(value) ? value : [value];
+      for (const prop of entries) {
+        if (prop && typeof prop === 'object' && prop.name !== undefined && isScalar(prop.value)) {
+          props[prop.name] = prop.value;
+        }
+      }
+      continue;
+    }
+    if (!NET_RESOURCE_KEYS.has(key) && key !== 'netif' && isScalar(value)) {
+      props[key] = value;
+    }
+  }
+  return props;
+};
+
+/**
  * Build knob_current.nics — each NIC's effective netif and its CURRENTLY SET
  * brand props (the zonecfg net-resource properties bhyve's network backend
  * consumes). An unset prop is ABSENT here; what it runs with instead is
@@ -50,13 +84,7 @@ const NET_RESOURCE_KEYS = new Set([
 const buildNicKnobCurrent = configuration => {
   const nets = Array.isArray(configuration?.net) ? configuration.net : [];
   return nets.filter(Boolean).map(net => {
-    const props = {};
-    for (const [key, value] of Object.entries(net)) {
-      if (!NET_RESOURCE_KEYS.has(key) && key !== 'netif' && value !== undefined) {
-        props[key] = value;
-      }
-    }
-    const entry = { physical: net.physical, props };
+    const entry = { physical: net.physical, props: extractNetProps(net) };
     // The per-NIC netif overrides the zone-level netif attr; when neither is
     // set the brand default applies (knob_defaults['zones.netif']).
     const netif = net.netif || configuration?.netif;

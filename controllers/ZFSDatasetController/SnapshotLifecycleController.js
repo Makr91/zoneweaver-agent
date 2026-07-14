@@ -9,20 +9,20 @@ import { log } from '../../lib/Logger.js';
 
 /**
  * @swagger
- * /storage/datasets/{name}/snapshots:
+ * /storage/dataset/snapshots:
  *   post:
  *     summary: Create ZFS snapshot
- *     description: Creates a snapshot of a dataset (async task)
+ *     description: Creates a snapshot of a dataset (async task). The dataset name rides the `name` QUERY parameter, not the path (dataset names have slashes).
  *     tags: [ZFS Snapshots]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: name
  *         required: true
  *         schema:
  *           type: string
- *         description: Dataset name
+ *         description: Dataset name (e.g. Array-0/zones/web/data)
  *     requestBody:
  *       required: true
  *       content:
@@ -50,7 +50,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to create task
  */
 export const createSnapshot = async (req, res) => {
-  const { name } = req.params;
+  const { name } = req.query;
   const { snapshot_name, recursive = false, properties = {} } = req.body;
 
   try {
@@ -118,20 +118,20 @@ export const createSnapshot = async (req, res) => {
 
 /**
  * @swagger
- * /storage/snapshots/{snapshot}:
+ * /storage/snapshot:
  *   delete:
  *     summary: Destroy ZFS snapshot
- *     description: Destroys a ZFS snapshot (async task)
+ *     description: Destroys a ZFS snapshot (async task). The snapshot rides the `name` QUERY parameter, not the path (names have slashes).
  *     tags: [ZFS Snapshots]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
- *         name: snapshot
+ *       - in: query
+ *         name: name
  *         required: true
  *         schema:
  *           type: string
- *         description: Snapshot name (dataset@snapshot)
+ *         description: Snapshot (dataset@snapshot, e.g. Array-0/zones/web/boot@snap1)
  *     requestBody:
  *       content:
  *         application/json:
@@ -155,7 +155,7 @@ export const createSnapshot = async (req, res) => {
  *         description: Failed to create task
  */
 export const destroySnapshot = async (req, res) => {
-  const { snapshot } = req.params;
+  const { name: snapshot } = req.query;
   const { recursive = false, defer = false } = req.body;
 
   try {
@@ -220,19 +220,20 @@ export const destroySnapshot = async (req, res) => {
 
 /**
  * @swagger
- * /storage/snapshots/{snapshot}/rollback:
+ * /storage/snapshot/rollback:
  *   post:
  *     summary: Rollback ZFS snapshot
- *     description: Rolls back a dataset to a previous snapshot (async task)
+ *     description: Rolls back a dataset to a previous snapshot (async task). The snapshot rides the `name` QUERY parameter, not the path.
  *     tags: [ZFS Snapshots]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
- *         name: snapshot
+ *       - in: query
+ *         name: name
  *         required: true
  *         schema:
  *           type: string
+ *         description: Snapshot (dataset@snapshot, e.g. Array-0/zones/web/boot@snap1)
  *     requestBody:
  *       content:
  *         application/json:
@@ -256,7 +257,7 @@ export const destroySnapshot = async (req, res) => {
  *         description: Failed to create task
  */
 export const rollbackSnapshot = async (req, res) => {
-  const { snapshot } = req.params;
+  const { name: snapshot } = req.query;
   const { recursive = false, force = false } = req.body;
 
   try {

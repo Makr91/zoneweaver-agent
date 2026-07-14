@@ -122,20 +122,24 @@ export const listDatasets = async (req, res) => {
 
 /**
  * @swagger
- * /storage/datasets/{name}:
+ * /storage/dataset:
  *   get:
  *     summary: Get dataset details
- *     description: Retrieves detailed properties of a ZFS dataset
+ *     description: |
+ *       Retrieves detailed properties of a ZFS dataset. The dataset name rides
+ *       the `name` QUERY parameter, not the path — a dataset name has slashes
+ *       (pool/child/zvol) and the aggregating server proxy decodes and re-splits
+ *       path segments, so a path-carried name never reaches the agent whole.
  *     tags: [ZFS Datasets]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: name
  *         required: true
  *         schema:
  *           type: string
- *         description: Dataset name (URL encoded)
+ *         description: Dataset name (e.g. Array-0/zones/web/boot)
  *     responses:
  *       200:
  *         description: Dataset details
@@ -161,11 +165,11 @@ export const listDatasets = async (req, res) => {
  *         description: Failed to get dataset details
  */
 export const getDatasetDetails = async (req, res) => {
-  const { name } = req.params;
+  const { name } = req.query;
 
   try {
     if (!name) {
-      return res.status(400).json({ error: 'Dataset name is required' });
+      return res.status(400).json({ error: 'Dataset name is required (query parameter ?name=)' });
     }
 
     // Flags MUST precede the property operand — `zfs get all -H -p <name>`

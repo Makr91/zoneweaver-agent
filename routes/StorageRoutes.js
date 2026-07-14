@@ -109,23 +109,26 @@ const registerZfsRoutes = router => {
   router.post('/system/zfs/arc/validate', verifyApiKey, validateARCConfig); // Validate ZFS ARC configuration
   router.post('/system/zfs/arc/reset', verifyApiKey, resetARCConfig); // Reset ZFS ARC to defaults
 
-  // ZFS Dataset Management Routes
+  // ZFS Dataset Management Routes — per-name ops carry the dataset in the
+  // `?name=` QUERY, never a path segment: dataset names have slashes
+  // (pool/child/zvol) and the aggregating server proxy decodes and re-splits
+  // path segments, so a path-carried name never reaches the agent whole.
   router.get('/storage/datasets', verifyApiKey, listDatasets); // List ZFS datasets
-  router.get('/storage/datasets/:name', verifyApiKey, getDatasetDetails); // Get dataset details
-  router.post('/storage/datasets', verifyApiKey, createDataset); // Create dataset
-  router.delete('/storage/datasets/:name', verifyApiKey, destroyDataset); // Delete dataset
-  router.put('/storage/datasets/:name/properties', verifyApiKey, setDatasetProperties); // Set dataset properties
-  router.post('/storage/datasets/:name/clone', verifyApiKey, cloneDataset); // Clone dataset from snapshot
-  router.post('/storage/datasets/:name/promote', verifyApiKey, promoteDataset); // Promote clone to independent dataset
-  router.post('/storage/datasets/:name/rename', verifyApiKey, renameDataset); // Rename dataset
+  router.post('/storage/datasets', verifyApiKey, createDataset); // Create dataset (name in body)
+  router.get('/storage/dataset', verifyApiKey, getDatasetDetails); // Get dataset details (?name=)
+  router.delete('/storage/dataset', verifyApiKey, destroyDataset); // Delete dataset (?name=)
+  router.put('/storage/dataset/properties', verifyApiKey, setDatasetProperties); // Set dataset properties (?name=)
+  router.post('/storage/dataset/clone', verifyApiKey, cloneDataset); // Clone dataset from snapshot (?name=snapshot)
+  router.post('/storage/dataset/promote', verifyApiKey, promoteDataset); // Promote clone (?name=)
+  router.post('/storage/dataset/rename', verifyApiKey, renameDataset); // Rename dataset (?name=)
 
-  // ZFS Snapshot Management Routes
-  router.post('/storage/datasets/:name/snapshots', verifyApiKey, createSnapshot); // Create snapshot
-  router.delete('/storage/snapshots/:snapshot', verifyApiKey, destroySnapshot); // Delete snapshot
-  router.post('/storage/snapshots/:snapshot/rollback', verifyApiKey, rollbackSnapshot); // Rollback to snapshot
-  router.post('/storage/snapshots/:snapshot/holds', verifyApiKey, holdSnapshot); // Hold snapshot
-  router.delete('/storage/snapshots/:snapshot/holds/:tag', verifyApiKey, releaseSnapshot); // Release snapshot hold
-  router.get('/storage/snapshots/:snapshot/holds', verifyApiKey, listHolds); // List snapshot holds
+  // ZFS Snapshot Management Routes — snapshot rides `?name=dataset@snap`
+  router.post('/storage/dataset/snapshots', verifyApiKey, createSnapshot); // Create snapshot (?name=dataset)
+  router.delete('/storage/snapshot', verifyApiKey, destroySnapshot); // Delete snapshot (?name=)
+  router.post('/storage/snapshot/rollback', verifyApiKey, rollbackSnapshot); // Rollback to snapshot (?name=)
+  router.post('/storage/snapshot/holds', verifyApiKey, holdSnapshot); // Hold snapshot (?name=)
+  router.delete('/storage/snapshot/holds', verifyApiKey, releaseSnapshot); // Release snapshot hold (?name=&tag=)
+  router.get('/storage/snapshot/holds', verifyApiKey, listHolds); // List snapshot holds (?name=)
 
   // ZFS Pool Management Routes
   router.get('/storage/pools', verifyApiKey, listPools); // List ZFS pools

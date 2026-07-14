@@ -258,6 +258,34 @@ const buildImmediateResponse = (zoneName, guestAgentApplied, resized, appliedAtt
   return response;
 };
 
+/**
+ * Fold the immediately-applied results (guest-agent toggle, resize, direct
+ * attrs) into a response that is really ABOUT the accrued/queued
+ * infrastructure changes. Without this, a PUT that both resizes a disk AND
+ * changes ram answers the pending/queued body and never mentions that the disk
+ * was resized — the resize happened, the caller was not told.
+ * @param {Object} response - The accrue or queue response (mutated + returned)
+ * @param {boolean} guestAgentApplied - Whether the guest-agent toggle changed state
+ * @param {Object|null} resized - resize_disks result, or null
+ * @param {string[]} appliedAttrs - Direct-attr fields written
+ * @returns {Object} The same response, with the immediate side-effects folded in
+ */
+const decorateWithImmediate = (response, guestAgentApplied, resized, appliedAttrs) => {
+  if (appliedAttrs.length > 0) {
+    response.applied_attrs = appliedAttrs;
+  }
+  if (resized) {
+    response.resized_disks = resized.results;
+    response.message = `${response.message} Disks were also resized immediately${
+      resized.requires_restart ? ' (guest sees new size after a power cycle on ahci/ide)' : ''
+    }.`;
+  }
+  if (guestAgentApplied) {
+    response.message = `${response.message} The guest-agent channel change applies at the next boot.`;
+  }
+  return response;
+};
+
 const extractInfrastructureBody = (body, changeFields) => {
   const infrastructure = {};
   const excluded = [
@@ -939,7 +967,9 @@ export const modifyZone = async (req, res) => {
       resourceValidation.warnings
     );
     if (pendingResponse) {
-      return res.json(pendingResponse);
+      return res.json(
+        decorateWithImmediate(pendingResponse, guestAgentApplied, resized, appliedAttrs)
+      );
     }
 
     // Create the zone_modify task
@@ -957,7 +987,9 @@ export const modifyZone = async (req, res) => {
     if (resourceValidation.warnings.length > 0) {
       modifyResponse.resource_warnings = resourceValidation.warnings;
     }
-    return res.json(modifyResponse);
+    return res.json(
+      decorateWithImmediate(modifyResponse, guestAgentApplied, resized, appliedAttrs)
+    );
   } catch (error) {
     log.database.error('Database error modifying zone task', {
       error: error.message,

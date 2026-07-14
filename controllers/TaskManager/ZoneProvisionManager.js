@@ -4,6 +4,7 @@
  *              Each operation runs as a separate task in the TaskQueue with depends_on chaining.
  */
 
+import { existsSync } from 'fs';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import {
@@ -13,6 +14,7 @@ import {
   scpSyncFiles,
   syncFilesFromZone,
   scpSyncFilesFromZone,
+  uploadFile,
 } from '../../lib/SSHManager.js';
 import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';
 import Zones from '../../models/ZoneModel.js';
@@ -596,6 +598,104 @@ export const executeZoneSyncbackTask = async task => {
   } catch (error) {
     log.task.error('Zone syncback failed', { zone_name, error: error.message });
     return { success: false, error: `Syncback failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute zone shell-script task (GRANULAR: handles ONE script).
+ * Hosts.rb provisioning.shell semantics: the script is a package-relative
+ * path inside the provisioning dataset. It reaches the guest by single-file
+ * upload (never trusting the folder sync to have covered it), runs privileged
+ * (Vagrant's shell-provisioner model: chmod +x, sudo, shebang decides the
+ * interpreter), and the upload is removed afterwards.
+ * @param {Object} task - Task object from TaskQueue
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeZoneShellTask = async task => {
+  const { zone_name } = task;
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(task.metadata, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { ip, port = 22, credentials = {}, script } = metadata;
+    const { onData } = task;
+
+    if (!ip || !script) {
+      return { success: false, error: 'ip and script are required in task metadata' };
+    }
+
+    const provisioningBasePath = await getProvisioningBasePath(zone_name);
+    if (!script.startsWith('/') && !provisioningBasePath) {
+      return {
+        success: false,
+        error: 'Zone has no provisioning dataset path to resolve the relative script against',
+      };
+    }
+    const resolvedScript = script.startsWith('/') ? script : `${provisioningBasePath}/${script}`;
+    if (!existsSync(resolvedScript)) {
+      return {
+        success: false,
+        error: `Script not found in provisioning dataset: ${resolvedScript}`,
+      };
+    }
+
+    const username = credentials.username || 'root';
+    const remotePath = `/tmp/zoneweaver-shell-${task.id}`;
+
+    const provConfig = config.get('provisioning') || {};
+    const scriptTimeout = (provConfig.shell_script_timeout_seconds || 1800) * 1000;
+
+    log.task.info('Running shell script in zone', {
+      zone_name,
+      script,
+      remote_path: remotePath,
+    });
+
+    await updateTaskProgress(task, 10, { status: 'uploading_script' });
+    const upload = await uploadFile(ip, username, credentials, resolvedScript, remotePath, port, {
+      provisioningBasePath,
+      onData,
+    });
+    if (!upload.success) {
+      return { success: false, error: `Script upload failed: ${upload.error}` };
+    }
+
+    await updateTaskProgress(task, 30, { status: 'running_script' });
+    const result = await executeSSHCommand(
+      ip,
+      username,
+      credentials,
+      `chmod +x ${remotePath} && sudo ${remotePath}`,
+      port,
+      { timeout: scriptTimeout, provisioningBasePath, onData }
+    );
+
+    // Best-effort cleanup — never fails the run.
+    await updateTaskProgress(task, 90, { status: 'cleaning_up' });
+    await executeSSHCommand(ip, username, credentials, `rm -f ${remotePath}`, port, {
+      provisioningBasePath,
+      onData,
+    });
+
+    if (result.success) {
+      return { success: true, message: `Shell script completed: ${script}` };
+    }
+    const errorOutput = [result.stdout, result.stderr].filter(Boolean).join('\n---STDERR---\n');
+    return {
+      success: false,
+      error: `Shell script failed (exit ${result.exitCode}): ${script}\n${errorOutput}`,
+    };
+  } catch (error) {
+    log.task.error('Zone shell script failed', { zone_name, error: error.message });
+    return { success: false, error: `Shell script failed: ${error.message}` };
   }
 };
 

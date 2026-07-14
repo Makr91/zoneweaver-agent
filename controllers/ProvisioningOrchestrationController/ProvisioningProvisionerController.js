@@ -19,9 +19,12 @@ import {
  *   post:
  *     summary: Run machine provisioners ad-hoc
  *     description: |
- *       Creates a zone_provision task to execute provisioners (shell scripts, ansible, etc.)
- *       against the machine. This is independent of the full provisioning pipeline and can be
- *       called anytime after SSH is accessible.
+ *       Creates a zone_provision task chain to execute the configured Ansible
+ *       playbooks against the machine. This is independent of the full
+ *       provisioning pipeline and can be called anytime after SSH is
+ *       accessible. Shell scripts (provisioning.shell) run ONLY in the full
+ *       pipeline — Hosts.rb has no ad-hoc shell slice (shared rule with the
+ *       Go agent).
  *
  *       Prerequisites:
  *       - Machine must be running
@@ -95,12 +98,13 @@ export const runProvisioners = async (req, res) => {
       });
     }
 
-    // Create parent task for provisioning
+    // The parent is a pure anchor (born running, never dispatched); its
+    // children start immediately and drive its completion.
     const provisionParentTask = await createTask({
       zone_name: zoneName,
       operation: 'zone_provision_parent',
-      metadata: { total_playbooks: playbooks.length },
-      depends_on: null,
+      metadata: { total_playbooks: playbooks.length, skipped_playbooks: skipped },
+      parent: true,
       parent_task_id: null,
       created_by: req.entity.name,
     });
@@ -113,6 +117,7 @@ export const runProvisioners = async (req, res) => {
       credentials,
       provisioning,
       provisionParentTask.id,
+      null,
       req.entity.name
     );
 

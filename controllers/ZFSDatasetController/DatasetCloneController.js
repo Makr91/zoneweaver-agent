@@ -9,20 +9,20 @@ import { log } from '../../lib/Logger.js';
 
 /**
  * @swagger
- * /storage/datasets/{name}/clone:
+ * /storage/dataset/clone:
  *   post:
  *     summary: Clone ZFS snapshot
- *     description: Clones a snapshot to a new dataset (async task)
+ *     description: Clones a snapshot to a new dataset (async task). The source snapshot rides the `name` QUERY parameter, not the path (names have slashes).
  *     tags: [ZFS Datasets]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: name
  *         required: true
  *         schema:
  *           type: string
- *         description: Snapshot name (dataset@snapshot)
+ *         description: Source snapshot (dataset@snapshot, e.g. Array-0/zones/web/boot@snap1)
  *     requestBody:
  *       required: true
  *       content:
@@ -48,7 +48,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to create task
  */
 export const cloneDataset = async (req, res) => {
-  const { name: snapshot } = req.params;
+  const { name: snapshot } = req.query;
   const { target, properties = {} } = req.body;
 
   try {
@@ -119,19 +119,20 @@ export const cloneDataset = async (req, res) => {
 
 /**
  * @swagger
- * /storage/datasets/{name}/promote:
+ * /storage/dataset/promote:
  *   post:
  *     summary: Promote ZFS clone
- *     description: Promotes a clone to an independent dataset (async task)
+ *     description: Promotes a clone to an independent dataset (async task). The dataset name rides the `name` QUERY parameter, not the path.
  *     tags: [ZFS Datasets]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: name
  *         required: true
  *         schema:
  *           type: string
+ *         description: Dataset name (e.g. Array-0/zones/web/boot)
  *     responses:
  *       202:
  *         description: Promote task created
@@ -141,7 +142,7 @@ export const cloneDataset = async (req, res) => {
  *         description: Failed to create task
  */
 export const promoteDataset = async (req, res) => {
-  const { name } = req.params;
+  const { name } = req.query;
 
   try {
     if (!name) {

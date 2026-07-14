@@ -119,6 +119,12 @@ export const PROVISIONING_SCHEMA = {
         default: 300,
         min: 60,
       },
+      shell_script_timeout_seconds: {
+        type: 'integer',
+        description: 'Timeout for a single provisioning shell script run (provisioning.shell)',
+        default: 1800,
+        min: 60,
+      },
       ssh: {
         type: 'object',
         description: 'Provisioning SSH access',

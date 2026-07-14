@@ -19,7 +19,11 @@ import { buildProvisioningTaskChain } from './utils/TaskChainBuilder.js';
  *       2. Run zlogin recipe (zone_setup) to configure network
  *       3. Wait for SSH to become available (zone_wait_ssh)
  *       4. Sync provisioning files to the machine (zone_sync)
- *       5. Execute provisioners (zone_provision) — playbooks honor their
+ *       5. Run shell scripts inside the machine (zone_shell) —
+ *          provisioning.shell.scripts in list order when
+ *          provisioning.shell.enabled; scripts carry no run directive and
+ *          run every provision
+ *       6. Execute provisioners (zone_provision) — playbooks honor their
  *          `run` directive against the machine's provision history
  *          (`always` = every run; `once`/unset = only when never provisioned;
  *          `not_first` = only after a prior successful provision)
@@ -163,12 +167,17 @@ export const getProvisioningStatus = async (req, res) => {
         operation: [
           'zone_provision_orchestration',
           'zone_provisioning_extract',
+          'zone_provisioning_stage',
           'zone_setup',
           'zone_wait_ssh',
           'zone_sync_parent',
           'zone_sync',
+          'zone_shell_parent',
+          'zone_shell',
           'zone_provision_parent',
           'zone_provision',
+          'zone_syncback_parent',
+          'zone_syncback',
         ],
       },
       order: [['created_at', 'DESC']],

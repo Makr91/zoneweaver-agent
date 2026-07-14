@@ -53,6 +53,10 @@ const { DataTypes } = Sequelize;
  *             - zone_wait_ssh
  *             - zone_sync
  *             - zone_sync_parent
+ *             - zone_syncback
+ *             - zone_syncback_parent
+ *             - zone_shell
+ *             - zone_shell_parent
  *             - zone_provision
  *             - zone_provision_parent
  *             - zone_provision_orchestration

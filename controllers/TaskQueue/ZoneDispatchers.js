@@ -27,6 +27,7 @@ import {
   executeZoneProvisioningExtractTask,
   executeZoneSyncTask,
   executeZoneSyncbackTask,
+  executeZoneShellTask,
   executeZoneProvisionTask,
 } from '../TaskManager/ZoneProvisionManager.js';
 import { executeProvisionerImportTask } from '../TaskManager/ProvisionerImportManager.js';
@@ -62,6 +63,7 @@ export const TASK_OBJECT_OPERATIONS = {
   zone_wait_ssh: executeZoneWaitSSHTask,
   zone_sync: executeZoneSyncTask,
   zone_syncback: executeZoneSyncbackTask,
+  zone_shell: executeZoneShellTask,
   zone_provision: executeZoneProvisionTask,
 };
 

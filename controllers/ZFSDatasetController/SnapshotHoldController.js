@@ -9,19 +9,20 @@ import { log } from '../../lib/Logger.js';
 
 /**
  * @swagger
- * /storage/snapshots/{snapshot}/holds:
+ * /storage/snapshot/holds:
  *   post:
  *     summary: Hold ZFS snapshot
- *     description: Adds a hold tag to a snapshot (async task)
+ *     description: Adds a hold tag to a snapshot (async task). The snapshot rides the `name` QUERY parameter, not the path (names have slashes).
  *     tags: [ZFS Snapshots]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
- *         name: snapshot
+ *       - in: query
+ *         name: name
  *         required: true
  *         schema:
  *           type: string
+ *         description: Snapshot (dataset@snapshot, e.g. Array-0/zones/web/boot@snap1)
  *     requestBody:
  *       required: true
  *       content:
@@ -47,7 +48,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to create task
  */
 export const holdSnapshot = async (req, res) => {
-  const { snapshot } = req.params;
+  const { name: snapshot } = req.query;
   const { tag, recursive = false } = req.body;
 
   try {
@@ -118,24 +119,26 @@ export const holdSnapshot = async (req, res) => {
 
 /**
  * @swagger
- * /storage/snapshots/{snapshot}/holds/{tag}:
+ * /storage/snapshot/holds:
  *   delete:
  *     summary: Release ZFS snapshot hold
- *     description: Removes a hold tag from a snapshot (async task)
+ *     description: Removes a hold tag from a snapshot (async task). Snapshot and tag both ride QUERY parameters, not the path (snapshot names have slashes).
  *     tags: [ZFS Snapshots]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
- *         name: snapshot
+ *       - in: query
+ *         name: name
  *         required: true
  *         schema:
  *           type: string
- *       - in: path
+ *         description: Snapshot (dataset@snapshot, e.g. Array-0/zones/web/boot@snap1)
+ *       - in: query
  *         name: tag
  *         required: true
  *         schema:
  *           type: string
+ *         description: The hold tag to release
  *     requestBody:
  *       content:
  *         application/json:
@@ -156,7 +159,7 @@ export const holdSnapshot = async (req, res) => {
  *         description: Failed to create task
  */
 export const releaseSnapshot = async (req, res) => {
-  const { snapshot, tag } = req.params;
+  const { name: snapshot, tag } = req.query;
   const { recursive = false } = req.body;
 
   try {
@@ -227,19 +230,20 @@ export const releaseSnapshot = async (req, res) => {
 
 /**
  * @swagger
- * /storage/snapshots/{snapshot}/holds:
+ * /storage/snapshot/holds:
  *   get:
  *     summary: List snapshot holds
- *     description: Lists holds on a specific snapshot
+ *     description: Lists holds on a specific snapshot. The snapshot rides the `name` QUERY parameter, not the path.
  *     tags: [ZFS Snapshots]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
- *         name: snapshot
+ *       - in: query
+ *         name: name
  *         required: true
  *         schema:
  *           type: string
+ *         description: Snapshot (dataset@snapshot, e.g. Array-0/zones/web/boot@snap1)
  *       - in: query
  *         name: recursive
  *         schema:
@@ -276,8 +280,7 @@ export const releaseSnapshot = async (req, res) => {
  *         description: Failed to list holds
  */
 export const listHolds = async (req, res) => {
-  const { snapshot } = req.params;
-  const { recursive = false } = req.query;
+  const { name: snapshot, recursive = false } = req.query;
 
   try {
     if (!snapshot) {

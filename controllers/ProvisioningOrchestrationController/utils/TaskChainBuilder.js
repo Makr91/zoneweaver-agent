@@ -3,11 +3,16 @@
  */
 
 import { log } from '../../../lib/Logger.js';
-import { extractPlaybooks, extractFolders } from '../../../lib/ProvisionerConfigBuilder.js';
+import {
+  extractPlaybooks,
+  extractFolders,
+  extractShellScripts,
+} from '../../../lib/ProvisionerConfigBuilder.js';
 import {
   createTask,
   createSequentialFolderTasks,
   createSequentialPlaybookTasks,
+  createSequentialShellTasks,
   createSequentialSyncbackTasks,
   syncbackEligibleFolders,
   shouldSkipZoneSetup,
@@ -155,7 +160,46 @@ const queueSyncPhase = async (ctx, folders, previousTaskId) => {
 };
 
 /**
- * Step 5: the provision phase — anchor + one zone_provision per playbook
+ * Step 5: the shell phase — anchor + one zone_shell per script
+ * (provisioning.shell, Hosts.rb order: after sync, before provision — scripts
+ * carry no run directive and run every provision), same anchor rule as sync.
+ * @param {Object} ctx - Chain context
+ * @param {string|null} previousTaskId - Outer-chain dependency
+ * @returns {Promise<string|null>} The last shell child's id
+ */
+const queueShellPhase = async (ctx, previousTaskId) => {
+  const scripts = extractShellScripts(ctx.provisioning);
+  if (scripts.length === 0) {
+    return previousTaskId;
+  }
+  const shellParentTask = await createTask({
+    zone_name: ctx.zoneName,
+    operation: 'zone_shell_parent',
+    metadata: { total_scripts: scripts.length },
+    parent: true,
+    parent_task_id: ctx.parentTaskId,
+    created_by: ctx.createdBy,
+  });
+  ctx.taskChain.push({
+    step: 'shell_parent',
+    task_id: shellParentTask.id,
+    script_count: scripts.length,
+  });
+
+  return createSequentialShellTasks(
+    scripts,
+    ctx.zoneName,
+    ctx.zoneIP,
+    ctx.credentials,
+    ctx.provisioning,
+    shellParentTask.id,
+    previousTaskId,
+    ctx.createdBy
+  );
+};
+
+/**
+ * Step 6: the provision phase — anchor + one zone_provision per playbook
  * (run-directive filtered), same anchor rule as sync.
  * @param {Object} ctx - Chain context
  * @param {string|null} previousTaskId - Outer-chain dependency
@@ -206,7 +250,7 @@ const queueProvisionPhase = async (ctx, previousTaskId) => {
 };
 
 /**
- * Step 6: the syncback phase AFTER provision (Go's machine_syncback shape) —
+ * Step 7: the syncback phase AFTER provision (Go's machine_syncback shape) —
  * flagged folders pull back guest → host, gated on the LAST playbook child.
  * @param {Object} ctx - Chain context
  * @param {Array} folders - All folders (eligibility filtered here)
@@ -288,6 +332,7 @@ export const buildProvisioningTaskChain = async params => {
 
   const folders = extractFolders(ctx.provisioning);
   previousTaskId = await queueSyncPhase(ctx, folders, previousTaskId);
+  previousTaskId = await queueShellPhase(ctx, previousTaskId);
   previousTaskId = await queueProvisionPhase(ctx, previousTaskId);
   await queueSyncbackPhase(ctx, folders, previousTaskId);
 

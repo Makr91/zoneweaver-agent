@@ -118,6 +118,51 @@ export const createSequentialPlaybookTasks = (
   );
 
 /**
+ * Create sequential shell-script tasks (one zone_shell per script, list order
+ * — Hosts.rb runs provisioning.shell.scripts in order, after the sync phase
+ * and before the provision phase). Same first-child dependency rule as the
+ * sync chain: children never gate on their own parent anchor.
+ * @param {Array<string>} scripts - Package-relative script paths
+ * @param {string} zoneName - Zone name
+ * @param {string} zoneIP - Zone IP address
+ * @param {Object} credentials - SSH credentials
+ * @param {Object} provisioning - Provisioning config
+ * @param {string} shellParentTaskId - Parent anchor task ID
+ * @param {string|null} firstDependsOn - Outer-chain dependency for the first child
+ * @param {string} createdBy - Task creator
+ * @returns {Promise<string|null>} The LAST shell child's task id
+ */
+export const createSequentialShellTasks = (
+  scripts,
+  zoneName,
+  zoneIP,
+  credentials,
+  provisioning,
+  shellParentTaskId,
+  firstDependsOn,
+  createdBy
+) =>
+  scripts.reduce(
+    (promise, script) =>
+      promise.then(prevTaskId =>
+        createTask({
+          zone_name: zoneName,
+          operation: 'zone_shell',
+          metadata: {
+            ip: zoneIP,
+            port: provisioning.ssh_port || 22,
+            credentials,
+            script,
+          },
+          depends_on: prevTaskId,
+          parent_task_id: shellParentTaskId,
+          created_by: createdBy,
+        }).then(task => task.id)
+      ),
+    Promise.resolve(firstDependsOn)
+  );
+
+/**
  * Folders eligible for syncback (shared semantics with the Go agent):
  * syncback: true, not disabled, and not the virtualbox pseudo-transport.
  * @param {Array} folders - Folders from the provisioning document

@@ -145,19 +145,20 @@ export const createDataset = async (req, res) => {
 
 /**
  * @swagger
- * /storage/datasets/{name}:
+ * /storage/dataset:
  *   delete:
  *     summary: Destroy ZFS dataset
- *     description: Destroys a ZFS dataset (async task)
+ *     description: Destroys a ZFS dataset (async task). The dataset name rides the `name` QUERY parameter, not the path (dataset names have slashes).
  *     tags: [ZFS Datasets]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: name
  *         required: true
  *         schema:
  *           type: string
+ *         description: Dataset name (e.g. Array-0/zones/web/data)
  *     requestBody:
  *       content:
  *         application/json:
@@ -179,7 +180,7 @@ export const createDataset = async (req, res) => {
  *         description: Failed to create task
  */
 export const destroyDataset = async (req, res) => {
-  const { name } = req.params;
+  const { name } = req.query;
   const { recursive = false, force = false } = req.body;
 
   try {
@@ -242,19 +243,20 @@ export const destroyDataset = async (req, res) => {
 
 /**
  * @swagger
- * /storage/datasets/{name}/properties:
+ * /storage/dataset/properties:
  *   put:
  *     summary: Set dataset properties
- *     description: Updates ZFS properties for a dataset (async task)
+ *     description: Updates ZFS properties for a dataset (async task). The dataset name rides the `name` QUERY parameter, not the path.
  *     tags: [ZFS Datasets]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: name
  *         required: true
  *         schema:
  *           type: string
+ *         description: Dataset name (e.g. Array-0/zones/web/data)
  *     requestBody:
  *       required: true
  *       content:
@@ -286,7 +288,7 @@ export const destroyDataset = async (req, res) => {
  *         description: Failed to create task
  */
 export const setDatasetProperties = async (req, res) => {
-  const { name } = req.params;
+  const { name } = req.query;
   const { properties, allow_shrink } = req.body;
 
   try {

@@ -447,12 +447,12 @@ const resolveCloneDiskSources = async (source, snapshot, sourceConfig) => {
  *                 description: |
  *                   current = clone today's disk state via ZFS snapshots;
  *                   template = rebuild fresh disks from the stored creation config.
- *               snapshot:
+ *               snapshot_name:
  *                 type: string
  *                 description: |
  *                   Named source snapshot to clone from (source "current" only) —
  *                   must exist on every source dataset. Omit for a fresh snapshot
- *                   of the current state.
+ *                   of the current state. (Same key as export/publish.)
  *               linked:
  *                 type: boolean
  *                 default: true
@@ -480,7 +480,7 @@ export const cloneZone = async (req, res) => {
     const {
       name: explicitName,
       source = 'current',
-      snapshot = '',
+      snapshot_name: snapshot = '',
       linked = true,
       start_after_create = false,
     } = req.body;

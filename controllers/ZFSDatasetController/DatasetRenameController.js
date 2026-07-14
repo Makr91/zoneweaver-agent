@@ -9,19 +9,20 @@ import { log } from '../../lib/Logger.js';
 
 /**
  * @swagger
- * /storage/datasets/{name}/rename:
+ * /storage/dataset/rename:
  *   post:
  *     summary: Rename ZFS dataset
- *     description: Renames a ZFS dataset (async task)
+ *     description: Renames a ZFS dataset (async task). The dataset name rides the `name` QUERY parameter, not the path.
  *     tags: [ZFS Datasets]
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: name
  *         required: true
  *         schema:
  *           type: string
+ *         description: Current dataset name (e.g. Array-0/zones/web/data)
  *     requestBody:
  *       required: true
  *       content:
@@ -50,7 +51,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to create task
  */
 export const renameDataset = async (req, res) => {
-  const { name } = req.params;
+  const { name } = req.query;
   const { new_name, recursive = false, force = false } = req.body;
 
   try {

@@ -4,11 +4,14 @@ import { log } from '../../lib/Logger.js';
 import { validateZoneName } from '../../lib/ZoneValidation.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
 import { getPackageVersion } from '../../lib/ProvisionerRegistry.js';
+import { validateAnswers } from '../../lib/FieldDsl.js';
 import {
   renderHostsTemplate,
-  parseHostsDocument,
+  parseHostsDocuments,
   splitHostsDocument,
   findLegacyMarkers,
+  buildShowIfRoleFlags,
+  versionConfiguration,
 } from '../../lib/HostsTemplateRenderer.js';
 import { getSystemZoneStatus } from './ZoneQueryController.js';
 import {
@@ -18,10 +21,68 @@ import {
   handleAutoDownload,
 } from './ZoneCreationHelpers.js';
 
+/**
+ * Stamp one rendered host entry's provisioner sections and split infra —
+ * shared by the single- and multi-host paths.
+ * @param {Object} host - One rendered hosts[] entry
+ * @param {Object} ref - The request's provisioner reference
+ * @param {Object} pkg - Registry version entry
+ * @returns {{infra: Object, provisioner: Object}}
+ */
+const splitAndStampHost = (host, ref, pkg) => {
+  const { infra, provisioner } = splitHostsDocument(host);
+  if (!provisioner.provisioner_name) {
+    provisioner.provisioner_name = ref.name;
+  }
+  if (!provisioner.provisioner_version) {
+    provisioner.provisioner_version = pkg.version;
+  }
+  return { infra, provisioner };
+};
+
+/**
+ * Build a standalone create body for one host of a MULTI-HOST render (§5
+ * hosts[]): each machine gets its own document; the request's nics apply to
+ * every machine MINUS the vnic name (auto-generates per server_id).
+ * @param {Object} host - One rendered hosts[] entry
+ * @param {Object} body - The original request body
+ * @param {Object} ref - Provisioner reference
+ * @param {Object} pkg - Registry version entry
+ * @returns {Object} Per-machine create body
+ */
+const buildMultiHostBody = (host, body, ref, pkg) => {
+  const { infra, provisioner } = splitAndStampHost(host, ref, pkg);
+  const sub = {
+    settings: infra.settings || {},
+    networks: infra.networks || [],
+    provisioner,
+    provisioner_ref: { name: ref.name, version: pkg.version },
+    force: body.force,
+    start_after_create: body.start_after_create,
+  };
+  if (infra.disks) {
+    sub.disks = infra.disks;
+  }
+  if (infra.zones) {
+    sub.zones = { ...(body.zones || {}), ...infra.zones };
+  }
+  if (infra.cloud_init) {
+    sub.cloud_init = infra.cloud_init;
+  }
+  if (Array.isArray(body.nics)) {
+    sub.nics = body.nics.map(nic => {
+      const copy = { ...nic };
+      delete copy.physical;
+      return copy;
+    });
+  }
+  return sub;
+};
+
 const renderPackageDocument = body => {
   const ref = body.provisioner;
   if (!ref) {
-    return null;
+    return {};
   }
   if (
     !ref.name ||
@@ -33,9 +94,28 @@ const renderPackageDocument = body => {
       error: 'provisioner needs both name and version — or neither: provisioning is optional',
     };
   }
+  if (body.advanced_properties !== undefined) {
+    return {
+      error:
+        'advanced_properties is removed — the field DSL takes ONE flat answers map in properties',
+    };
+  }
   const pkg = getPackageVersion(ref.name, ref.version);
   if (!pkg) {
     return { error: `provisioner ${ref.name}/${ref.version} is not in the registry` };
+  }
+
+  // AUTHORITATIVE pre-render answer validation (§3.1) — the 422
+  // {FIELD: message} wire. Defaults merge before conditionals; hidden
+  // fields' answers are never collected. show_if role operands ride the
+  // ruled <role name>_enabled spelling.
+  const { errors } = validateAnswers(
+    versionConfiguration(pkg.metadata),
+    body.properties || {},
+    buildShowIfRoleFlags(body.roles || [])
+  );
+  if (Object.keys(errors).length > 0) {
+    return { field_errors: errors };
   }
 
   const settings = { ...(body.settings || {}) };
@@ -48,11 +128,18 @@ const renderPackageDocument = body => {
     networks: body.networks || [],
     roles: body.roles || [],
     properties: body.properties || {},
-    advanced_properties: body.advanced_properties || {},
   });
   const markers = findLegacyMarkers(rendered);
-  const { infra, provisioner } = splitHostsDocument(parseHostsDocument(rendered));
+  const hosts = parseHostsDocuments(rendered);
 
+  if (hosts.length > 1) {
+    return {
+      markers,
+      multi_hosts: hosts.map(host => buildMultiHostBody(host, body, ref, pkg)),
+    };
+  }
+
+  const { infra, provisioner } = splitAndStampHost(hosts[0], ref, pkg);
   body.settings = infra.settings || settings;
   if (infra.networks) {
     body.networks = infra.networks;
@@ -66,34 +153,43 @@ const renderPackageDocument = body => {
   if (infra.cloud_init) {
     body.cloud_init = infra.cloud_init;
   }
-  if (!provisioner.provisioner_name) {
-    provisioner.provisioner_name = ref.name;
-  }
-  if (!provisioner.provisioner_version) {
-    provisioner.provisioner_version = pkg.version;
-  }
   body.provisioner = provisioner;
   body.provisioner_ref = { name: ref.name, version: pkg.version };
   return { markers };
 };
 
-const packageRenderProblem = body => {
+/**
+ * Render the package document (when a provisioner reference rides the body).
+ * @param {Object} body - Request body (mutated in place for single-host)
+ * @returns {{problem?: {status: number, payload: Object}, multiHosts?: Array}}
+ */
+const preparePackageDocument = body => {
   if (!body.provisioner) {
-    return null;
+    return {};
   }
   try {
     const result = renderPackageDocument(body);
-    if (result?.error) {
-      return result.error;
+    if (result.error) {
+      return { problem: { status: 400, payload: { error: result.error } } };
     }
-    if (result?.markers?.length > 0) {
+    if (result.field_errors) {
+      // The ruled 422 wire (shared with the Go agent): the body IS the
+      // {FIELD: message} map — no envelope.
+      return { problem: { status: 422, payload: result.field_errors } };
+    }
+    if (result.markers?.length > 0) {
       log.api.warn('Rendered document still contains ::TOKEN:: markers', {
         markers: result.markers,
       });
     }
-    return null;
+    return { multiHosts: result.multi_hosts || null };
   } catch (renderError) {
-    return `Template render failed: ${renderError.message}`;
+    return {
+      problem: {
+        status: 400,
+        payload: { error: `Template render failed: ${renderError.message}` },
+      },
+    };
   }
 };
 
@@ -556,10 +652,12 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                       type: object
  *               properties:
  *                 type: object
- *                 description: Package basicFields entries, keyed by exact field name
- *               advanced_properties:
- *                 type: object
- *                 description: Package advancedFields entries, keyed by exact field name
+ *                 description: |
+ *                   Field-DSL answers — ONE flat map keyed by exact field name
+ *                   (metadata.configuration {groups, fields}; multiselect answers
+ *                   are native lists). Validated authoritatively before render:
+ *                   errors answer 422 with {FIELD: message}. advanced_properties
+ *                   is REMOVED (one cut).
  *               notes:
  *                 type: string
  *                 nullable: true
@@ -790,14 +888,195 @@ export const findExistingZoneConflict = async finalZoneName => {
  *         description: Invalid parameters (missing name/brand or invalid zone name)
  *       409:
  *         description: Zone already exists in database or on system
+ *       422:
+ *         description: Field-DSL answer validation failed — the body IS the {FIELD: message} map (no envelope; shared wire with the Go agent)
  *       500:
  *         description: Failed to queue creation task
  */
+/**
+ * Validate + name-resolve ONE host of a multi-host create. Refusals return
+ * {problem}; success returns the prepared entry.
+ * @param {Object} hostBody - Per-machine create body
+ * @param {number} index - Position in hosts[] (for error naming)
+ * @returns {Promise<Object>} {problem} | {finalZoneName, hostBody, warnings}
+ */
+const prepareMultiHostEntry = async (hostBody, index) => {
+  const label = `multi-host entry ${index + 1}`;
+  const { settings, zones } = hostBody;
+  if (!settings?.hostname || !settings?.domain || !zones?.brand) {
+    return {
+      problem: {
+        status: 400,
+        payload: {
+          error: `${label}: settings.hostname, settings.domain, and zones.brand are required`,
+        },
+      },
+    };
+  }
+  const baseName = `${settings.hostname}.${settings.domain}`;
+  if (!validateZoneName(baseName)) {
+    return {
+      problem: { status: 400, payload: { error: `${label}: invalid zone name ${baseName}` } },
+    };
+  }
+  const nameResult = await resolveZoneName(baseName, settings);
+  if (!nameResult.success) {
+    return { problem: { status: nameResult.error.status, payload: nameResult.error } };
+  }
+  const conflict = await findExistingZoneConflict(nameResult.finalZoneName);
+  if (conflict) {
+    return { problem: { status: 409, payload: conflict } };
+  }
+  const boxResolution = await resolveBoxToTemplate(settings, hostBody.disks);
+  if (!boxResolution.success) {
+    return {
+      problem: {
+        status: boxResolution.error.status || 400,
+        payload: {
+          error: `${label}: every template must be local — auto-download is single-host only`,
+          details: boxResolution.error,
+        },
+      },
+    };
+  }
+  hostBody.name = baseName;
+  if (boxResolution.template_dataset) {
+    hostBody.disks = hostBody.disks || {};
+    hostBody.disks.boot = hostBody.disks.boot || {};
+    hostBody.disks.boot.source = {
+      type: 'template',
+      template_dataset: boxResolution.template_dataset,
+      clone_strategy: 'clone',
+    };
+  }
+  const resourceValidation = await validateZoneCreationResources(hostBody);
+  if (!resourceValidation.valid) {
+    return {
+      problem: {
+        status: 400,
+        payload: { error: `${label}: insufficient resources`, details: resourceValidation.errors },
+      },
+    };
+  }
+  return {
+    finalZoneName: nameResult.finalZoneName,
+    hostBody,
+    warnings: resourceValidation.warnings,
+  };
+};
+
+/**
+ * Multi-host create (§5 hosts[]): ONE rendered document → N coordinated
+ * machines. Every host validates/conflict-checks BEFORE anything is created
+ * (atomic refusal); creation chains in DECLARATION ORDER — machine k+1's
+ * first task gates on machine k's last (finalize, or start when
+ * start_after_create rides), so join vars written by earlier machines'
+ * provisioning hold when later machines come up.
+ * @param {Object} req - Request
+ * @param {Object} res - Response
+ * @param {Array<Object>} hostBodies - Per-machine create bodies
+ * @returns {Promise<Object>} Response
+ */
+const createMultiHostMachines = async (req, res, hostBodies) => {
+  try {
+    // Phase 1 — every host validates/conflict-checks sequentially BEFORE
+    // anything is created (atomic refusal). Sequential promise chain: the
+    // reduce pattern the creators use (validation queries must not race).
+    const phase1 = await hostBodies.reduce(
+      (promise, hostBody, index) =>
+        promise.then(async acc => {
+          if (acc.problem) {
+            return acc;
+          }
+          const entry = await prepareMultiHostEntry(hostBody, index);
+          if (entry.problem) {
+            return { ...acc, problem: entry.problem };
+          }
+          if (acc.seenNames.has(entry.finalZoneName)) {
+            return {
+              ...acc,
+              problem: {
+                status: 400,
+                payload: {
+                  error: `multi-host document names ${entry.finalZoneName} more than once`,
+                },
+              },
+            };
+          }
+          acc.seenNames.add(entry.finalZoneName);
+          acc.prepared.push(entry);
+          return acc;
+        }),
+      Promise.resolve({ prepared: [], seenNames: new Set(), problem: null })
+    );
+    if (phase1.problem) {
+      return res.status(phase1.problem.status).json(phase1.problem.payload);
+    }
+
+    // Phase 2 — creation chains in DECLARATION ORDER: machine k+1's first
+    // task gates on machine k's last.
+    const machines = [];
+    const warnings = {};
+    await phase1.prepared.reduce(
+      (promise, { finalZoneName, hostBody, warnings: hostWarnings }) =>
+        promise.then(async previousLast => {
+          const parentTask = await Tasks.create({
+            zone_name: finalZoneName,
+            operation: 'zone_create_orchestration',
+            priority: TaskPriority.MEDIUM,
+            created_by: req.entity.name,
+            metadata: JSON.stringify(hostBody),
+            status: 'running',
+            started_at: new Date(),
+          });
+          const { subTasks } = await createZoneCreationSubTasks(
+            finalZoneName,
+            hostBody,
+            parentTask.id,
+            previousLast,
+            hostBody.start_after_create,
+            req.entity.name
+          );
+          machines.push({
+            machine_name: finalZoneName,
+            parent_task_id: parentTask.id,
+            sub_tasks: subTasks,
+          });
+          if (hostWarnings?.length > 0) {
+            warnings[finalZoneName] = hostWarnings;
+          }
+          return subTasks.start || subTasks.finalize;
+        }),
+      Promise.resolve(null)
+    );
+
+    const response = {
+      success: true,
+      multi_host: true,
+      count: machines.length,
+      message: `Multi-host creation queued — ${machines.length} machines in document order`,
+      machines,
+    };
+    if (Object.keys(warnings).length > 0) {
+      response.resource_warnings = warnings;
+    }
+    return res.json(response);
+  } catch (error) {
+    log.api.error('Multi-host creation failed', { error: error.message });
+    return res
+      .status(500)
+      .json({ error: 'Failed to queue multi-host creation', details: error.message });
+  }
+};
+
 export const createZone = async (req, res) => {
   try {
-    const renderProblem = packageRenderProblem(req.body);
-    if (renderProblem) {
-      return res.status(400).json({ error: renderProblem });
+    const { problem, multiHosts } = preparePackageDocument(req.body);
+    if (problem) {
+      return res.status(problem.status).json(problem.payload);
+    }
+    if (multiHosts) {
+      return createMultiHostMachines(req, res, multiHosts);
     }
 
     // NEW HOSTS.YML STRUCTURE ONLY

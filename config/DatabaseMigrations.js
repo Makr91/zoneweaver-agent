@@ -12,9 +12,10 @@ import { log } from '../lib/Logger.js';
 import { up as seedDefaultRecipes } from '../db/seeders/20260209-default-recipes.js';
 
 // Import models to ensure they are registered before sync
+// (provisioning_profiles REMOVED — design §9; the orphaned table drops freely
+// on installs that carry it, per the standing no-migrations rule)
 import '../models/TemplateModel.js';
 import '../models/RecipeModel.js';
-import '../models/ProvisioningProfileModel.js';
 import '../models/SSHSessionModel.js';
 import TerminalSessions from '../models/TerminalSessionModel.js';
 import LogStreamSession from '../models/LogStreamSessionModel.js';

@@ -7,18 +7,16 @@ export { provisionZone, getProvisioningStatus } from './ProvisioningPipelineCont
 export { syncZone } from './ProvisioningSyncController.js';
 export { runProvisioners } from './ProvisioningProvisionerController.js';
 export {
-  listProvisioningProfiles,
-  createProvisioningProfile,
-  getProvisioningProfile,
-  updateProvisioningProfile,
-  deleteProvisioningProfile,
-} from './ProvisioningProfileController.js';
-export {
   listProvisioners,
   getProvisionerDetails,
   getProvisionerVersion,
   importProvisioner,
+  importProvisionerUpload,
+  exportProvisioner,
   deleteProvisioner,
   deleteProvisionerVersion,
   refreshProvisionerSpecs,
+  getCatalog,
+  getCatalogSources,
+  installFromCatalog,
 } from './ProvisioningRegistryController.js';

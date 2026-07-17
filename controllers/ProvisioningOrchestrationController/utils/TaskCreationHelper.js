@@ -71,96 +71,24 @@ export const createSequentialFolderTasks = (
   );
 
 /**
- * Create sequential playbook provision tasks. Same first-child dependency
- * rule as the sync chain: children never gate on their own parent anchor.
- * @param {Array} playbooks - Playbooks to execute
- * @param {string} zoneName - Zone name
- * @param {string} zoneIP - Zone IP address
- * @param {Object} credentials - SSH credentials
- * @param {Object} provisioning - Provisioning config
- * @param {string} provisionParentTaskId - Parent anchor task ID
- * @param {string|null} firstDependsOn - Outer-chain dependency for the first child
- * @param {string} createdBy - Task creator
- * @returns {Promise<string|null>} The LAST provision child's task id
+ * Filter hooks by their run directive (§5: always = every provision, once =
+ * only when never provisioned; default always — hooks wrap the WHOLE run).
+ * @param {Array} hooks - Normalized hook entries
+ * @param {boolean} hasProvisionedBefore - Prior successful provision
+ * @returns {{included: Array, skipped: Array}}
  */
-export const createSequentialPlaybookTasks = (
-  playbooks,
-  zoneName,
-  zoneIP,
-  credentials,
-  provisioning,
-  provisionParentTaskId,
-  firstDependsOn,
-  createdBy
-) =>
-  playbooks.reduce(
-    (promise, playbook, index) =>
-      promise.then(prevTaskId =>
-        createTask({
-          zone_name: zoneName,
-          operation: 'zone_provision',
-          metadata: {
-            ip: zoneIP,
-            port: provisioning.ssh_port || 22,
-            credentials,
-            playbook,
-            // The run's LAST playbook carries the provisioner_state stamp
-            // (Hosts.rb results.yml semantics; `final` is the shared wire key
-            // with the Go agent's provision metadata).
-            final: index === playbooks.length - 1,
-          },
-          depends_on: prevTaskId,
-          parent_task_id: provisionParentTaskId,
-          created_by: createdBy,
-        }).then(task => task.id)
-      ),
-    Promise.resolve(firstDependsOn)
-  );
-
-/**
- * Create sequential shell-script tasks (one zone_shell per script, list order
- * — Hosts.rb runs provisioning.shell.scripts in order, after the sync phase
- * and before the provision phase). Same first-child dependency rule as the
- * sync chain: children never gate on their own parent anchor.
- * @param {Array<string>} scripts - Package-relative script paths
- * @param {string} zoneName - Zone name
- * @param {string} zoneIP - Zone IP address
- * @param {Object} credentials - SSH credentials
- * @param {Object} provisioning - Provisioning config
- * @param {string} shellParentTaskId - Parent anchor task ID
- * @param {string|null} firstDependsOn - Outer-chain dependency for the first child
- * @param {string} createdBy - Task creator
- * @returns {Promise<string|null>} The LAST shell child's task id
- */
-export const createSequentialShellTasks = (
-  scripts,
-  zoneName,
-  zoneIP,
-  credentials,
-  provisioning,
-  shellParentTaskId,
-  firstDependsOn,
-  createdBy
-) =>
-  scripts.reduce(
-    (promise, script) =>
-      promise.then(prevTaskId =>
-        createTask({
-          zone_name: zoneName,
-          operation: 'zone_shell',
-          metadata: {
-            ip: zoneIP,
-            port: provisioning.ssh_port || 22,
-            credentials,
-            script,
-          },
-          depends_on: prevTaskId,
-          parent_task_id: shellParentTaskId,
-          created_by: createdBy,
-        }).then(task => task.id)
-      ),
-    Promise.resolve(firstDependsOn)
-  );
+export const filterHooksByRun = (hooks, hasProvisionedBefore) => {
+  const included = [];
+  const skipped = [];
+  for (const hook of hooks) {
+    if (hook.run === 'once' && hasProvisionedBefore) {
+      skipped.push({ script: hook.script, run: hook.run });
+    } else {
+      included.push(hook);
+    }
+  }
+  return { included, skipped };
+};
 
 /**
  * Folders eligible for syncback (shared semantics with the Go agent):

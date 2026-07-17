@@ -1,0 +1,263 @@
+{
+  "description": "Shared show_if/visibility test vectors (provisioning-design §3.1). All three evaluators — zoneweaver-agent lib/FieldDsl.js (authoritative), the Go agent's, and the hyperweaver-ui form renderer (live) — must produce these exact results. Equality is the Go agent's looseEqual: both sides numeric → numeric compare; else canonical strings; booleans never take the numeric path. show_if vectors evaluate evaluateShowIf(show_if, context); visibility vectors evaluate computeVisibility(configuration, answers, role_flags) and compare hidden[].",
+  "show_if_vectors": [
+    {
+      "name": "scalar equals true",
+      "show_if": { "domino": true },
+      "context": { "domino": true },
+      "expect": true
+    },
+    {
+      "name": "scalar equals false",
+      "show_if": { "domino": true },
+      "context": { "domino": false },
+      "expect": false
+    },
+    {
+      "name": "looseEqual — string bool matches bool",
+      "show_if": { "domino": true },
+      "context": { "domino": "true" },
+      "expect": true
+    },
+    {
+      "name": "looseEqual — numeric string matches number",
+      "show_if": { "replicas": 5 },
+      "context": { "replicas": "5" },
+      "expect": true
+    },
+    {
+      "name": "looseEqual — bool never numeric (true vs 1)",
+      "show_if": { "domino": 1 },
+      "context": { "domino": true },
+      "expect": false
+    },
+    {
+      "name": "absent operand fails equals",
+      "show_if": { "domino": true },
+      "context": {},
+      "expect": false
+    },
+    {
+      "name": "map is AND — both hold",
+      "show_if": { "domino": true, "tier": "prod" },
+      "context": { "domino": true, "tier": "prod" },
+      "expect": true
+    },
+    {
+      "name": "map is AND — one fails",
+      "show_if": { "domino": true, "tier": "prod" },
+      "context": { "domino": true, "tier": "dev" },
+      "expect": false
+    },
+    {
+      "name": "list is IN",
+      "show_if": { "tier": ["dev", "prod"] },
+      "context": { "tier": "dev" },
+      "expect": true
+    },
+    {
+      "name": "list is IN — miss",
+      "show_if": { "tier": ["dev", "prod"] },
+      "context": { "tier": "qa" },
+      "expect": false
+    },
+    {
+      "name": "not scalar",
+      "show_if": { "tier": { "not": "prod" } },
+      "context": { "tier": "dev" },
+      "expect": true
+    },
+    {
+      "name": "not scalar — hit",
+      "show_if": { "tier": { "not": "prod" } },
+      "context": { "tier": "prod" },
+      "expect": false
+    },
+    {
+      "name": "not list",
+      "show_if": { "tier": { "not": ["dev", "qa"] } },
+      "context": { "tier": "prod" },
+      "expect": true
+    },
+    {
+      "name": "not with absent operand holds",
+      "show_if": { "tier": { "not": "prod" } },
+      "context": {},
+      "expect": true
+    },
+    {
+      "name": "gt holds",
+      "show_if": { "replicas": { "gt": 1 } },
+      "context": { "replicas": 2 },
+      "expect": true
+    },
+    {
+      "name": "gt equal fails",
+      "show_if": { "replicas": { "gt": 1 } },
+      "context": { "replicas": 1 },
+      "expect": false
+    },
+    {
+      "name": "gte equal holds",
+      "show_if": { "replicas": { "gte": 1 } },
+      "context": { "replicas": 1 },
+      "expect": true
+    },
+    {
+      "name": "lt holds",
+      "show_if": { "replicas": { "lt": 4 } },
+      "context": { "replicas": 3 },
+      "expect": true
+    },
+    {
+      "name": "lte equal holds",
+      "show_if": { "replicas": { "lte": 4 } },
+      "context": { "replicas": 4 },
+      "expect": true
+    },
+    {
+      "name": "comparator numeric-string operand coerces",
+      "show_if": { "replicas": { "gt": 1 } },
+      "context": { "replicas": "2" },
+      "expect": true
+    },
+    {
+      "name": "comparator non-numeric operand fails",
+      "show_if": { "replicas": { "gt": 1 } },
+      "context": { "replicas": "many" },
+      "expect": false
+    },
+    {
+      "name": "comparator absent operand fails",
+      "show_if": { "replicas": { "gt": 1 } },
+      "context": {},
+      "expect": false
+    },
+    {
+      "name": "any is OR — second map holds",
+      "show_if": { "any": [{ "tier": "prod" }, { "domino": true }] },
+      "context": { "tier": "dev", "domino": true },
+      "expect": true
+    },
+    {
+      "name": "any — none hold",
+      "show_if": { "any": [{ "tier": "prod" }, { "domino": true }] },
+      "context": { "tier": "dev", "domino": false },
+      "expect": false
+    },
+    {
+      "name": "any ANDs with siblings",
+      "show_if": { "enabled": true, "any": [{ "tier": "prod" }, { "tier": "qa" }] },
+      "context": { "enabled": false, "tier": "prod" },
+      "expect": false
+    },
+    {
+      "name": "any map is itself AND",
+      "show_if": { "any": [{ "tier": "prod", "domino": true }] },
+      "context": { "tier": "prod", "domino": false },
+      "expect": false
+    },
+    { "name": "empty show_if shows", "show_if": {}, "context": {}, "expect": true }
+  ],
+  "visibility_vectors": [
+    {
+      "name": "defaults merge BEFORE conditionals",
+      "configuration": {
+        "groups": [],
+        "fields": [
+          {
+            "name": "mode",
+            "type": "select",
+            "options": ["simple", "custom"],
+            "default": "custom"
+          },
+          { "name": "custom_path", "type": "path", "show_if": { "mode": "custom" } }
+        ]
+      },
+      "answers": {},
+      "role_flags": {},
+      "expect_hidden": []
+    },
+    {
+      "name": "answer overrides default and hides dependent",
+      "configuration": {
+        "groups": [],
+        "fields": [
+          {
+            "name": "mode",
+            "type": "select",
+            "options": ["simple", "custom"],
+            "default": "custom"
+          },
+          { "name": "custom_path", "type": "path", "show_if": { "mode": "custom" } }
+        ]
+      },
+      "answers": { "mode": "simple" },
+      "role_flags": {},
+      "expect_hidden": ["custom_path"]
+    },
+    {
+      "name": "hidden field's name is ABSENT for later operands (cascade)",
+      "configuration": {
+        "groups": [],
+        "fields": [
+          { "name": "a", "type": "checkbox", "default": false },
+          { "name": "b", "type": "checkbox", "default": true, "show_if": { "a": true } },
+          { "name": "c", "type": "text", "show_if": { "b": true } }
+        ]
+      },
+      "answers": {},
+      "role_flags": {},
+      "expect_hidden": ["b", "c"]
+    },
+    {
+      "name": "group show_if hides every member",
+      "configuration": {
+        "groups": [{ "name": "tuning", "label": "Tuning", "show_if": { "advanced_mode": true } }],
+        "fields": [
+          { "name": "advanced_mode", "type": "checkbox", "default": false },
+          { "name": "buffer_size", "type": "number", "group": "tuning" },
+          { "name": "threads", "type": "number", "group": "tuning" }
+        ]
+      },
+      "answers": {},
+      "role_flags": {},
+      "expect_hidden": ["buffer_size", "threads"]
+    },
+    {
+      "name": "role-enable flag operand — ruled spelling <name>_enabled",
+      "configuration": {
+        "groups": [],
+        "fields": [{ "name": "domino_org", "type": "text", "show_if": { "domino_enabled": true } }]
+      },
+      "answers": {},
+      "role_flags": { "domino_enabled": true },
+      "expect_hidden": []
+    },
+    {
+      "name": "ABSENT role flag never equals false",
+      "configuration": {
+        "groups": [],
+        "fields": [
+          { "name": "fallback_note", "type": "text", "show_if": { "traveler_enabled": false } }
+        ]
+      },
+      "answers": {},
+      "role_flags": {},
+      "expect_hidden": ["fallback_note"]
+    },
+    {
+      "name": "default-driven show_if — default satisfies the condition with no answer",
+      "configuration": {
+        "groups": [],
+        "fields": [
+          { "name": "tier", "type": "select", "options": ["dev", "prod"], "default": "prod" },
+          { "name": "ha_note", "type": "text", "show_if": { "tier": "prod" } }
+        ]
+      },
+      "answers": {},
+      "role_flags": {},
+      "expect_hidden": []
+    }
+  ]
+}

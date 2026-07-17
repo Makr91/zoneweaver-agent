@@ -1,22 +1,38 @@
 /**
  * @fileoverview Task chain builder for provisioning orchestration
+ * @description THE DOCUMENT IS THE PROGRAM (Mark's no-phases ruling, binding
+ * both agents): the run executes the stored document's `provisioning:`
+ * section AS WRITTEN — methods in the order their KEYS APPEAR, entries
+ * within each method in LIST ORDER, one chain, no agent-imposed phases or
+ * grouping. `pre[]` runs before the FIRST method, `post[]` after the LAST
+ * (B10). folders[] sync/syncback bracket the whole run OUTSIDE the hooks
+ * (Q4 ruling: sync → pre → methods → post → syncback). Ansible groups walk
+ * in list order, each group's local[] then remote[] per its own lists; the
+ * provisioned-state stamp rides the run's overall LAST playbook. Unknown
+ * method keys SURVIVE in the document and are narrated as unexecutable —
+ * never edited away. Windows guests (settings.vagrant_communicator: winrm)
+ * skip the ssh-only steps LOUDLY (§5 matrix: folders, ansible-local,
+ * docker).
  */
 
 import { log } from '../../../lib/Logger.js';
 import {
-  extractPlaybooks,
+  extractOrderedPlaybooks,
   extractFolders,
   extractShellScripts,
+  extractDockerComposeFiles,
+  extractHooks,
+  buildScriptEnv,
+  readsTrue,
 } from '../../../lib/ProvisionerConfigBuilder.js';
 import {
   createTask,
   createSequentialFolderTasks,
-  createSequentialPlaybookTasks,
-  createSequentialShellTasks,
   createSequentialSyncbackTasks,
   syncbackEligibleFolders,
   shouldSkipZoneSetup,
   filterPlaybooksByRun,
+  filterHooksByRun,
   hasZoneProvisionedBefore,
 } from './TaskCreationHelper.js';
 
@@ -120,17 +136,25 @@ const queueBootAndSetupSteps = async (ctx, previousTaskId) => {
 };
 
 /**
- * Step 4: the sync phase — anchor + one zone_sync per folder. The parent is a
- * pure anchor (born running, never dispatched): its children drive its
- * completion, so they chain off the OUTER previous task and the next step
- * gates on the LAST sync child.
+ * folders[] sync — the run's OUTER opening bracket (document structure).
+ * Anchor + one zone_sync per folder, LIST ORDER, only the document's own
+ * flags (disabled/type) filtering. rsync/scp need ssh — winrm guests skip
+ * LOUDLY (§5 matrix).
  * @param {Object} ctx - Chain context
- * @param {Array} folders - Folders to sync
+ * @param {Array} folders - Folders in document order
  * @param {string|null} previousTaskId - Outer-chain dependency
  * @returns {Promise<string|null>} The last sync child's id
  */
-const queueSyncPhase = async (ctx, folders, previousTaskId) => {
+const queueSyncBracket = async (ctx, folders, previousTaskId) => {
   if (folders.length === 0) {
+    return previousTaskId;
+  }
+  if (ctx.communicator === 'winrm') {
+    log.task.warn('Folder sync skipped — rsync/scp need ssh, guest is winrm', {
+      zone_name: ctx.zoneName,
+      folders: folders.length,
+    });
+    ctx.taskChain.push({ step: 'sync_skipped_winrm', folder_count: folders.length });
     return previousTaskId;
   }
   const syncParentTask = await createTask({
@@ -160,106 +184,24 @@ const queueSyncPhase = async (ctx, folders, previousTaskId) => {
 };
 
 /**
- * Step 5: the shell phase — anchor + one zone_shell per script
- * (provisioning.shell, Hosts.rb order: after sync, before provision — scripts
- * carry no run directive and run every provision), same anchor rule as sync.
+ * folders[] syncback — the run's OUTER closing bracket: flagged folders
+ * (the document's own syncback flag) pull back guest → host, LIST ORDER.
  * @param {Object} ctx - Chain context
+ * @param {Array} folders - All folders (the document's flags filter here)
  * @param {string|null} previousTaskId - Outer-chain dependency
- * @returns {Promise<string|null>} The last shell child's id
+ * @returns {Promise<string|null>} The last syncback child's id
  */
-const queueShellPhase = async (ctx, previousTaskId) => {
-  const scripts = extractShellScripts(ctx.provisioning);
-  if (scripts.length === 0) {
-    return previousTaskId;
-  }
-  const shellParentTask = await createTask({
-    zone_name: ctx.zoneName,
-    operation: 'zone_shell_parent',
-    metadata: { total_scripts: scripts.length },
-    parent: true,
-    parent_task_id: ctx.parentTaskId,
-    created_by: ctx.createdBy,
-  });
-  ctx.taskChain.push({
-    step: 'shell_parent',
-    task_id: shellParentTask.id,
-    script_count: scripts.length,
-  });
-
-  return createSequentialShellTasks(
-    scripts,
-    ctx.zoneName,
-    ctx.zoneIP,
-    ctx.credentials,
-    ctx.provisioning,
-    shellParentTask.id,
-    previousTaskId,
-    ctx.createdBy
-  );
-};
-
-/**
- * Step 6: the provision phase — anchor + one zone_provision per playbook
- * (run-directive filtered), same anchor rule as sync.
- * @param {Object} ctx - Chain context
- * @param {string|null} previousTaskId - Outer-chain dependency
- * @returns {Promise<string|null>} The last provision child's id
- */
-const queueProvisionPhase = async (ctx, previousTaskId) => {
-  const configuredPlaybooks = extractPlaybooks(ctx.provisioning);
-  const { included: playbooks, skipped: skippedPlaybooks } = filterPlaybooksByRun(
-    configuredPlaybooks,
-    hasZoneProvisionedBefore(ctx.zone)
-  );
-
-  if (skippedPlaybooks.length > 0) {
-    log.task.info('Playbooks skipped by run directive', {
-      zone_name: ctx.zoneName,
-      skipped: skippedPlaybooks,
-    });
-  }
-  if (playbooks.length === 0) {
-    return previousTaskId;
-  }
-
-  const provisionParentTask = await createTask({
-    zone_name: ctx.zoneName,
-    operation: 'zone_provision_parent',
-    metadata: { total_playbooks: playbooks.length, skipped_playbooks: skippedPlaybooks },
-    parent: true,
-    parent_task_id: ctx.parentTaskId,
-    created_by: ctx.createdBy,
-  });
-  ctx.taskChain.push({
-    step: 'provision_parent',
-    task_id: provisionParentTask.id,
-    playbook_count: playbooks.length,
-    playbooks_skipped: skippedPlaybooks,
-  });
-
-  return createSequentialPlaybookTasks(
-    playbooks,
-    ctx.zoneName,
-    ctx.zoneIP,
-    ctx.credentials,
-    ctx.provisioning,
-    provisionParentTask.id,
-    previousTaskId,
-    ctx.createdBy
-  );
-};
-
-/**
- * Step 7: the syncback phase AFTER provision (Go's machine_syncback shape) —
- * flagged folders pull back guest → host, gated on the LAST playbook child.
- * @param {Object} ctx - Chain context
- * @param {Array} folders - All folders (eligibility filtered here)
- * @param {string|null} previousTaskId - Outer-chain dependency
- */
-const queueSyncbackPhase = async (ctx, folders, previousTaskId) => {
+const queueSyncbackBracket = async (ctx, folders, previousTaskId) => {
   const syncbackFolders = syncbackEligibleFolders(folders);
   if (syncbackFolders.length === 0) {
-    return;
+    return previousTaskId;
+  }
+  if (ctx.communicator === 'winrm') {
+    log.task.warn('Syncback skipped — rsync/scp need ssh, guest is winrm', {
+      zone_name: ctx.zoneName,
+    });
+    ctx.taskChain.push({ step: 'syncback_skipped_winrm', folder_count: syncbackFolders.length });
+    return previousTaskId;
   }
   const syncbackParentTask = await createTask({
     zone_name: ctx.zoneName,
@@ -275,7 +217,7 @@ const queueSyncbackPhase = async (ctx, folders, previousTaskId) => {
     folder_count: syncbackFolders.length,
   });
 
-  await createSequentialSyncbackTasks(
+  return createSequentialSyncbackTasks(
     syncbackFolders,
     ctx.zoneName,
     ctx.zoneIP,
@@ -288,8 +230,264 @@ const queueSyncbackPhase = async (ctx, folders, previousTaskId) => {
 };
 
 /**
- * Build provisioning task chain with granular folder/playbook tasks
- * Creates parent tasks for sync and provision steps with individual child tasks
+ * COLLECT one hook phase's steps (§5 shape, list order, run-directive
+ * filtered). Pure — no tasks are created here.
+ * @param {Object} ctx - Walk context
+ * @param {string} phase - 'pre' | 'post'
+ * @returns {Array<Object>} Step descriptors
+ */
+const collectHookSteps = (ctx, phase) => {
+  const { included: hooks, skipped } = filterHooksByRun(
+    extractHooks(ctx.provisioning, phase),
+    ctx.provisionedBefore
+  );
+  if (skipped.length > 0) {
+    log.task.info('Sequence hooks skipped by run directive', {
+      zone_name: ctx.zoneName,
+      phase,
+      skipped,
+    });
+  }
+  return hooks.map(hook => ({
+    operation: 'zone_hook',
+    metadata: {
+      hook,
+      phase,
+      ip: ctx.zoneIP,
+      port: ctx.provisioning.ssh_port || 22,
+      credentials: ctx.credentials,
+      env: ctx.env,
+      communicator: ctx.communicator,
+      winrm: ctx.winrm,
+    },
+    note: { step: `${phase}_hook`, script: hook.script, target: hook.target },
+  }));
+};
+
+/**
+ * COLLECT the shell method's steps — one zone_shell per script string,
+ * list order. Pure.
+ * @param {Object} ctx - Walk context
+ * @param {Object} shell - The document's shell block
+ * @returns {Array<Object>} Step descriptors
+ */
+const collectShellSteps = (ctx, shell) => {
+  const scripts = extractShellScripts(shell);
+  if (scripts === null) {
+    return [];
+  }
+  return scripts.map(script => ({
+    operation: 'zone_shell',
+    metadata: {
+      ip: ctx.zoneIP,
+      port: ctx.provisioning.ssh_port || 22,
+      credentials: ctx.credentials,
+      script,
+      env: ctx.env,
+      communicator: ctx.communicator,
+      winrm: ctx.winrm,
+    },
+    note: { step: 'shell', script },
+  }));
+};
+
+/**
+ * COLLECT the ansible method's steps — the document's playbooks groups in
+ * LIST ORDER, each group's local[] then remote[] per its own lists, one
+ * chain, each child's op per its OWN entry, run-directive filtered. On
+ * winrm guests, LOCAL entries skip loudly (§5 matrix). Pure.
+ * @param {Object} ctx - Walk context
+ * @returns {Array<Object>} Step descriptors
+ */
+const collectAnsibleSteps = ctx => {
+  const ordered = extractOrderedPlaybooks(ctx.provisioning);
+  const { included, skipped } = filterPlaybooksByRun(ordered, ctx.provisionedBefore);
+  if (skipped.length > 0) {
+    log.task.info('Playbooks skipped by run directive', {
+      zone_name: ctx.zoneName,
+      skipped,
+    });
+  }
+  let entries = included;
+  if (ctx.communicator === 'winrm') {
+    const locals = entries.filter(entry => entry.mode !== 'remote').length;
+    if (locals > 0) {
+      log.task.warn('ansible-local entries skipped — need ssh, guest is winrm (§5 matrix)', {
+        zone_name: ctx.zoneName,
+        skipped_local: locals,
+      });
+      ctx.taskChain.push({ step: 'ansible_local_skipped_winrm', playbook_count: locals });
+      entries = entries.filter(entry => entry.mode === 'remote');
+    }
+  }
+  return entries.map(playbook => {
+    const remote = playbook.mode === 'remote';
+    return {
+      operation: remote ? 'zone_provision_remote' : 'zone_provision',
+      metadata: {
+        ip: ctx.zoneIP,
+        port: ctx.provisioning.ssh_port || 22,
+        credentials: ctx.credentials,
+        playbook,
+        communicator: ctx.communicator,
+        winrm: ctx.winrm,
+      },
+      note: { step: remote ? 'provision_remote' : 'provision', playbook: playbook.playbook },
+    };
+  });
+};
+
+/**
+ * COLLECT the docker method's steps — one zone_docker_compose per compose
+ * file, list order (the document's shape: files nest INSIDE docker). No
+ * engine install, no run pin; a guest without docker fails the task
+ * honestly. ssh-only — winrm skips. Pure.
+ * @param {Object} ctx - Walk context
+ * @param {Object} docker - The document's docker block
+ * @returns {Array<Object>} Step descriptors
+ */
+const collectDockerSteps = (ctx, docker) => {
+  const files = extractDockerComposeFiles(docker);
+  if (files === null) {
+    return [];
+  }
+  if (ctx.communicator === 'winrm') {
+    log.task.warn('docker skipped — executed over ssh, guest is winrm', {
+      zone_name: ctx.zoneName,
+    });
+    ctx.taskChain.push({ step: 'docker_skipped_winrm' });
+    return [];
+  }
+  return files.map(file => ({
+    operation: 'zone_docker_compose',
+    metadata: {
+      ip: ctx.zoneIP,
+      port: ctx.provisioning.ssh_port || 22,
+      credentials: ctx.credentials,
+      file,
+    },
+    note: { step: 'docker_compose', file },
+  }));
+};
+
+/**
+ * COLLECT one method key's steps (pure dispatch). Unknown method keys
+ * survive in the document and are narrated as unexecutable — the document
+ * is the PROGRAM, the agent never edits it.
+ * @param {Object} ctx - Walk context
+ * @param {string} key - Method key as it appears in the document
+ * @param {*} value - The method block
+ * @param {{sawAnsible: boolean}} state - Walk state
+ * @returns {Array<Object>} Step descriptors
+ */
+const collectMethodSteps = (ctx, key, value, state) => {
+  if (key === 'shell') {
+    return collectShellSteps(ctx, value);
+  }
+  if (key === 'ansible') {
+    state.sawAnsible = true;
+    return readsTrue(value?.enabled) ? collectAnsibleSteps(ctx) : [];
+  }
+  if (key === 'docker') {
+    return collectDockerSteps(ctx, value);
+  }
+  log.task.warn('provisioning method not executable by this agent — left as written', {
+    zone_name: ctx.zoneName,
+    method: key,
+  });
+  ctx.taskChain.push({ step: 'method_not_executable', method: key });
+  return [];
+};
+
+/**
+ * COLLECT the whole walk: pre[] before the first method, the
+ * `provisioning:` section's method keys IN THE ORDER THEY APPEAR, post[]
+ * after the last. The legacy flat `provisioners[]` tolerance fires only
+ * when the section never declared ansible. The LAST step of the walk
+ * carries `final: true` — the provisioned-state stamp marks completion of
+ * the ENTIRE walk, whatever type its last entry is (Mark's whole-walk
+ * stamp ruling).
+ * @param {Object} ctx - Walk context
+ * @returns {Array<Object>} Step descriptors, document order
+ */
+const collectWalkSteps = ctx => {
+  const section = ctx.provisioning?.provisioning;
+  const steps = [...collectHookSteps(ctx, 'pre')];
+
+  const state = { sawAnsible: false };
+  if (section && typeof section === 'object' && !Array.isArray(section)) {
+    for (const [key, value] of Object.entries(section)) {
+      if (key !== 'pre' && key !== 'post') {
+        steps.push(...collectMethodSteps(ctx, key, value, state));
+      }
+    }
+  }
+  if (!state.sawAnsible && Array.isArray(ctx.provisioning?.provisioners)) {
+    steps.push(...collectAnsibleSteps(ctx));
+  }
+  steps.push(...collectHookSteps(ctx, 'post'));
+
+  if (steps.length > 0) {
+    steps[steps.length - 1].metadata.final = true;
+  }
+  return steps;
+};
+
+/**
+ * THE DOCUMENT WALK — collect the steps (pure, document order), then
+ * create the task chain: every step a direct child of the run's parent
+ * anchor (no method anchors — the no-phases ruling), each depending on
+ * the previous.
+ * @param {Object} ctx - Walk context ({zoneName, zoneIP, credentials,
+ *   provisioning, env, communicator, winrm, provisionedBefore,
+ *   parentTaskId, createdBy, taskChain})
+ * @param {string|null} firstDependsOn - Outer-chain dependency
+ * @returns {Promise<string|null>} The walk's last task id
+ */
+export const buildProvisioningWalk = (ctx, firstDependsOn) =>
+  collectWalkSteps(ctx).reduce(
+    (promise, step) =>
+      promise.then(prevTaskId =>
+        createTask({
+          zone_name: ctx.zoneName,
+          operation: step.operation,
+          metadata: step.metadata,
+          depends_on: prevTaskId,
+          parent_task_id: ctx.parentTaskId,
+          created_by: ctx.createdBy,
+        }).then(task => {
+          ctx.taskChain.push({ ...step.note, task_id: task.id });
+          return task.id;
+        })
+      ),
+    Promise.resolve(firstDependsOn)
+  );
+
+/**
+ * Walk-context inputs read from the STORED DOCUMENT (Q2 ruling — the old
+ * vocabulary IS the vocabulary): settings.vagrant_communicator selects the
+ * transport; vagrant_winrm_* carry vagrant's own defaults. Document vars
+ * become the script/hook env.
+ * @param {Object} ctx - Chain context (mutated)
+ * @param {Object} zoneConfig - Parsed zone configuration
+ */
+export const applyWalkSettings = (ctx, zoneConfig) => {
+  const settings = zoneConfig?.settings || {};
+  ctx.communicator = settings.vagrant_communicator === 'winrm' ? 'winrm' : 'ssh';
+  const transport = settings.vagrant_winrm_transport ?? 'negotiate';
+  ctx.winrm = {
+    port: settings.vagrant_winrm_port ?? (transport === 'ssl' ? 5986 : 5985),
+    transport,
+    ssl_peer_verification: settings.vagrant_winrm_ssl_peer_verification ?? true,
+  };
+  ctx.env = buildScriptEnv(ctx.provisioning);
+  ctx.provisionedBefore = hasZoneProvisionedBefore(ctx.zone);
+};
+
+/**
+ * Build the provisioning task chain: infra (content → boot/setup → wait) →
+ * folders sync (outer bracket) → THE DOCUMENT WALK (pre → methods in key
+ * order → post) → folders syncback (outer close). Q4 nesting as ruled.
  * @param {Object} params - Parameters
  * @returns {Promise<Array>} Task chain
  */
@@ -311,10 +509,12 @@ export const buildProvisioningTaskChain = async params => {
   const cleanZoneDataset = zoneDataset.startsWith('/') ? zoneDataset.substring(1) : zoneDataset;
   const provisioningDatasetPath = `/${cleanZoneDataset}/provisioning`;
 
+  applyWalkSettings(ctx, zoneConfig);
+
   let previousTaskId = await queueContentStep(ctx, zoneConfig, provisioningDatasetPath);
   previousTaskId = await queueBootAndSetupSteps(ctx, previousTaskId);
 
-  // Step 3: Wait for SSH
+  // Wait for the guest (ssh, or win_ping over winrm)
   const sshTask = await createTask({
     zone_name: ctx.zoneName,
     operation: 'zone_wait_ssh',
@@ -322,6 +522,8 @@ export const buildProvisioningTaskChain = async params => {
       ip: ctx.zoneIP,
       port: ctx.provisioning.ssh_port || 22,
       credentials: ctx.credentials,
+      communicator: ctx.communicator,
+      winrm: ctx.winrm,
     },
     depends_on: previousTaskId,
     parent_task_id: ctx.parentTaskId,
@@ -331,10 +533,9 @@ export const buildProvisioningTaskChain = async params => {
   previousTaskId = sshTask.id;
 
   const folders = extractFolders(ctx.provisioning);
-  previousTaskId = await queueSyncPhase(ctx, folders, previousTaskId);
-  previousTaskId = await queueShellPhase(ctx, previousTaskId);
-  previousTaskId = await queueProvisionPhase(ctx, previousTaskId);
-  await queueSyncbackPhase(ctx, folders, previousTaskId);
+  previousTaskId = await queueSyncBracket(ctx, folders, previousTaskId);
+  previousTaskId = await buildProvisioningWalk(ctx, previousTaskId);
+  await queueSyncbackBracket(ctx, folders, previousTaskId);
 
   return ctx.taskChain;
 };

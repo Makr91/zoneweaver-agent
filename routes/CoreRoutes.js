@@ -28,19 +28,23 @@ import {
   testRecipe,
 } from '../controllers/RecipeController.js';
 import {
-  listProvisioningProfiles,
-  createProvisioningProfile,
-  getProvisioningProfile,
-  updateProvisioningProfile,
-  deleteProvisioningProfile,
   listProvisioners,
   getProvisionerDetails,
   getProvisionerVersion,
   importProvisioner,
+  importProvisionerUpload,
+  exportProvisioner,
   deleteProvisioner,
   deleteProvisionerVersion,
   refreshProvisionerSpecs,
+  getCatalog,
+  getCatalogSources,
+  installFromCatalog,
 } from '../controllers/ProvisioningOrchestrationController/index.js';
+import {
+  provisionerUploadSingle,
+  handleUploadError as handleProvisionerUploadError,
+} from '../middleware/ProvisionerUpload.js';
 import {
   getSettings,
   getSettingsSchema,
@@ -83,10 +87,21 @@ const registerProvisioningRoutes = router => {
   router.post('/provisioning/recipes/:id/test', verifyApiKey, testRecipe); // Test recipe against zone
 
   // Provisioner Package Registry Routes (D14 provisioner-registry surface —
-  // version paths carry the /versions/ segment, the Go agent's exact wire)
+  // version paths carry the /versions/ segment, the Go agent's exact wire).
+  // Literal paths register before the :name wildcards.
   router.get('/provisioning/provisioners', verifyApiKey, listProvisioners);
   router.post('/provisioning/provisioners/import', verifyApiKey, importProvisioner);
+  router.post(
+    '/provisioning/provisioners/import-upload',
+    verifyApiKey,
+    provisionerUploadSingle('file'),
+    importProvisionerUpload,
+    handleProvisionerUploadError
+  ); // Multipart package upload → import task (share surface, design §7)
   router.post('/provisioning/provisioners/refresh-specs', verifyApiKey, refreshProvisionerSpecs);
+  router.get('/provisioning/catalog', verifyApiKey, getCatalog); // Fetch a catalog (HACS-model feed; ?source= names a configured entry)
+  router.get('/provisioning/catalog/sources', verifyApiKey, getCatalogSources); // Configured catalog sources
+  router.post('/provisioning/catalog/install', verifyApiKey, installFromCatalog); // Fresh-fetch + download + verify + import a catalog version (async task)
   router.get('/provisioning/provisioners/:name', verifyApiKey, getProvisionerDetails);
   router.delete('/provisioning/provisioners/:name', verifyApiKey, deleteProvisioner);
   router.get(
@@ -99,13 +114,14 @@ const registerProvisioningRoutes = router => {
     verifyApiKey,
     deleteProvisionerVersion
   );
+  router.post(
+    '/provisioning/provisioners/:name/versions/:version/export',
+    verifyApiKey,
+    exportProvisioner
+  ); // Export a version as registry-shaped tar.gz + sha256 sidecar (async task, shared wire)
 
-  // Provisioning Profile Routes
-  router.get('/provisioning/profiles', verifyApiKey, listProvisioningProfiles); // List all profiles
-  router.post('/provisioning/profiles', verifyApiKey, createProvisioningProfile); // Create profile
-  router.get('/provisioning/profiles/:id', verifyApiKey, getProvisioningProfile); // Get profile details
-  router.put('/provisioning/profiles/:id', verifyApiKey, updateProvisioningProfile); // Update profile
-  router.delete('/provisioning/profiles/:id', verifyApiKey, deleteProvisioningProfile); // Delete profile
+  // Provisioning profiles: REMOVED (design §9, ruled 2026-07-16) — a storage
+  // feature whose consume side was never built. Nothing replaces them.
 };
 
 /**

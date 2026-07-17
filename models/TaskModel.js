@@ -47,6 +47,8 @@ const { DataTypes } = Sequelize;
  *             - zone_provisioning_extract
  *             - zone_provisioning_stage
  *             - provisioner_import
+ *             - provisioner_export
+ *             - provisioner_catalog_install
  *             - snapshot_take
  *             - snapshot_restore
  *             - snapshot_delete
@@ -56,9 +58,11 @@ const { DataTypes } = Sequelize;
  *             - zone_syncback
  *             - zone_syncback_parent
  *             - zone_shell
- *             - zone_shell_parent
+ *             - zone_docker_compose
+ *             - zone_hook
  *             - zone_provision
  *             - zone_provision_parent
+ *             - zone_provision_remote
  *             - zone_provision_orchestration
  *             - zone_clone_orchestration
  *             - service_enable

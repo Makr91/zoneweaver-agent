@@ -16,6 +16,11 @@ import {
   deletePackageVersion,
   refreshAllRoleSpecs,
 } from '../../lib/ProvisionerRegistry.js';
+import {
+  getCatalogSources as getConfiguredCatalogSources,
+  findCatalogSource,
+  fetchCatalog,
+} from '../../lib/ProvisionerCatalog.js';
 
 const provisionerReferences = async (name, version = '') => {
   const zones = await Zones.findAll();
@@ -103,7 +108,12 @@ export const getProvisionerDetails = (req, res) => {
  * /provisioning/provisioners/{name}/versions/{version}:
  *   get:
  *     summary: Get one provisioner package version
- *     description: The version's full provisioner.yml — metadata.roles and configuration.basicFields/advancedFields drive the machine-create forms.
+ *     description: |
+ *       The version's full provisioner.yml. metadata.configuration
+ *       {groups, fields} (the field DSL) drives the machine-create form;
+ *       metadata.presentation and metadata.forked_from ride verbatim.
+ *       role_specs carries the cached per-role argument specs; field_schema
+ *       carries the derived answers JSON Schema (2020-12).
  *     tags: [Provisioner Registry]
  *     security:
  *       - ApiKeyAuth: []
@@ -240,6 +250,293 @@ export const importProvisioner = async (req, res) => {
   } catch (error) {
     log.api.error('Failed to queue provisioner import', { error: error.message });
     return res.status(500).json({ error: 'Failed to queue import task' });
+  }
+};
+
+/**
+ * @swagger
+ * /provisioning/provisioners/import-upload:
+ *   post:
+ *     summary: Upload a provisioner package archive and import it
+ *     description: |
+ *       Host-to-host share, receive side (design §7): multipart upload of a
+ *       .tar.gz/.tgz/.zip package archive (field "file"), queued as a
+ *       provisioner_import task. An optional "checksum" form field (sha256 of
+ *       the ARCHIVE) is verified before extraction; the upload is removed
+ *       after the import.
+ *     tags: [Provisioner Registry]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *               checksum:
+ *                 type: string
+ *                 description: Optional sha256 of the archive, verified before extraction
+ *     responses:
+ *       202:
+ *         description: Import task queued
+ *       400:
+ *         description: No file or not an archive
+ */
+export const importProvisionerUpload = async (req, res) => {
+  try {
+    if (!req.file?.path) {
+      return res
+        .status(400)
+        .json({ error: 'a package archive is required (multipart field "file")' });
+    }
+    const checksum = typeof req.body?.checksum === 'string' ? req.body.checksum.trim() : '';
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'provisioner_import',
+      priority: TaskPriority.MEDIUM,
+      created_by: req.entity.name,
+      status: 'pending',
+      metadata: JSON.stringify({
+        source_type: 'archive',
+        path: req.file.path,
+        checksum: checksum || undefined,
+        cleanup_source: true,
+      }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      task_id: task.id,
+      filename: req.file.filename,
+      size: req.file.size,
+      status: 'pending',
+      message: 'Provisioner upload received — import task queued',
+    });
+  } catch (error) {
+    log.api.error('Failed to queue provisioner import-upload', { error: error.message });
+    return res.status(500).json({ error: 'Failed to queue import task' });
+  }
+};
+
+/**
+ * @swagger
+ * /provisioning/provisioners/{name}/versions/{version}/export:
+ *   post:
+ *     summary: Export a provisioner package version as tar.gz + sha256
+ *     description: |
+ *       Host-to-host share, send side (design §7, the shared wire): packs ONE
+ *       version as a REGISTRY-SHAPED tar.gz (<name>/<version>/… inside the
+ *       archive — the receiving import consumes it as-is) under
+ *       <registry>/exports, with the ARCHIVE's sha256 in the task output and
+ *       a <file>.sha256 sidecar.
+ *     tags: [Provisioner Registry]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: version
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       202:
+ *         description: Export task queued
+ *       404:
+ *         description: Provisioner or version not found
+ */
+export const exportProvisioner = async (req, res) => {
+  try {
+    const { name, version } = req.params;
+    const entry = getPackageVersion(name, version);
+    if (!entry) {
+      return res.status(404).json({ error: 'Provisioner version not found' });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'provisioner_export',
+      priority: TaskPriority.MEDIUM,
+      created_by: req.entity.name,
+      status: 'pending',
+      metadata: JSON.stringify({ name, version: entry.version, dir: entry.dir }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      task_id: task.id,
+      name,
+      version: entry.version,
+      status: 'pending',
+      message: `Export task queued for ${name}/${entry.version}`,
+    });
+  } catch (error) {
+    log.api.error('Failed to queue provisioner export', { error: error.message });
+    return res.status(500).json({ error: 'Failed to queue export task' });
+  }
+};
+
+/**
+ * @swagger
+ * /provisioning/catalog/sources:
+ *   get:
+ *     summary: List the configured catalog sources
+ *     description: The provisioning.catalog_sources entries (STARTcloud default seeded when none configured). Never returns credentials — sources carry none.
+ *     tags: [Provisioner Registry]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Catalog sources
+ */
+export const getCatalogSources = (req, res) => {
+  void req;
+  const { enabled, sources } = getConfiguredCatalogSources();
+  return res.json({
+    enabled,
+    sources: sources.map(({ name, url, default: isDefault }) => ({
+      name,
+      url,
+      default: Boolean(isDefault),
+    })),
+  });
+};
+
+/**
+ * @swagger
+ * /provisioning/catalog:
+ *   get:
+ *     summary: Fetch a provisioner catalog
+ *     description: |
+ *       Fetches a configured catalog feed (design §7, the HACS model —
+ *       format_version 1). ?source= names a provisioning.catalog_sources
+ *       entry; unset resolves the default-flagged source (built-in default:
+ *       the STARTcloud catalog). Catalogs are ADVISORY — import still
+ *       verifies the sha256 after download.
+ *     tags: [Provisioner Registry]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: source
+ *         schema:
+ *           type: string
+ *         description: Configured catalog source name (default-flagged source when unset)
+ *     responses:
+ *       200:
+ *         description: The catalog document + the resolved source
+ *       404:
+ *         description: No such catalog source (or catalogs disabled)
+ *       502:
+ *         description: Catalog fetch failed or is not format_version 1
+ */
+export const getCatalog = async (req, res) => {
+  const source = findCatalogSource(req.query.source);
+  if (!source) {
+    return res.status(404).json({
+      error: req.query.source
+        ? `catalog source '${req.query.source}' is not configured or disabled`
+        : 'no catalog sources configured/enabled (provisioning.catalog_sources)',
+    });
+  }
+  try {
+    const catalog = await fetchCatalog(source);
+    return res.json({ source: { name: source.name, url: source.url }, catalog });
+  } catch (error) {
+    log.api.error('Catalog fetch failed', { source: source.url, error: error.message });
+    return res.status(502).json({ error: `Catalog fetch failed: ${error.message}` });
+  }
+};
+
+/**
+ * @swagger
+ * /provisioning/catalog/install:
+ *   post:
+ *     summary: Install a provisioner version from a catalog
+ *     description: |
+ *       Queues a provisioner_catalog_install task (the shared wire): the TASK
+ *       fetches the catalog FRESH at run time (stale pins 404 anyway;
+ *       published checksums never change), downloads the VERSIONED artifact,
+ *       verifies its sha256, then runs the ordinary import path (lint gate +
+ *       non-clobber included). Versions are immutable — an already-present
+ *       version answers 409 up front.
+ *     tags: [Provisioner Registry]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, version]
+ *             properties:
+ *               source_name:
+ *                 type: string
+ *                 description: Catalog source name (default-flagged source when unset)
+ *               name:
+ *                 type: string
+ *               version:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Catalog install task queued
+ *       404:
+ *         description: No such catalog source
+ *       409:
+ *         description: Version already present (immutable)
+ */
+export const installFromCatalog = async (req, res) => {
+  try {
+    const { source_name, name, version } = req.body || {};
+    if (!name || !version) {
+      return res.status(400).json({ error: 'name and version are required' });
+    }
+    const source = findCatalogSource(source_name);
+    if (!source) {
+      return res.status(404).json({
+        error: source_name
+          ? `catalog source '${source_name}' is not configured or disabled`
+          : 'no catalog sources configured/enabled (provisioning.catalog_sources)',
+      });
+    }
+    if (getPackageVersion(name, version)) {
+      return res.status(409).json({
+        error: `${name}/${version} is already in the registry — versions are immutable`,
+      });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'provisioner_catalog_install',
+      priority: TaskPriority.MEDIUM,
+      created_by: req.entity.name,
+      status: 'pending',
+      metadata: JSON.stringify({ source_name: source.name, name, version }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      task_id: task.id,
+      name,
+      version,
+      source: source.name,
+      status: 'pending',
+      message: `Catalog install task queued for ${name}/${version}`,
+    });
+  } catch (error) {
+    log.api.error('Failed to queue catalog install', { error: error.message });
+    return res.status(500).json({ error: 'Failed to queue catalog install task' });
   }
 };
 

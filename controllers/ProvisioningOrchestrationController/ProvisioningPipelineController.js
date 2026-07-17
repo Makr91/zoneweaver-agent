@@ -4,9 +4,79 @@
 
 import Zones from '../../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
+import config from '../../config/ConfigLoader.js';
 import { log } from '../../lib/Logger.js';
+import { extractHooks } from '../../lib/ProvisionerConfigBuilder.js';
 import { validateProvisioningRequest } from './utils/ValidationHelper.js';
 import { buildProvisioningTaskChain } from './utils/TaskChainBuilder.js';
+
+/**
+ * Host-hook PRE-FLIGHT gate (provisioning-design §5): host-target hooks are
+ * config-gated (`provisioning.host_hooks`, zoneweaver default OFF — shared
+ * hosts), and a document carrying them needs a ONE-TIME confirmation. The
+ * check is strictly pre-flight — the provision request is refused up front
+ * with a needs-confirmation answer; a running sequence is never aborted by
+ * it. `confirm_host_hooks: true` in the body records the confirmation on the
+ * zone (provisioner_state.host_hooks_confirmed) so later runs never re-prompt.
+ * @param {Object} zone - Zone database record
+ * @param {Object} provisioning - Provisioner document
+ * @param {Object} body - Request body
+ * @returns {Promise<{status: number, payload: Object}|null>} Refusal or null
+ */
+const hostHookPreflight = async (zone, provisioning, body) => {
+  const hostHooks = ['pre', 'post']
+    .flatMap(phase => extractHooks(provisioning, phase).map(hook => ({ ...hook, phase })))
+    .filter(hook => hook.target === 'host');
+  if (hostHooks.length === 0) {
+    return null;
+  }
+
+  const provConfig = config.get('provisioning') || {};
+  if (provConfig.host_hooks !== true) {
+    return {
+      status: 400,
+      payload: {
+        error:
+          'This document carries host-target hooks, and host hooks are disabled on this agent (provisioning.host_hooks — zoneweaver default OFF)',
+        host_hooks: hostHooks.map(({ script, phase }) => ({ script, phase })),
+      },
+    };
+  }
+
+  let zoneConfig = zone.configuration || {};
+  if (typeof zoneConfig === 'string') {
+    try {
+      zoneConfig = JSON.parse(zoneConfig);
+    } catch {
+      zoneConfig = {};
+    }
+  }
+  // The shared wire (Go parity): the confirmation records at the
+  // configuration TOP LEVEL, and the 409 carries {needs_confirmation,
+  // reason, confirm_with}.
+  if (zoneConfig.host_hooks_confirmed === true) {
+    return null;
+  }
+  if (body?.confirm_host_hooks !== true) {
+    return {
+      status: 409,
+      payload: {
+        needs_confirmation: true,
+        reason: `This document runs ${hostHooks.length} script(s) ON THE AGENT HOST (${hostHooks
+          .map(({ script, phase }) => `${phase}: ${script}`)
+          .join(', ')}) — one-time confirmation required`,
+        confirm_with: { confirm_host_hooks: true },
+      },
+    };
+  }
+
+  // Record the one-time confirmation (fresh clone — the Sequelize JSON
+  // change-detection rule).
+  const freshConfig = structuredClone(zoneConfig);
+  freshConfig.host_hooks_confirmed = true;
+  await Zones.update({ configuration: freshConfig }, { where: { name: zone.name } });
+  return null;
+};
 
 /**
  * @swagger
@@ -14,19 +84,25 @@ import { buildProvisioningTaskChain } from './utils/TaskChainBuilder.js';
  *   post:
  *     summary: Kick off provisioning pipeline for a machine
  *     description: |
- *       Orchestrates the full provisioning pipeline:
- *       1. Boot machine (if not running)
- *       2. Run zlogin recipe (zone_setup) to configure network
- *       3. Wait for SSH to become available (zone_wait_ssh)
- *       4. Sync provisioning files to the machine (zone_sync)
- *       5. Run shell scripts inside the machine (zone_shell) —
- *          provisioning.shell.scripts in list order when
- *          provisioning.shell.enabled; scripts carry no run directive and
- *          run every provision
- *       6. Execute provisioners (zone_provision) — playbooks honor their
- *          `run` directive against the machine's provision history
- *          (`always` = every run; `once`/unset = only when never provisioned;
- *          `not_first` = only after a prior successful provision)
+ *       THE DOCUMENT IS THE PROGRAM (the no-phases ruling): after the infra
+ *       steps (boot if needed → zlogin recipe → zone_wait_ssh, or win_ping
+ *       over winrm when settings.vagrant_communicator is winrm), the run is
+ *       the stored document executed AS WRITTEN — folders[] sync opens the
+ *       bracket, then pre[] hooks, then the provisioning section's METHOD
+ *       KEYS IN THE ORDER THEY APPEAR (shell → zone_shell per script;
+ *       ansible → groups in list order, each group's local[] then remote[]
+ *       per its own lists, zone_provision / zone_provision_remote per entry,
+ *       run directives filtered per entry, provisioned-state stamp on the
+ *       run's overall last playbook; docker → zone_docker_compose per
+ *       nested compose file), then post[] hooks, then syncback closes the
+ *       bracket. Nothing is grouped by type or reordered by the agent;
+ *       unknown method keys survive in the document and are narrated as
+ *       unexecutable.
+ *
+ *       Host-target hooks are PRE-FLIGHT gated: provisioning.host_hooks
+ *       (agent config, default OFF) must be on, and the FIRST run needs
+ *       confirm_host_hooks: true (recorded at configuration.host_hooks_confirmed;
+ *       never re-prompts).
  *
  *       Prerequisites:
  *       - Machine must have provisioning config set via PUT /machines/:name
@@ -53,13 +129,19 @@ import { buildProvisioningTaskChain } from './utils/TaskChainBuilder.js';
  *               skip_recipe:
  *                 type: boolean
  *                 default: false
+ *               confirm_host_hooks:
+ *                 type: boolean
+ *                 default: false
+ *                 description: One-time confirmation for documents carrying host-target hooks
  *     responses:
  *       200:
  *         description: Provisioning pipeline started
  *       400:
- *         description: Invalid request or missing provisioning config
+ *         description: Invalid request, missing provisioning config, or host hooks disabled
  *       404:
  *         description: Zone not found
+ *       409:
+ *         description: Host-target hooks need confirmation — body carries needs_confirmation + host_hooks[]
  *       500:
  *         description: Failed to start provisioning
  */
@@ -78,6 +160,12 @@ export const provisionZone = async (req, res) => {
     }
 
     const { provisioning, recipeId, zoneIP, credentials } = validation;
+
+    // Host-hook pre-flight (§5): refused up front, never mid-sequence.
+    const hookRefusal = await hostHookPreflight(zone, provisioning, req.body);
+    if (hookRefusal) {
+      return res.status(hookRefusal.status).json(hookRefusal.payload);
+    }
 
     // Create Parent Task
     const parentTask = await Tasks.create({
@@ -170,12 +258,14 @@ export const getProvisioningStatus = async (req, res) => {
           'zone_provisioning_stage',
           'zone_setup',
           'zone_wait_ssh',
+          'zone_hook',
           'zone_sync_parent',
           'zone_sync',
-          'zone_shell_parent',
           'zone_shell',
+          'zone_docker_compose',
           'zone_provision_parent',
           'zone_provision',
+          'zone_provision_remote',
           'zone_syncback_parent',
           'zone_syncback',
         ],

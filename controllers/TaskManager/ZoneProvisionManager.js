@@ -21,6 +21,12 @@ import Zones from '../../models/ZoneModel.js';
 import Artifacts from '../../models/ArtifactModel.js';
 import config from '../../config/ConfigLoader.js';
 import yj from 'yieldable-json';
+import {
+  shellEnvArgs,
+  recordProvisionState,
+  pollWinRMReady,
+  runWinScriptViaAnsible,
+} from './ZoneEngineManager.js';
 
 /**
  * STARTcloud ansible progress adoption — the callback-plugin contract
@@ -299,7 +305,7 @@ export const executeZoneWaitSSHTask = async task => {
       });
     });
 
-    const { ip, port = 22, credentials = {} } = metadata;
+    const { ip, port = 22, credentials = {}, communicator = 'ssh', winrm } = metadata;
 
     if (!ip) {
       return { success: false, error: 'ip is required in task metadata' };
@@ -329,6 +335,22 @@ export const executeZoneWaitSSHTask = async task => {
       if (setupWait * 1000 > timeout) {
         timeout = setupWait * 1000;
       }
+    }
+
+    // Windows guests have no sshd — readiness rides host-ansible win_ping
+    // over winrm (§5 transports; settings.vagrant_communicator selects it,
+    // vagrant_winrm_* carry the ruled defaults).
+    if (communicator === 'winrm') {
+      const ready = await pollWinRMReady(
+        { ip, port, credentials, provisioningBasePath, winrm },
+        timeout,
+        interval,
+        task.onData
+      );
+      if (ready.success) {
+        return { success: true, message: `winrm answering on ${zone_name} (${ip})` };
+      }
+      return { success: false, error: ready.error };
     }
 
     const result = await waitForSSH(
@@ -625,7 +647,16 @@ export const executeZoneShellTask = async task => {
       });
     });
 
-    const { ip, port = 22, credentials = {}, script } = metadata;
+    const {
+      ip,
+      port = 22,
+      credentials = {},
+      script,
+      env = {},
+      communicator = 'ssh',
+      winrm,
+      final = false,
+    } = metadata;
     const { onData } = task;
 
     if (!ip || !script) {
@@ -647,11 +678,30 @@ export const executeZoneShellTask = async task => {
       };
     }
 
-    const username = credentials.username || 'root';
-    const remotePath = `/tmp/zoneweaver-shell-${task.id}`;
-
     const provConfig = config.get('provisioning') || {};
     const scriptTimeout = (provConfig.shell_script_timeout_seconds || 1800) * 1000;
+
+    // Windows guests: the script rides host-ansible win_copy/win_shell over
+    // winrm (§5 transport matrix — scripts ✔ on Windows guests).
+    if (communicator === 'winrm') {
+      await updateTaskProgress(task, 20, { status: 'running_script_winrm' });
+      const winResult = await runWinScriptViaAnsible(
+        { ip, port, credentials, provisioningBasePath, winrm },
+        resolvedScript,
+        task.id,
+        { env, timeout: scriptTimeout, onData }
+      );
+      if (winResult.success) {
+        if (final) {
+          await recordProvisionState(zone_name);
+        }
+        return { success: true, message: `Shell script completed over winrm: ${script}` };
+      }
+      return { success: false, error: `Shell script failed: ${winResult.error}` };
+    }
+
+    const username = credentials.username || 'root';
+    const remotePath = `/tmp/zoneweaver-shell-${task.id}`;
 
     log.task.info('Running shell script in zone', {
       zone_name,
@@ -668,15 +718,20 @@ export const executeZoneShellTask = async task => {
       return { success: false, error: `Script upload failed: ${upload.error}` };
     }
 
+    // vars→env (§5): the document's vars ride WHOLE under their EXACT
+    // names (lists/dicts as JSON strings); names env(1) can't carry are
+    // narrated-and-skipped loudly by shellEnvArgs.
+    const envArgs = shellEnvArgs(env, onData);
+    const runCommand = envArgs
+      ? `chmod +x ${remotePath} && sudo env ${envArgs} ${remotePath}`
+      : `chmod +x ${remotePath} && sudo ${remotePath}`;
+
     await updateTaskProgress(task, 30, { status: 'running_script' });
-    const result = await executeSSHCommand(
-      ip,
-      username,
-      credentials,
-      `chmod +x ${remotePath} && sudo ${remotePath}`,
-      port,
-      { timeout: scriptTimeout, provisioningBasePath, onData }
-    );
+    const result = await executeSSHCommand(ip, username, credentials, runCommand, port, {
+      timeout: scriptTimeout,
+      provisioningBasePath,
+      onData,
+    });
 
     // Best-effort cleanup — never fails the run.
     await updateTaskProgress(task, 90, { status: 'cleaning_up' });
@@ -686,6 +741,12 @@ export const executeZoneShellTask = async task => {
     });
 
     if (result.success) {
+      // Whole-walk stamp ruling: `final` rides the run's LAST step,
+      // whatever its type.
+      if (final) {
+        await updateTaskProgress(task, 95, { status: 'recording_provision_state' });
+        await recordProvisionState(zone_name);
+      }
       return { success: true, message: `Shell script completed: ${script}` };
     }
     const errorOutput = [result.stdout, result.stderr].filter(Boolean).join('\n---STDERR---\n');
@@ -786,29 +847,12 @@ export const executeZoneProvisionTask = async task => {
       return { success: false, error: result.error };
     }
 
-    // Mark the machine as provisioned — Hosts.rb's results.yml semantics: the
-    // stamp fires ONLY on the run's FINAL playbook. A partial run must not
-    // mark the machine provisioned, or the once/not_first run directives flip
-    // after a mid-chain failure.
+    // Whole-walk stamp ruling: `final` rides the run's LAST step (whatever
+    // its type) — a partial run must not mark the machine provisioned, or
+    // the once/not_first run directives flip after a mid-chain failure.
     if (final) {
       await updateTaskProgress(task, 95, { status: 'recording_provision_state' });
-      try {
-        const freshZone = await Zones.findOne({ where: { name: zone_name } });
-        let freshConfig = freshZone?.configuration || {};
-        if (typeof freshConfig === 'string') {
-          freshConfig = JSON.parse(freshConfig);
-        }
-        freshConfig.provisioner_state = {
-          ...(freshConfig.provisioner_state || {}),
-          last_provisioned_at: new Date().toISOString(),
-        };
-        await Zones.update({ configuration: freshConfig }, { where: { name: zone_name } });
-      } catch (stateError) {
-        log.task.warn('Failed to record provision state', {
-          zone_name,
-          error: stateError.message,
-        });
-      }
+      await recordProvisionState(zone_name);
     }
 
     return {

@@ -4,14 +4,9 @@
 
 import Zones from '../../models/ZoneModel.js';
 import { log } from '../../lib/Logger.js';
-import { extractPlaybooks } from '../../lib/ProvisionerConfigBuilder.js';
 import { validateProvisioningRequest } from './utils/ValidationHelper.js';
-import {
-  createTask,
-  createSequentialPlaybookTasks,
-  filterPlaybooksByRun,
-  hasZoneProvisionedBefore,
-} from './utils/TaskCreationHelper.js';
+import { createTask } from './utils/TaskCreationHelper.js';
+import { buildProvisioningWalk, applyWalkSettings } from './utils/TaskChainBuilder.js';
 
 /**
  * @swagger
@@ -19,23 +14,13 @@ import {
  *   post:
  *     summary: Run machine provisioners ad-hoc
  *     description: |
- *       Creates a zone_provision task chain to execute the configured Ansible
- *       playbooks against the machine. This is independent of the full
- *       provisioning pipeline and can be called anytime after SSH is
- *       accessible. Shell scripts (provisioning.shell) run ONLY in the full
- *       pipeline — Hosts.rb has no ad-hoc shell slice (shared rule with the
- *       Go agent).
- *
- *       Prerequisites:
- *       - Machine must be running
- *       - Machine must have provisioning config with provisioners
- *       - SSH must be accessible
- *
- *       Playbooks honor their `run` directive against the machine's provision
- *       history (`always` = every run; `once`/unset = only when never
- *       provisioned; `not_first` = only after a prior successful provision).
- *       When every configured playbook is filtered out, the call succeeds
- *       without creating tasks and reports the skipped playbooks.
+ *       THE SAME SINGLE DOCUMENT WALK as the full pipeline (the no-phases
+ *       ruling): pre[] hooks, then the document's provisioning methods in
+ *       the order their KEYS APPEAR (shell/ansible/docker, entries in list
+ *       order, run directives per entry), then post[] hooks — one chain
+ *       under one anchor. No infra steps and no folders bracket (those are
+ *       the pipeline's; /sync covers folders ad-hoc). Callable anytime after
+ *       the guest transport answers.
  *     tags: [Provisioning Tasks]
  *     security:
  *       - ApiKeyAuth: []
@@ -47,7 +32,7 @@ import {
  *           type: string
  *     responses:
  *       200:
- *         description: Provisioning task created
+ *         description: The walk's task chain (empty walk succeeds with zero tasks)
  *       400:
  *         description: Invalid request or missing provisioning config
  *       404:
@@ -69,71 +54,64 @@ export const runProvisioners = async (req, res) => {
     }
 
     const { provisioning, zoneIP, credentials } = validation;
-
-    // Check if there are playbooks configured
-    const configuredPlaybooks = extractPlaybooks(provisioning);
-
-    if (configuredPlaybooks.length === 0) {
-      return res.status(400).json({
-        error: 'No playbooks configured in provisioner metadata',
-      });
+    let zoneConfig = zone.configuration || {};
+    if (typeof zoneConfig === 'string') {
+      try {
+        zoneConfig = JSON.parse(zoneConfig);
+      } catch {
+        zoneConfig = {};
+      }
     }
 
-    const { included: playbooks, skipped } = filterPlaybooksByRun(
-      configuredPlaybooks,
-      hasZoneProvisionedBefore(zone)
-    );
-
-    if (playbooks.length === 0) {
-      log.api.info('All playbooks skipped by run directives', {
-        zone_name: zoneName,
-        skipped,
-      });
-      return res.json({
-        success: true,
-        message: `All ${configuredPlaybooks.length} playbooks skipped by their run directives`,
-        machine_name: zoneName,
-        playbook_count: 0,
-        playbooks_skipped: skipped,
-      });
-    }
-
-    // The parent is a pure anchor (born running, never dispatched); its
-    // children start immediately and drive its completion.
-    const provisionParentTask = await createTask({
+    // The anchor is a pure anchor (born running, never dispatched); the
+    // walk's children start immediately and drive its completion.
+    const parentTask = await createTask({
       zone_name: zoneName,
       operation: 'zone_provision_parent',
-      metadata: { total_playbooks: playbooks.length, skipped_playbooks: skipped },
+      metadata: { ad_hoc: true },
       parent: true,
       parent_task_id: null,
       created_by: req.entity.name,
     });
 
-    // Create individual provision tasks sequentially (each depends on previous)
-    await createSequentialPlaybookTasks(
-      playbooks,
+    const ctx = {
+      zone,
       zoneName,
       zoneIP,
       credentials,
       provisioning,
-      provisionParentTask.id,
-      null,
-      req.entity.name
-    );
+      parentTaskId: parentTask.id,
+      createdBy: req.entity.name,
+      taskChain: [],
+    };
+    applyWalkSettings(ctx, zoneConfig);
+    await buildProvisioningWalk(ctx, null);
 
-    log.api.info('Zone provision task chain created', {
+    // A childless anchor would sit running forever (the child rollup drives
+    // its state) — an empty walk completes it on the spot.
+    if (ctx.taskChain.length === 0) {
+      await parentTask.update({
+        status: 'completed',
+        completed_at: new Date(),
+        progress_percent: 100,
+      });
+    }
+
+    log.api.info('Ad-hoc provisioner walk created', {
       zone_name: zoneName,
-      parent_task_id: provisionParentTask.id,
-      playbook_count: playbooks.length,
+      parent_task_id: parentTask.id,
+      steps: ctx.taskChain.length,
     });
 
     return res.json({
       success: true,
-      message: `Zone provisioners task chain created for ${zoneName}`,
+      message:
+        ctx.taskChain.length > 0
+          ? `Provisioner walk created for ${zoneName} (${ctx.taskChain.length} step(s), document order)`
+          : `Nothing to run — the document's walk produced no steps (gates/run directives)`,
       machine_name: zoneName,
-      parent_task_id: provisionParentTask.id,
-      playbook_count: playbooks.length,
-      playbooks_skipped: skipped,
+      parent_task_id: parentTask.id,
+      task_chain: ctx.taskChain,
     });
   } catch (error) {
     log.api.error('Failed to create zone provisioners task', { error: error.message });

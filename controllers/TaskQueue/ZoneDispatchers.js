@@ -30,7 +30,16 @@ import {
   executeZoneShellTask,
   executeZoneProvisionTask,
 } from '../TaskManager/ZoneProvisionManager.js';
-import { executeProvisionerImportTask } from '../TaskManager/ProvisionerImportManager.js';
+import {
+  executeZoneProvisionRemoteTask,
+  executeZoneDockerComposeTask,
+  executeZoneHookTask,
+} from '../TaskManager/ZoneEngineManager.js';
+import {
+  executeProvisionerImportTask,
+  executeProvisionerCatalogInstallTask,
+} from '../TaskManager/ProvisionerImportManager.js';
+import { executeProvisionerExportTask } from '../TaskManager/ProvisionerExportManager.js';
 import { executeZoneProvisioningStageTask } from '../TaskManager/ProvisionerStageManager.js';
 import {
   executeSnapshotTakeTask,
@@ -64,7 +73,12 @@ export const TASK_OBJECT_OPERATIONS = {
   zone_sync: executeZoneSyncTask,
   zone_syncback: executeZoneSyncbackTask,
   zone_shell: executeZoneShellTask,
+  zone_docker_compose: executeZoneDockerComposeTask,
+  zone_hook: executeZoneHookTask,
   zone_provision: executeZoneProvisionTask,
+  zone_provision_remote: executeZoneProvisionRemoteTask,
+  provisioner_export: executeProvisionerExportTask,
+  provisioner_catalog_install: executeProvisionerCatalogInstallTask,
 };
 
 /**

@@ -121,9 +121,40 @@ export const PROVISIONING_SCHEMA = {
       },
       shell_script_timeout_seconds: {
         type: 'integer',
-        description: 'Timeout for a single provisioning shell script run (provisioning.shell)',
+        description: 'Timeout for a single provisioning shell script or sequence hook run',
         default: 1800,
         min: 60,
+      },
+      docker_timeout_seconds: {
+        type: 'integer',
+        description: 'Timeout for a docker/docker_compose provisioning step',
+        default: 3600,
+        min: 60,
+      },
+      host_hooks: {
+        type: 'boolean',
+        description:
+          'Allow host-target sequence hooks (provisioning.pre/post entries with target: host) to run ON THIS AGENT HOST. Default OFF — zoneweaver hosts are typically shared; documents carrying host hooks are refused pre-flight while off.',
+        default: false,
+      },
+      catalog_sources: {
+        type: 'object',
+        description:
+          'Public provisioner catalogs (the HACS model) — mirrors the template-sources pattern',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            description: 'Enable catalog fetching/import',
+            default: true,
+          },
+          sources: {
+            type: 'array',
+            items: 'object',
+            description:
+              'Catalog entries ({name, url, enabled, default, ca_file}) — url serves catalog.json (format_version 1); ca_file joins a forked self-hosted catalog’s CA to the trust store (verification never off). When EMPTY, the built-in STARTcloud catalog (https://provisioner-catalog.startcloud.com/catalog.json) serves as the default.',
+            default: [],
+          },
+        },
       },
       ssh: {
         type: 'object',

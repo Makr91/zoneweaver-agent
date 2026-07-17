@@ -121,8 +121,11 @@ export const OPERATION_CATEGORIES = {
   template_export: 'template',
   template_move: 'template',
 
-  // Provisioner registry operations (one import writes into the shared registry at a time)
+  // Provisioner registry operations (one import/export/install touches the
+  // shared registry at a time)
   provisioner_import: 'provisioner_registry',
+  provisioner_export: 'provisioner_registry',
+  provisioner_catalog_install: 'provisioner_registry',
 
   // Zone lifecycle operations have NO category: per-zone exclusivity (the
   // task processor's busy-zone pick, the Go queue's per-machine rule) already

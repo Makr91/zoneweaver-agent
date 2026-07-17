@@ -1,58 +1,25 @@
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
-import { checkZvolInUse } from './utils/ZvolHelper.js';
+import { stampDataset } from '../../../lib/DiskSpec.js';
 import { buildDatasetPath } from './utils/ConfigBuilders.js';
 import { updateTaskProgress } from '../../../lib/TaskProgressHelper.js';
 
 /**
- * @fileoverview Zone storage preparation - boot volumes and template import
+ * @fileoverview Zone storage preparation — TYPED disk wire (cross-agent disk
+ * spec): the boot entry's DECLARED type drives materialization, nothing is
+ * inferred from key shapes. Created datasets are stamped with
+ * zoneweaver:source provenance (zone root = "zone", fresh zvol = "blank",
+ * template clone/copy = "template"); image attaches are NEVER stamped —
+ * unstamped datasets are foreign and deletion never touches them.
  */
 
 /**
- * Prepare ZFS boot volume
- * @param {Object} metadata - Zone creation metadata
- * @param {string} zoneName - Zone name
- * @param {Array} zfsCreated - Array to track created datasets for rollback
- * @returns {Promise<string|null>} Boot disk path or null
+ * Create the zone's parent/root dataset and stamp it ours.
+ * @param {string} rootDataset - The zone root dataset
+ * @param {Array} zfsCreated - Rollback tracker
+ * @param {Function|null} onData - Output sink
  */
-export const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData = null) => {
-  const bootDisk = metadata.disks?.boot;
-  if (!bootDisk) {
-    return null; // Diskless zone
-  }
-
-  // Scenario 1: Attaching existing dataset
-  // If only dataset field exists (no pool/volume_name), it's a full path to existing dataset
-  if (bootDisk.dataset && !bootDisk.pool && !bootDisk.volume_name) {
-    const existingDataset = bootDisk.dataset;
-
-    const existResult = await executeCommand(`pfexec zfs list ${existingDataset}`);
-    if (!existResult.success) {
-      throw new Error(`Dataset not found: ${existingDataset}`);
-    }
-
-    const usageCheck = await checkZvolInUse(existingDataset);
-    if (usageCheck.inUse && !metadata.force) {
-      throw new Error(`Dataset ${existingDataset} is already in use by zone ${usageCheck.usedBy}`);
-    }
-
-    log.task.info('Attaching existing dataset', { path: existingDataset });
-    return existingDataset;
-  }
-
-  // Scenario 2: Template source - let importTemplate() handle everything
-  if (bootDisk.source?.type === 'template') {
-    return null; // importTemplate() will create and return the path
-  }
-
-  // Scenario 3: Creating new blank volume (scratch)
-  const pool = bootDisk.pool || 'rpool';
-  const dataset = bootDisk.dataset || 'zones';
-  const volumeName = bootDisk.volume_name || 'boot';
-  const size = bootDisk.size || '48G';
-  const rootDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
-  const bootdiskPath = `${rootDataset}/${volumeName}`;
-
+const createZoneRootDataset = async (rootDataset, zfsCreated, onData) => {
   const parentResult = await executeCommand(
     `pfexec zfs create -p ${rootDataset}`,
     undefined,
@@ -62,8 +29,47 @@ export const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData =
     throw new Error(`Failed to create parent dataset: ${parentResult.error}`);
   }
   zfsCreated.push(rootDataset);
+  await stampDataset(rootDataset, 'zone');
+};
 
-  const sparseFlag = bootDisk.sparse !== false ? '-s' : '';
+/**
+ * Materialize the boot disk for types image and blank (template runs through
+ * importTemplate; none returns null by declaration).
+ * @param {Object} metadata - Zone creation metadata (typed disks wire)
+ * @param {string} zoneName - Zone name
+ * @param {Array} zfsCreated - Array to track created datasets for rollback
+ * @returns {Promise<string|null>} Boot disk path or null
+ */
+export const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData = null) => {
+  const boot = metadata.disks?.boot;
+  if (!boot || boot.type === 'none' || boot.type === 'template') {
+    return null;
+  }
+
+  if (boot.type === 'image') {
+    // Attach-as-is: never created, never stamped (unstamped = foreign — the
+    // deletion path will not touch it). The create pre-flight verified the
+    // path; this is the task-time guard.
+    const existResult = await executeCommand(`pfexec zfs list -H -o name "${boot.path}"`);
+    if (!existResult.success) {
+      throw new Error(`disks.boot.path ${boot.path} does not exist on this host`);
+    }
+    log.task.info('Attaching existing zvol as boot disk', { path: boot.path });
+    return boot.path;
+  }
+
+  // type: blank — create a fresh zvol and stamp it ours. size is REQUIRED by
+  // the wire (validated pre-flight); no silent default.
+  const pool = boot.pool || 'rpool';
+  const dataset = boot.dataset || 'zones';
+  const volumeName = boot.volume_name || 'boot';
+  const { size } = boot;
+  const rootDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
+  const bootdiskPath = `${rootDataset}/${volumeName}`;
+
+  await createZoneRootDataset(rootDataset, zfsCreated, onData);
+
+  const sparseFlag = boot.sparse !== false ? '-s' : '';
   const zvolResult = await executeCommand(
     `pfexec zfs create ${sparseFlag} -V ${size} ${bootdiskPath}`,
     undefined,
@@ -72,47 +78,46 @@ export const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData =
   if (!zvolResult.success) {
     throw new Error(`Failed to create boot volume: ${zvolResult.error}`);
   }
+  await stampDataset(bootdiskPath, 'blank');
 
   log.task.info('Created boot volume', { path: bootdiskPath, size });
   return bootdiskPath;
 };
 
 /**
- * Import template via ZFS clone or send/recv
- * @param {Object} metadata - Zone creation metadata
+ * Materialize a type: template boot disk — ZFS clone (default) or full copy,
+ * stamped "template". Frozen size rule: absent boot.size KEEPS the template's
+ * size; present = grow-to.
+ * @param {Object} metadata - Zone creation metadata (typed disks wire)
  * @param {string} zoneName - Zone name
  * @param {Array} zfsCreated - Array to track created datasets for rollback
  * @returns {Promise<string|null>} Target dataset path or null
  */
 export const importTemplate = async (metadata, zoneName, zfsCreated, onData = null) => {
-  const bootDisk = metadata.disks?.boot;
-  if (!bootDisk?.source || bootDisk.source.type !== 'template') {
+  const boot = metadata.disks?.boot;
+  if (boot?.type !== 'template') {
     return null;
   }
 
-  const { template_dataset, clone_strategy = 'clone', snapshot_name } = bootDisk.source;
-  const snapshot = snapshot_name || 'ready';
-  const pool = bootDisk.pool || 'rpool';
-  const dataset = bootDisk.dataset || 'zones';
-  const volumeName = bootDisk.volume_name || 'boot';
-  const requestedSize = bootDisk.size || '48G';
+  const templateDataset = boot.template_dataset;
+  if (!templateDataset) {
+    throw new Error(
+      'disks.boot.type template carries no resolved template_dataset — box resolution failed upstream'
+    );
+  }
+  const snapshot = boot.snapshot_name || 'ready';
+  const cloneStrategy = boot.clone_strategy || 'clone';
+  const pool = boot.pool || 'rpool';
+  const dataset = boot.dataset || 'zones';
+  const volumeName = boot.volume_name || 'boot';
   const parentDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
   const targetDataset = `${parentDataset}/${volumeName}`;
 
-  // Create parent dataset for the zone
-  const parentResult = await executeCommand(
-    `pfexec zfs create -p ${parentDataset}`,
-    undefined,
-    onData
-  );
-  if (!parentResult.success) {
-    throw new Error(`Failed to create parent dataset: ${parentResult.error}`);
-  }
-  zfsCreated.push(parentDataset);
+  await createZoneRootDataset(parentDataset, zfsCreated, onData);
 
-  if (clone_strategy === 'copy') {
+  if (cloneStrategy === 'copy') {
     const sendRecvResult = await executeCommand(
-      `pfexec zfs send ${template_dataset}@${snapshot} | pfexec zfs recv -F ${targetDataset}`,
+      `pfexec zfs send ${templateDataset}@${snapshot} | pfexec zfs recv -F ${targetDataset}`,
       3600 * 1000,
       onData
     );
@@ -121,7 +126,7 @@ export const importTemplate = async (metadata, zoneName, zfsCreated, onData = nu
     }
   } else {
     const cloneResult = await executeCommand(
-      `pfexec zfs clone ${template_dataset}@${snapshot} ${targetDataset}`,
+      `pfexec zfs clone ${templateDataset}@${snapshot} ${targetDataset}`,
       undefined,
       onData
     );
@@ -131,32 +136,33 @@ export const importTemplate = async (metadata, zoneName, zfsCreated, onData = nu
   }
 
   zfsCreated.push(targetDataset);
+  await stampDataset(targetDataset, 'template');
 
-  // Grow volume if requested size is larger than template size
-  if (requestedSize) {
+  // Frozen rule: absent size = the template's own size stands.
+  if (boot.size) {
     const resizeResult = await executeCommand(
-      `pfexec zfs set volsize=${requestedSize} ${targetDataset}`,
+      `pfexec zfs set volsize=${boot.size} ${targetDataset}`,
       undefined,
       onData
     );
     if (!resizeResult.success) {
       log.task.warn('Failed to resize boot volume', {
         target: targetDataset,
-        requested_size: requestedSize,
+        requested_size: boot.size,
         error: resizeResult.error,
       });
     } else {
-      log.task.info('Boot volume resized', { target: targetDataset, size: requestedSize });
+      log.task.info('Boot volume resized', { target: targetDataset, size: boot.size });
     }
   }
 
-  log.task.info('Template imported', { template: template_dataset, target: targetDataset });
+  log.task.info('Template imported', { template: templateDataset, target: targetDataset });
   return targetDataset;
 };
 
 /**
- * Prepare storage: boot volume and optional template import
- * @param {Object} metadata - Zone creation metadata
+ * Prepare storage: materialize the DECLARED boot type.
+ * @param {Object} metadata - Zone creation metadata (typed disks wire)
  * @param {string} zoneName - Zone name
  * @param {Array} zfsCreated - Array to track created datasets for rollback
  * @param {Object} task - Task object for progress updates
@@ -166,12 +172,9 @@ export const prepareStorage = async (metadata, zoneName, zfsCreated, task, onDat
   await updateTaskProgress(task, 10, { status: 'preparing_storage' });
   let bootdiskPath = await prepareBootVolume(metadata, zoneName, zfsCreated, onData);
 
-  if (metadata.disks?.boot?.source?.type === 'template') {
+  if (metadata.disks?.boot?.type === 'template') {
     await updateTaskProgress(task, 30, { status: 'importing_template' });
-    const templatePath = await importTemplate(metadata, zoneName, zfsCreated, onData);
-    if (templatePath) {
-      bootdiskPath = templatePath;
-    }
+    bootdiskPath = await importTemplate(metadata, zoneName, zfsCreated, onData);
   }
 
   return bootdiskPath;

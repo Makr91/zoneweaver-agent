@@ -1,5 +1,6 @@
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { QGA_EXTRA_VALUE, isGuestAgentEnabled } from '../../../lib/QemuGuestAgent.js';
+import { stampDataset } from '../../../lib/DiskSpec.js';
 import config from '../../../config/ConfigLoader.js';
 import Artifact from '../../../models/ArtifactModel.js';
 import {
@@ -131,18 +132,19 @@ export const configureBootdisk = async (zoneName, bootdiskPath, onData = null) =
 };
 
 /**
- * Configure additional disks in zone
+ * Configure additional disks in zone — TYPED entries (disk spec): blank =
+ * create a fresh zvol and stamp it ours; image = attach the declared path
+ * as-is (never created, never stamped; per-ENTRY force overrides the in-use
+ * refusal, frozen H3 semantics).
  * @param {string} zoneName - Zone name
- * @param {Array} disks - Array of disk configurations
+ * @param {Array} disks - Typed additional_disks[] entries
  * @param {Array} zfsCreated - Array to track created datasets for rollback
- * @param {boolean} force - Whether to force attach in-use datasets
  * @param {Object} metadata - Zone creation metadata (for server_id)
  */
 export const configureAdditionalDisks = async (
   zoneName,
   disks,
   zfsCreated,
-  force,
   metadata,
   onData = null
 ) => {
@@ -153,42 +155,45 @@ export const configureAdditionalDisks = async (
     const disk = disks[i];
     let diskPath = null;
 
-    if (disk.create_new) {
+    if (disk.type === 'blank') {
       const pool = disk.pool || 'rpool';
       const dset = disk.dataset || 'zones';
       const volName = disk.volume_name || `disk${i}`;
-      const size = disk.size || '50G';
       const datasetPath = buildDatasetPath(`${pool}/${dset}`, zoneName, metadata.server_id);
       diskPath = `${datasetPath}/${volName}`;
 
       const sparseFlag = disk.sparse !== false ? '-s' : '';
       zfsPromises.push(
-        executeCommand(`pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`).then(res => {
-          if (!res.success) {
-            throw new Error(`Failed to create disk ${i}: ${res.error}`);
+        executeCommand(`pfexec zfs create ${sparseFlag} -V ${disk.size} ${diskPath}`).then(
+          async res => {
+            if (!res.success) {
+              throw new Error(`Failed to create disk ${i}: ${res.error}`);
+            }
+            zfsCreated.push(diskPath);
+            await stampDataset(diskPath, 'blank');
+            return diskPath;
           }
-          zfsCreated.push(diskPath);
-          return diskPath;
-        })
+        )
       );
-    } else if (disk.existing_dataset) {
-      diskPath = disk.existing_dataset;
-
+    } else {
+      // type: image — task-time in-use guard (pre-flight ran at create; a
+      // race between then and now still refuses honestly).
+      diskPath = disk.path;
       zfsPromises.push(
         checkZvolInUse(diskPath).then(usageCheck => {
-          if (usageCheck.inUse && !force) {
-            throw new Error(`Disk ${diskPath} is already in use by zone ${usageCheck.usedBy}`);
+          if (usageCheck.inUse && disk.force !== true) {
+            throw new Error(
+              `disks.additional_disks[${i + 1}].path ${diskPath} is attached to ${usageCheck.usedBy} (set force: true to attach anyway)`
+            );
           }
           return diskPath;
         })
       );
     }
 
-    if (diskPath) {
-      zonecfgCmds.push(
-        `${buildAttrCommand(`disk${i}`, diskPath)} add device; set match=/dev/zvol/rdsk/${diskPath}; end;`
-      );
-    }
+    zonecfgCmds.push(
+      `${buildAttrCommand(`disk${i}`, diskPath)} add device; set match=/dev/zvol/rdsk/${diskPath}; end;`
+    );
   }
 
   // Wait for ZFS operations
@@ -368,21 +373,20 @@ export const applyAllZoneConfig = async (
     await configureBootdisk(zoneName, bootdiskPath, onData);
   }
 
-  if (metadata.disks?.additional?.length > 0) {
+  if (metadata.disks?.additional_disks?.length > 0) {
     await updateTaskProgress(task, 60, { status: 'configuring_disks' });
     await configureAdditionalDisks(
       zoneName,
-      metadata.disks.additional,
+      metadata.disks.additional_disks,
       zfsCreated,
-      metadata.force,
       metadata,
       onData
     );
   }
 
-  if (metadata.cdroms?.length > 0) {
+  if (metadata.disks?.cdroms?.length > 0) {
     await updateTaskProgress(task, 70, { status: 'configuring_cdroms' });
-    await configureCdroms(zoneName, metadata.cdroms, onData);
+    await configureCdroms(zoneName, metadata.disks.cdroms, onData);
   }
 
   if (metadata.filesystems?.length > 0) {

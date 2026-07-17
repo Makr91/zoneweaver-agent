@@ -39,8 +39,9 @@ export const executeZoneCreateStorageTask = async task => {
       metadata.server_id = String(metadata.settings.server_id).padStart(4, '0');
     }
 
-    // If template_dataset not set but box reference exists, look up downloaded template
-    if (metadata.settings?.box && !metadata.disks?.boot?.source?.template_dataset) {
+    // Typed wire: a template boot entry not yet enriched (auto-download path)
+    // resolves the freshly downloaded template here.
+    if (metadata.disks?.boot?.type === 'template' && !metadata.disks.boot.template_dataset) {
       const [org, boxName] = metadata.settings.box.split('/');
       const requestedVersion = metadata.settings.box_version || 'latest';
       const architecture = metadata.settings.box_arch || 'amd64';
@@ -67,14 +68,8 @@ export const executeZoneCreateStorageTask = async task => {
         throw new Error(`Template ${org}/${boxName} v${requestedVersion} not found after download`);
       }
 
-      // Inject template_dataset into metadata
-      metadata.disks = metadata.disks || {};
-      metadata.disks.boot = metadata.disks.boot || {};
-      metadata.disks.boot.source = {
-        type: 'template',
-        template_dataset: template.dataset_path,
-        clone_strategy: 'clone',
-      };
+      // Enrich the TYPED boot entry with the resolved template dataset
+      metadata.disks.boot.template_dataset = template.dataset_path;
 
       log.task.info('Resolved template from database after download', {
         box: `${org}/${boxName}`,

@@ -63,11 +63,13 @@ export const executeTemplatePublishTask = async (metadataJson, task) => {
 
     let uploadFilePath;
     let uploadChecksum;
+    let uploadWindow;
 
     if (box_path) {
-      // Path 1: Upload existing file
+      // Path 1: Upload existing file — the upload IS the work, wide window.
       log.task.info('Publishing existing box file', { box_path });
       uploadFilePath = box_path;
+      uploadWindow = { start: 40, end: 95 };
 
       if (!fs.existsSync(uploadFilePath)) {
         return { success: false, error: `Box file not found: ${uploadFilePath}` };
@@ -78,8 +80,8 @@ export const executeTemplatePublishTask = async (metadataJson, task) => {
       // Calculate checksum for existing file (non-blocking to keep API responsive)
       uploadChecksum = await calculateChecksum(uploadFilePath, 'sha256');
     } else if (zone_name) {
-      // Path 2: Export from zone then upload (Combined)
-      // Create temp directory
+      // Path 2: Export from zone then upload (Combined) — the artifact drives
+      // 10–70, so the bar never moves backwards into the upload.
       tempDir = path.join(os.tmpdir(), `template_publish_${crypto.randomUUID()}`);
       await fs.promises.mkdir(tempDir, { recursive: true });
 
@@ -87,27 +89,26 @@ export const executeTemplatePublishTask = async (metadataJson, task) => {
       const artifact = await createBoxArtifact(zone_name, snapshot_name, tempDir, task);
       uploadFilePath = artifact.boxPath;
       uploadChecksum = artifact.checksum;
+      uploadWindow = { start: 78, end: 95 };
     } else {
       return { success: false, error: 'Either zone_name or box_path must be provided' };
     }
 
-    await updateTaskProgress(task, 85, { status: 'uploading_to_registry' });
+    await updateTaskProgress(task, uploadWindow.start - 2, { status: 'uploading_to_registry' });
 
     // 2. Create Registry Objects
     await ensureRegistryStructure(client, organization, box_name, version, description, zone_name);
 
-    // 3. Upload File
+    // 3. Upload File (byte progress inside the window)
     await uploadRegistryArtifact(
       client,
       sourceConfig,
       token,
       { organization, box_name, version },
-      uploadChecksum,
-      uploadFilePath,
-      task
+      { checksum: uploadChecksum, filePath: uploadFilePath, task, window: uploadWindow }
     );
 
-    await updateTaskProgress(task, 95, { status: 'releasing_version' });
+    await updateTaskProgress(task, 96, { status: 'releasing_version' });
 
     // 4. Release Version — same conflict tolerance as the structure calls
     // (Go's conflictOK): 400/409 = already released = success, narrated.

@@ -90,10 +90,14 @@ export const executeDeleteTask = async (zoneName, metadataJson) => {
       };
     }
 
-    // Clean up ZFS datasets if requested
+    // Clean up ZFS datasets if requested (ownership-gated: only stamped
+    // datasets die; skips are narrated, never silent)
     let datasetErrors = [];
+    let datasetSkipped = [];
     if (cleanupDatasets && zoneDatasets.datasets.length > 0) {
-      datasetErrors = await cleanupZoneDatasets(zoneName, zoneDatasets);
+      const cleanup = await cleanupZoneDatasets(zoneName, zoneDatasets);
+      datasetErrors = cleanup.errors;
+      datasetSkipped = cleanup.skipped;
 
       if (datasetErrors.length > 0) {
         log.task.warn('Some ZFS datasets could not be cleaned up', {
@@ -175,12 +179,16 @@ export const executeDeleteTask = async (zoneName, metadataJson) => {
       } else {
         message += ` (${datasetErrors.length} ZFS dataset cleanup errors)`;
       }
+      if (datasetSkipped.length > 0) {
+        message += ` — ${datasetSkipped.length} dataset(s) skipped, not stamped ours`;
+      }
     }
 
     return {
       success: true,
       message,
       dataset_errors: datasetErrors.length > 0 ? datasetErrors : undefined,
+      skipped_datasets: datasetSkipped.length > 0 ? datasetSkipped : undefined,
     };
   } catch (error) {
     return {

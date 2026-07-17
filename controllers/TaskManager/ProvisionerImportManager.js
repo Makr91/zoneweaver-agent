@@ -12,7 +12,12 @@ import axios from 'axios';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { calculateChecksum } from '../../lib/ChecksumHelper.js';
 import { log } from '../../lib/Logger.js';
-import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
+import config from '../../config/ConfigLoader.js';
+import {
+  updateTaskProgress,
+  parseTaskMetadata,
+  createTransferProgress,
+} from '../../lib/TaskProgressHelper.js';
 import {
   COLLECTION_MANIFEST,
   VERSION_MANIFEST,
@@ -246,12 +251,15 @@ const extractArchive = async (archivePath, onData) => {
 /**
  * Download a catalog artifact to a temp file. The URL is OPAQUE (release
  * tags carry slashes) — only the basename is inspected, for the archive-type
- * check.
+ * check. Byte progress rides the converged task wire ({status: 'downloading',
+ * received_bytes, total_bytes|null}) mapped into the 25–55% window; the
+ * timeout is the provisioning.catalog_sources.download_timeout_seconds knob.
  * @param {string} url - Artifact URL (http/https)
  * @param {Function|null} onData - Output sink
+ * @param {Object} task - Task object for byte progress
  * @returns {Promise<{file: string, cleanupDir: string}>}
  */
-const downloadArtifact = async (url, onData) => {
+const downloadArtifact = async (url, onData, task) => {
   let parsed;
   try {
     parsed = new URL(url);
@@ -269,11 +277,25 @@ const downloadArtifact = async (url, onData) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zw-provisioner-download-'));
   const file = path.join(dir, baseName);
   onData?.({ stream: 'stdout', data: `Downloading ${url}\n` });
+  const timeoutSeconds =
+    config.get('provisioning.catalog_sources')?.download_timeout_seconds || 600;
   const response = await axios.get(url, {
     responseType: 'stream',
-    timeout: 60000,
+    timeout: timeoutSeconds * 1000,
     maxRedirects: 5,
     headers: { 'User-Agent': 'Zoneweaver/1.0.0' },
+  });
+  const contentLength = parseInt(response.headers['content-length'], 10);
+  const report = createTransferProgress(task, {
+    status: 'downloading',
+    windowStart: 25,
+    windowEnd: 55,
+    totalBytes: Number.isFinite(contentLength) && contentLength > 0 ? contentLength : null,
+  });
+  let receivedBytes = 0;
+  response.data.on('data', chunk => {
+    receivedBytes += chunk.length;
+    report(receivedBytes);
   });
   await new Promise((resolve, reject) => {
     const stream = fs.createWriteStream(file);
@@ -415,7 +437,7 @@ export const executeProvisionerCatalogInstallTask = async task => {
     }
 
     await updateTaskProgress(task, 25, { status: 'downloading' });
-    const { file, cleanupDir } = await downloadArtifact(artifact.url, onData);
+    const { file, cleanupDir } = await downloadArtifact(artifact.url, onData, task);
     try {
       await updateTaskProgress(task, 55, { status: 'verifying' });
       await verifyArchiveChecksum(file, artifact.checksum, onData);

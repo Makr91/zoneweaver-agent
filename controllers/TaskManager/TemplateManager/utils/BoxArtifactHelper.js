@@ -126,12 +126,12 @@ export const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) =
     throw new Error(`Failed to export ZFS stream: ${sendResult.error}`);
   }
 
-  await updateTaskProgress(task, 60, { status: 'creating_metadata' });
+  await updateTaskProgress(task, 55, { status: 'creating_metadata' });
 
   // 4. Create metadata files
   await generateBoxMetadata(tempDir, zoneConfig, zoneName);
 
-  await updateTaskProgress(task, 70, { status: 'packaging_box' });
+  await updateTaskProgress(task, 60, { status: 'packaging_box' });
 
   // 5. Create .box tarball
   const boxPath = path.join(tempDir, 'vagrant.box');
@@ -144,7 +144,7 @@ export const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) =
     throw new Error(`Failed to package box: ${tarResult.error}`);
   }
 
-  await updateTaskProgress(task, 90, { status: 'calculating_checksum' });
+  await updateTaskProgress(task, 70, { status: 'calculating_checksum' });
 
   // 6. Calculate checksum (non-blocking to keep API responsive)
   const checksum = await calculateChecksum(boxPath, 'sha256');

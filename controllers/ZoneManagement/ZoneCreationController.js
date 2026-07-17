@@ -2,7 +2,12 @@ import Zones from '../../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import config from '../../config/ConfigLoader.js';
 import { log } from '../../lib/Logger.js';
-import { validateZoneName } from '../../lib/ZoneValidation.js';
+import {
+  validateZoneName,
+  consoleportRangeError,
+  vcpusCountError,
+} from '../../lib/ZoneValidation.js';
+import { normalizeDisks, validateDisksWire, validateDiskImages } from '../../lib/DiskSpec.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
 import { getPackageVersion } from '../../lib/ProvisionerRegistry.js';
 import { validateAnswers } from '../../lib/FieldDsl.js';
@@ -80,6 +85,35 @@ const buildMultiHostBody = (host, body, ref, pkg) => {
   return sub;
 };
 
+/**
+ * Fold ONE rendered host's infra sections back into the request body — the
+ * single-host path's document-wins merge (the rendered document REPLACES the
+ * request where it speaks; zones merges shallowly).
+ * @param {Object} body - Request body (mutated in place)
+ * @param {Object} host - The rendered hosts[0] entry
+ * @param {Object} ref - Provisioner reference
+ * @param {Object} pkg - Registry version entry
+ * @param {Object} settings - The render-input settings (fallback)
+ */
+const applySingleHostDocument = (body, host, ref, pkg, settings) => {
+  const { infra, provisioner } = splitAndStampHost(host, ref, pkg);
+  body.settings = infra.settings || settings;
+  if (infra.networks) {
+    body.networks = infra.networks;
+  }
+  if (infra.disks) {
+    body.disks = infra.disks;
+  }
+  if (infra.zones) {
+    body.zones = { ...(body.zones || {}), ...infra.zones };
+  }
+  if (infra.cloud_init) {
+    body.cloud_init = infra.cloud_init;
+  }
+  body.provisioner = provisioner;
+  body.provisioner_ref = { name: ref.name, version: pkg.version };
+};
+
 const renderPackageDocument = body => {
   const ref = body.provisioner;
   if (!ref) {
@@ -136,6 +170,10 @@ const renderPackageDocument = body => {
     networks: body.networks || [],
     roles: body.roles || [],
     properties: body.properties || {},
+    // The request's disks ride the render context (defaults-never-locks,
+    // disks half) — a converted template echoes them with defaults; until
+    // then the key is inert.
+    disks: body.disks || {},
   });
   const markers = findLegacyMarkers(rendered);
   const hosts = parseHostsDocuments(rendered);
@@ -147,22 +185,7 @@ const renderPackageDocument = body => {
     };
   }
 
-  const { infra, provisioner } = splitAndStampHost(hosts[0], ref, pkg);
-  body.settings = infra.settings || settings;
-  if (infra.networks) {
-    body.networks = infra.networks;
-  }
-  if (infra.disks) {
-    body.disks = infra.disks;
-  }
-  if (infra.zones) {
-    body.zones = { ...(body.zones || {}), ...infra.zones };
-  }
-  if (infra.cloud_init) {
-    body.cloud_init = infra.cloud_init;
-  }
-  body.provisioner = provisioner;
-  body.provisioner_ref = { name: ref.name, version: pkg.version };
+  applySingleHostDocument(body, hosts[0], ref, pkg, settings);
   return { markers };
 };
 
@@ -199,6 +222,35 @@ const preparePackageDocument = body => {
       },
     };
   }
+};
+
+/**
+ * Required-params + pre-flight checks for the single-host create body —
+ * runs POST-render, so template-defaulted consoleport/vcpus values refuse
+ * honestly instead of poisoning the zone.
+ * @param {Object} body - Request body (post-render)
+ * @returns {{status: number, payload: Object}|null} Refusal or null
+ */
+const validateCreateBody = body => {
+  const { settings, zones } = body;
+  if (!settings?.hostname || !settings?.domain || !zones?.brand) {
+    return {
+      status: 400,
+      payload: {
+        error:
+          'Missing required parameters: settings.hostname, settings.domain, and zones.brand are required',
+      },
+    };
+  }
+  const preflightProblem =
+    consoleportRangeError(settings.consoleport) || vcpusCountError(settings.vcpus);
+  if (preflightProblem) {
+    return { status: 400, payload: { error: preflightProblem } };
+  }
+  if (!validateZoneName(`${settings.hostname}.${settings.domain}`)) {
+    return { status: 400, payload: { error: 'Invalid zone name' } };
+  }
+  return null;
 };
 
 export const findExistingZoneConflict = async finalZoneName => {
@@ -463,83 +515,104 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                       example: ["8.8.8.8"]
  *               disks:
  *                 type: object
- *                 description: Disk configuration. Omit entirely for diskless zones (PXE/netboot).
+ *                 description: |
+ *                   TYPED disk wire (cross-agent disk spec, frozen 2026-07-17): every
+ *                   entry DECLARES its type — the agent validates the declaration and
+ *                   never infers from key shapes. Omit disks.boot entirely for the
+ *                   documented default: template when settings.box is set, else none
+ *                   (diskless). VBox placement keys (controller/port/device,
+ *                   controllers[]) are accepted and answer a resource_warnings entry —
+ *                   they are not used on bhyve. Unknown keys (mount, filesystem,
+ *                   driver, …) ride the stored document verbatim (in-guest role data).
+ *                   Created zvols are stamped with zoneweaver:source provenance —
+ *                   deletion cleanup destroys stamped datasets only.
  *                 properties:
  *                   boot:
  *                     type: object
- *                     description: Boot disk configuration
+ *                     required: [type]
  *                     properties:
- *                       source:
- *                         type: object
- *                         description: Boot disk source (template or scratch). Omit for existing dataset.
- *                         properties:
- *                           type:
- *                             type: string
- *                             enum: [template, scratch]
- *                             description: "template = clone from template, scratch = blank volume"
- *                             example: "template"
- *                           template_dataset:
- *                             type: string
- *                             description: Template ZFS dataset path (required if type is template)
- *                             example: "rpool/templates/STARTcloud/debian13-server/2025.8.22"
- *                           clone_strategy:
- *                             type: string
- *                             enum: [clone, copy]
- *                             description: "clone = thin ZFS clone (default), copy = full ZFS send/recv"
- *                             default: "clone"
- *                             example: "clone"
- *                       pool:
+ *                       type:
  *                         type: string
- *                         description: ZFS pool for new volume
- *                         default: "rpool"
- *                         example: "rpool"
- *                       dataset:
- *                         type: string
- *                         description: "Parent dataset path (e.g., 'zones' or 'zones/companyA/suborgB'). For existing zvol, provide full path without pool/volume_name."
- *                         default: "zones"
- *                         example: "zones"
- *                       volume_name:
- *                         type: string
- *                         description: Volume name for new volume
- *                         default: "boot"
- *                         example: "boot"
+ *                         enum: [template, image, blank, none]
+ *                         description: |
+ *                           template = clone from settings.box (size = grow-to; absent
+ *                           size keeps the template's size; clone_strategy clone|copy) ·
+ *                           image = attach an EXISTING zvol by path (never created or
+ *                           deleted by the agent) · blank = create a fresh zvol (size
+ *                           REQUIRED) · none = diskless (takes no other keys)
  *                       size:
  *                         type: string
- *                         description: "Volume size. For templates, volume will be grown if template is smaller."
- *                         default: "48G"
+ *                         description: blank REQUIRES it; template grows to it
  *                         example: "48G"
  *                       sparse:
  *                         type: boolean
- *                         description: Create sparse volume (thin provisioned)
  *                         default: true
- *                   additional:
+ *                       volume_name:
+ *                         type: string
+ *                         default: "boot"
+ *                       path:
+ *                         type: string
+ *                         description: image only — the existing zvol's dataset path
+ *                         example: "rpool/vms/old-server/root"
+ *                       force:
+ *                         type: boolean
+ *                         default: false
+ *                         description: image only — attach even when another machine references the zvol
+ *                       clone_strategy:
+ *                         type: string
+ *                         enum: [clone, copy]
+ *                         default: "clone"
+ *                       pool:
+ *                         type: string
+ *                         default: "rpool"
+ *                       dataset:
+ *                         type: string
+ *                         description: Parent dataset path under the pool
+ *                         default: "zones"
+ *                   additional_disks:
  *                     type: array
- *                     description: Additional disks beyond the boot volume
+ *                     description: Additional disks — same typed entry shape, types image | blank (volume_name defaults diskN)
  *                     items:
  *                       type: object
+ *                       required: [type]
  *                       properties:
- *                         pool:
+ *                         type:
  *                           type: string
- *                           description: ZFS pool
- *                           default: "rpool"
- *                           example: "rpool"
- *                         dataset:
- *                           type: string
- *                           description: "Parent dataset path or full path for existing zvol"
- *                           default: "zones"
- *                           example: "zones"
- *                         volume_name:
- *                           type: string
- *                           description: Volume name
- *                           example: "data"
+ *                           enum: [image, blank]
  *                         size:
  *                           type: string
- *                           description: Volume size
  *                           example: "100G"
  *                         sparse:
  *                           type: boolean
- *                           description: Create sparse volume
  *                           default: true
+ *                         volume_name:
+ *                           type: string
+ *                           example: "data"
+ *                         path:
+ *                           type: string
+ *                           description: image only — existing zvol dataset path
+ *                         force:
+ *                           type: boolean
+ *                           default: false
+ *                         pool:
+ *                           type: string
+ *                           default: "rpool"
+ *                         dataset:
+ *                           type: string
+ *                           default: "zones"
+ *                   cdroms:
+ *                     type: array
+ *                     description: ISO images to attach — exactly ONE of iso | path per entry (validated)
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         path:
+ *                           type: string
+ *                           example: "/iso/omnios-r151050.iso"
+ *                         iso:
+ *                           type: string
+ *                           description: Cached ISO filename resolved through the artifact registry
+ *                           example: "debian-12.5.0-amd64-netinst.iso"
  *               nics:
  *                 type: array
  *                 description: Network interfaces to configure
@@ -571,20 +644,6 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                       type: string
  *                       description: IP/prefix for cloud-init allowed-address (e.g. "192.168.1.10/24")
  *                       example: "192.168.1.10/24"
- *               cdroms:
- *                 type: array
- *                 description: ISO images to attach as CD-ROMs (each entry carries a lofs mount automatically)
- *                 items:
- *                   type: object
- *                   properties:
- *                     path:
- *                       type: string
- *                       description: Path to ISO file
- *                       example: "/iso/omnios-r151050.iso"
- *                     iso:
- *                       type: string
- *                       description: Cached ISO filename resolved through the artifact registry
- *                       example: "debian-12.5.0-amd64-netinst.iso"
  *               filesystems:
  *                 type: array
  *                 description: Filesystem mounts into the zone (generic lofs shares)
@@ -695,8 +754,8 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                   domain: "example.com"
  *                 zones:
  *                   brand: "bhyve"
- *             with_scratch_disk:
- *               summary: Zone with blank scratch disk
+ *             with_blank_disk:
+ *               summary: Zone with a fresh blank boot disk (typed wire)
  *               value:
  *                 settings:
  *                   hostname: "web-server-01"
@@ -709,8 +768,7 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                   vmtype: "production"
  *                 disks:
  *                   boot:
- *                     source:
- *                       type: "scratch"
+ *                     type: "blank"
  *                     pool: "rpool"
  *                     dataset: "zones"
  *                     volume_name: "boot"
@@ -721,12 +779,14 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                     nic_type: "external"
  *                 start_after_create: true
  *             from_template:
- *               summary: Zone from template with additional disk
+ *               summary: Zone from a box template with an additional blank disk (typed wire)
  *               value:
  *                 settings:
  *                   hostname: "debian-server"
  *                   domain: "startcloud.com"
  *                   server_id: "0002"
+ *                   box: "STARTcloud/debian13-server"
+ *                   box_version: "2025.8.22"
  *                   vcpus: 4
  *                   memory: "4G"
  *                 zones:
@@ -737,17 +797,16 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                   netif: "virtio-net-viona"
  *                 disks:
  *                   boot:
- *                     source:
- *                       type: "template"
- *                       template_dataset: "rpool/templates/STARTcloud/debian13-server/2025.8.22"
- *                       clone_strategy: "clone"
+ *                     type: "template"
+ *                     clone_strategy: "clone"
  *                     pool: "rpool"
  *                     dataset: "zones"
  *                     volume_name: "boot"
  *                     size: "48G"
  *                     sparse: true
- *                   additional:
- *                     - pool: "rpool"
+ *                   additional_disks:
+ *                     - type: "blank"
+ *                       pool: "rpool"
  *                       dataset: "zones"
  *                       volume_name: "data"
  *                       size: "100G"
@@ -759,8 +818,8 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                     vlan_id: 11
  *                     nic_type: "external"
  *                 start_after_create: false
- *             existing_dataset:
- *               summary: Zone with existing dataset
+ *             attach_existing_image:
+ *               summary: Zone attaching an EXISTING zvol as its boot disk (typed wire)
  *               value:
  *                 settings:
  *                   hostname: "migrated-vm"
@@ -771,7 +830,8 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                   brand: "bhyve"
  *                 disks:
  *                   boot:
- *                     dataset: "rpool/vms/old-server/root"
+ *                     type: "image"
+ *                     path: "rpool/vms/old-server/root"
  *             from_box_reference:
  *               summary: Zone from box reference (auto-resolve template)
  *               value:
@@ -789,14 +849,13 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                   vmtype: "production"
  *                 disks:
  *                   boot:
- *                     source:
- *                       type: "template"
+ *                     type: "template"
  *                 nics:
  *                   - global_nic: "estub_vz_1"
  *                     nic_type: "internal"
  *                 start_after_create: false
  *             from_box_latest:
- *               summary: Zone from box (latest version)
+ *               summary: Zone from box (latest version — disks.boot may be omitted entirely, the documented default is template when settings.box is set)
  *               value:
  *                 settings:
  *                   hostname: "latest-test"
@@ -804,10 +863,6 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                   box: "STARTcloud/debian13-server"
  *                 zones:
  *                   brand: "bhyve"
- *                 disks:
- *                   boot:
- *                     source:
- *                       type: "template"
  *             with_complex_cpu:
  *               summary: Zone with complex CPU topology
  *               value:
@@ -927,6 +982,30 @@ const prepareMultiHostEntry = async (hostBody, index) => {
       problem: { status: 400, payload: { error: `${label}: invalid zone name ${baseName}` } },
     };
   }
+  // Consoleport + vcpus pre-flight (agreed cross-agent strings) — catches
+  // the rendered document's values too, since multi-host bodies arrive
+  // post-render.
+  const preflightProblem =
+    consoleportRangeError(settings.consoleport) || vcpusCountError(settings.vcpus);
+  if (preflightProblem) {
+    return {
+      problem: { status: 400, payload: { error: `${label}: ${preflightProblem}` } },
+    };
+  }
+  // Typed disk wire — frozen strings, entry-prefixed.
+  normalizeDisks(hostBody);
+  const diskValidation = validateDisksWire(hostBody);
+  if (diskValidation.errors.length > 0) {
+    return {
+      problem: { status: 400, payload: { error: `${label}: ${diskValidation.errors[0]}` } },
+    };
+  }
+  const imageErrors = await validateDiskImages(hostBody.disks);
+  if (imageErrors.length > 0) {
+    return {
+      problem: { status: 400, payload: { error: `${label}: ${imageErrors[0]}` } },
+    };
+  }
   const nameResult = await resolveZoneName(baseName, settings);
   if (!nameResult.success) {
     return { problem: { status: nameResult.error.status, payload: nameResult.error } };
@@ -949,13 +1028,7 @@ const prepareMultiHostEntry = async (hostBody, index) => {
   }
   hostBody.name = baseName;
   if (boxResolution.template_dataset) {
-    hostBody.disks = hostBody.disks || {};
-    hostBody.disks.boot = hostBody.disks.boot || {};
-    hostBody.disks.boot.source = {
-      type: 'template',
-      template_dataset: boxResolution.template_dataset,
-      clone_strategy: 'clone',
-    };
+    hostBody.disks.boot.template_dataset = boxResolution.template_dataset;
   }
   const resourceValidation = await validateZoneCreationResources(hostBody);
   if (!resourceValidation.valid) {
@@ -980,7 +1053,7 @@ const prepareMultiHostEntry = async (hostBody, index) => {
   return {
     finalZoneName: nameResult.finalZoneName,
     hostBody,
-    warnings: resourceValidation.warnings,
+    warnings: [...resourceValidation.warnings, ...diskValidation.warnings],
   };
 };
 
@@ -1099,21 +1172,27 @@ export const createZone = async (req, res) => {
     }
 
     // NEW HOSTS.YML STRUCTURE ONLY
-    const { settings, zones, start_after_create } = req.body;
+    const { settings, start_after_create } = req.body;
 
-    if (!settings?.hostname || !settings?.domain || !zones?.brand) {
-      return res.status(400).json({
-        error:
-          'Missing required parameters: settings.hostname, settings.domain, and zones.brand are required',
-      });
+    const bodyProblem = validateCreateBody(req.body);
+    if (bodyProblem) {
+      return res.status(bodyProblem.status).json(bodyProblem.payload);
+    }
+
+    // Typed disk wire (frozen disk spec): normalize the documented default,
+    // refuse with the frozen strings, then verify image paths on the host.
+    normalizeDisks(req.body);
+    const diskValidation = validateDisksWire(req.body);
+    if (diskValidation.errors.length > 0) {
+      return res.status(400).json({ error: diskValidation.errors[0] });
+    }
+    const imageErrors = await validateDiskImages(req.body.disks);
+    if (imageErrors.length > 0) {
+      return res.status(400).json({ error: imageErrors[0] });
     }
 
     // Build base FQDN: hostname.domain
     const baseName = `${settings.hostname}.${settings.domain}`;
-
-    if (!validateZoneName(baseName)) {
-      return res.status(400).json({ error: 'Invalid zone name' });
-    }
 
     // Resolve final zone name (applies server_id prefix if configured)
     const nameResult = await resolveZoneName(baseName, settings);
@@ -1133,15 +1212,10 @@ export const createZone = async (req, res) => {
     // Ensure metadata.name is set for task executor (base name, not prefixed)
     req.body.name = baseName;
 
-    // Template found locally - inject template_dataset
+    // Template found locally — enrich the TYPED boot entry (internal key;
+    // the wire's type stays the declaration, template_dataset the resolution)
     if (boxResolution.success && boxResolution.template_dataset) {
-      req.body.disks = req.body.disks || {};
-      req.body.disks.boot = req.body.disks.boot || {};
-      req.body.disks.boot.source = {
-        type: 'template',
-        template_dataset: boxResolution.template_dataset,
-        clone_strategy: 'clone',
-      };
+      req.body.disks.boot.template_dataset = boxResolution.template_dataset;
     }
 
     // Validate resource availability (storage space) before creating any tasks
@@ -1152,9 +1226,12 @@ export const createZone = async (req, res) => {
         details: resourceValidation.errors,
       });
     }
+    const allWarnings = [...resourceValidation.warnings, ...diskValidation.warnings];
 
-    // Handle missing template with auto-download
-    if (!boxResolution.success && boxResolution.error.status === 404 && settings.box) {
+    // Handle missing template with auto-download (typed gate: only a
+    // type: template boot entry ever resolves a box, so a 404 here IS the
+    // download case)
+    if (!boxResolution.success && boxResolution.error.status === 404) {
       const response = await handleAutoDownload(
         finalZoneName,
         req.body,
@@ -1162,8 +1239,8 @@ export const createZone = async (req, res) => {
         start_after_create,
         req.entity.name
       );
-      if (resourceValidation.warnings.length > 0) {
-        response.resource_warnings = resourceValidation.warnings;
+      if (allWarnings.length > 0) {
+        response.resource_warnings = allWarnings;
       }
       return res.json(response);
     }
@@ -1209,8 +1286,8 @@ export const createZone = async (req, res) => {
       requires_download: false,
       sub_tasks: subTasks,
     };
-    if (resourceValidation.warnings.length > 0) {
-      createResponse.resource_warnings = resourceValidation.warnings;
+    if (allWarnings.length > 0) {
+      createResponse.resource_warnings = allWarnings;
     }
     return res.json(createResponse);
   } catch (error) {

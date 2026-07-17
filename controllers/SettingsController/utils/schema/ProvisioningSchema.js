@@ -160,6 +160,12 @@ export const PROVISIONING_SCHEMA = {
               'Catalog entries ({name, url, enabled, default, ca_file}) — url serves catalog.json (format_version 1); ca_file joins a forked self-hosted catalog’s CA to the trust store (verification never off). When EMPTY, the built-in STARTcloud catalog (https://provisioner-catalog.startcloud.com/catalog.json) serves as the default.',
             default: [],
           },
+          download_timeout_seconds: {
+            type: 'integer',
+            description: 'Timeout for a catalog artifact download',
+            default: 600,
+            min: 30,
+          },
         },
       },
       ssh: {

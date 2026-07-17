@@ -10,7 +10,12 @@ import {
   resolveCdromPath,
   buildFilesystemCommand,
 } from '../ZoneCreationManager/ConfigurationManager.js';
-import { syncZoneToDatabase } from '../../../lib/ZoneConfigUtils.js';
+import {
+  syncZoneToDatabase,
+  appendDocumentDisks,
+  removeDocumentDisks,
+} from '../../../lib/ZoneConfigUtils.js';
+import { stampDataset } from '../../../lib/DiskSpec.js';
 import { updateTaskProgress } from '../../../lib/TaskProgressHelper.js';
 
 /**
@@ -79,6 +84,7 @@ const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
   let nextNum = getNextDiskNumber(zoneConfig);
   const zfsPromises = [];
   const zonecfgCmds = [];
+  const documentEntries = [];
 
   for (const disk of disks) {
     let diskPath = null;
@@ -91,18 +97,29 @@ const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
       diskPath = `${pool}/${dset}/${zoneName}/${volName}`;
 
       const sparseFlag = disk.sparse !== false ? '-s' : '';
+      const createdPath = diskPath;
       zfsPromises.push(
         executeCommand(
           `pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`,
           undefined,
           onData
-        ).then(res => {
+        ).then(async res => {
           if (!res.success) {
             throw new Error(`Failed to create disk volume: ${res.error}`);
           }
-          return diskPath;
+          // Ownership stamp (frozen disk spec): created = ours.
+          await stampDataset(createdPath, 'blank');
+          return createdPath;
         })
       );
+      documentEntries.push({
+        type: 'blank',
+        pool,
+        dataset: dset,
+        volume_name: volName,
+        size,
+        sparse: disk.sparse !== false,
+      });
     } else if (disk.existing_dataset) {
       diskPath = disk.existing_dataset;
 
@@ -114,6 +131,8 @@ const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
           return diskPath;
         })
       );
+      // Attach = image in the typed document (never stamped — foreign).
+      documentEntries.push({ type: 'image', path: diskPath });
     }
 
     if (diskPath) {
@@ -137,6 +156,9 @@ const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
     if (!diskResult.success) {
       throw new Error(`Failed to add disks to zone: ${diskResult.error}`);
     }
+    // Document honesty: the document's typed disks block learns the new
+    // disks too (the resize pattern generalized).
+    await appendDocumentDisks(zoneName, documentEntries);
     log.task.info('Added disks to zone', {
       zone_name: zoneName,
       count: disks.length,
@@ -152,6 +174,7 @@ const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
  */
 const removeDisks = async (zoneName, zoneConfig, diskNames, onData = null) => {
   const cmds = [];
+  const removedPaths = [];
 
   for (const diskName of diskNames) {
     // Find the disk path from current config to remove the device block
@@ -169,6 +192,7 @@ const removeDisks = async (zoneName, zoneConfig, diskNames, onData = null) => {
     // Remove the device block if we found the path
     if (diskPath) {
       cmds.push(`remove device match=/dev/zvol/rdsk/${diskPath}`);
+      removedPaths.push(diskPath);
     }
   }
 
@@ -180,6 +204,11 @@ const removeDisks = async (zoneName, zoneConfig, diskNames, onData = null) => {
     );
     if (!removeResult.success) {
       throw new Error(`Failed to remove disks: ${removeResult.error}`);
+    }
+    // Document honesty: drop the removed disks from the document's typed
+    // disks block too.
+    if (removedPaths.length > 0) {
+      await removeDocumentDisks(zoneName, removedPaths);
     }
     log.task.info('Removed disks from zone', { zone_name: zoneName, count: diskNames.length });
   }

@@ -22,6 +22,27 @@ import { extractAndImport } from './utils/ExtractionHelper.js';
  */
 
 /**
+ * Best-effort expected-size lookup from the registry's file/info record
+ * (BoxVault carries fileSize there) — keeps byte progress real when the
+ * download answer streams without a Content-Length.
+ * @param {Object} client - Axios client
+ * @param {string} downloadPath - The download API path
+ * @returns {Promise<number|null>} File size in bytes, or null when unknown
+ */
+const resolveRegistryFileSize = async (client, downloadPath) => {
+  try {
+    const response = await client.get(downloadPath.replace(/\/download$/u, '/info'));
+    const fileSize = Number(response.data?.fileSize);
+    return Number.isFinite(fileSize) && fileSize > 0 ? fileSize : null;
+  } catch (error) {
+    log.task.debug('Registry file/info lookup failed — size from Content-Length or unknown', {
+      error: error.message,
+    });
+    return null;
+  }
+};
+
+/**
  * Execute template download task
  * Downloads a .box from a Vagrant-compatible registry, extracts it, and imports via zfs recv
  * @param {string} metadataJson - Task metadata as JSON string
@@ -98,6 +119,8 @@ export const executeTemplateDownloadTask = async (metadataJson, task) => {
     log.task.info('Starting template download', { url: downloadUrl });
     await updateTaskProgress(task, 10, { status: 'downloading', url: downloadUrl });
 
+    const knownSize = await resolveRegistryFileSize(client, downloadPath);
+
     // Stream download to temp file
     const templateConfig = config.getTemplateSources();
 
@@ -108,7 +131,8 @@ export const executeTemplateDownloadTask = async (metadataJson, task) => {
       downloadPath,
       tempBoxPath,
       task,
-      templateConfig
+      templateConfig,
+      knownSize
     );
 
     await updateTaskProgress(task, 50, { status: 'calculating_checksum' });

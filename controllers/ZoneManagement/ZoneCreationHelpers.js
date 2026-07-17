@@ -11,13 +11,15 @@ import { findSourceConfig, queryLatestBoxVersion } from '../../lib/TemplateRegis
  */
 
 /**
- * Resolve box reference to template dataset path
+ * Resolve box reference to template dataset path. Typed wire (disk spec):
+ * only a `type: template` boot entry resolves — anything else never touches
+ * the box, and an already-enriched entry (template_dataset) passes through.
  * @param {Object} settings - Settings object from request
  * @param {Object} disks - Disks object from request
  * @returns {Promise<{success: boolean, template_dataset?: string, error?: Object}>}
  */
 export const resolveBoxToTemplate = async (settings, disks) => {
-  if (!settings.box || disks?.boot?.source?.template_dataset) {
+  if (disks?.boot?.type !== 'template' || !settings.box || disks.boot.template_dataset) {
     return { success: true };
   }
 

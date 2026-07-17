@@ -5,7 +5,12 @@
  */
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
-import { getAllZoneConfigs, syncZoneToDatabase } from '../../../lib/ZoneConfigUtils.js';
+import {
+  getAllZoneConfigs,
+  syncZoneToDatabase,
+  collectZoneDiskDatasets,
+} from '../../../lib/ZoneConfigUtils.js';
+import { readDatasetSource } from '../../../lib/DiskSpec.js';
 import Zones from '../../../models/ZoneModel.js';
 
 /**
@@ -65,66 +70,11 @@ const collectZonepathDatasets = (zoneConfig, potentialDatasets) => {
 };
 
 /**
- * Helper to collect datasets from bootdisk
- * @param {Object} zoneConfig - Zone configuration
- * @param {Set<string>} potentialDatasets - Set to add datasets to
- */
-const collectBootdiskDatasets = (zoneConfig, potentialDatasets) => {
-  if (zoneConfig.bootdisk?.path) {
-    potentialDatasets.add(zoneConfig.bootdisk.path);
-    const parts = zoneConfig.bootdisk.path.split('/');
-    if (parts.length > 1) {
-      potentialDatasets.add(parts.slice(0, -1).join('/'));
-    }
-  }
-};
-
-/**
- * Helper to collect datasets from disks and legacy attributes
- * @param {Object} zoneConfig - Zone configuration
- * @param {Set<string>} potentialDatasets - Set to add datasets to
- */
-const collectDiskDatasets = (zoneConfig, potentialDatasets) => {
-  // Additional Disks
-  if (zoneConfig.disk) {
-    const disks = Array.isArray(zoneConfig.disk) ? zoneConfig.disk : [zoneConfig.disk];
-    for (const disk of disks) {
-      if (disk.path) {
-        potentialDatasets.add(disk.path);
-      }
-    }
-  }
-
-  // Legacy disk attributes
-  if (zoneConfig.attr) {
-    const attrs = Array.isArray(zoneConfig.attr) ? zoneConfig.attr : [zoneConfig.attr];
-    for (const attr of attrs) {
-      if (attr.name && /^disk\d+$/.test(attr.name) && attr.value) {
-        potentialDatasets.add(attr.value);
-      }
-    }
-  }
-};
-
-/**
- * Helper to collect datasets from devices, filesystems, and explicit datasets
+ * Helper to collect filesystems and explicit datasets (non-disk references)
  * @param {Object} zoneConfig - Zone configuration
  * @param {Set<string>} potentialDatasets - Set to add datasets to
  */
 const collectMiscDatasets = (zoneConfig, potentialDatasets) => {
-  // ZVOL devices
-  if (zoneConfig.device) {
-    const devices = Array.isArray(zoneConfig.device) ? zoneConfig.device : [zoneConfig.device];
-    for (const dev of devices) {
-      if (dev.match) {
-        const match = dev.match.match(/\/dev\/zvol\/(?:r)?dsk\/(?<dataset>.+)/);
-        if (match?.groups?.dataset) {
-          potentialDatasets.add(match.groups.dataset);
-        }
-      }
-    }
-  }
-
   // Filesystems
   if (zoneConfig.fs) {
     const fss = Array.isArray(zoneConfig.fs) ? zoneConfig.fs : [zoneConfig.fs];
@@ -154,15 +104,19 @@ const collectMiscDatasets = (zoneConfig, potentialDatasets) => {
 };
 
 /**
- * Collects all potential ZFS dataset paths from a zone's configuration.
+ * Collects all potential ZFS dataset paths from a zone's configuration —
+ * disk references through THE shared reader (both zadm bootdisk spellings,
+ * diskN attrs, zvol device matches), plus zonepath/fs/delegated datasets.
+ * Ownership (the zoneweaver:source stamp) decides what actually dies.
  * @param {Object} zoneConfig - The parsed zone configuration.
  * @returns {Set<string>} A set of potential dataset paths.
  */
 const collectPotentialDatasets = zoneConfig => {
   const potentialDatasets = new Set();
   collectZonepathDatasets(zoneConfig, potentialDatasets);
-  collectBootdiskDatasets(zoneConfig, potentialDatasets);
-  collectDiskDatasets(zoneConfig, potentialDatasets);
+  for (const dataset of collectZoneDiskDatasets(zoneConfig)) {
+    potentialDatasets.add(dataset);
+  }
   collectMiscDatasets(zoneConfig, potentialDatasets);
   return potentialDatasets;
 };
@@ -272,11 +226,14 @@ const getProtectedDatasets = async excludeZoneName => {
 };
 
 /**
- * Process single dataset for deletion with safety checks
+ * Process single dataset for deletion — OWNERSHIP rule (frozen disk spec):
+ * only datasets carrying the zoneweaver:source stamp are ours to destroy.
+ * Unstamped = foreign (attached images, pre-spec zones) — narrated skip,
+ * never destroyed, never guessed from paths.
  * @param {string} dataset - Dataset to destroy
  * @param {string} zoneName - Zone name
  * @param {Set} protectedDatasets - Protected datasets (Set)
- * @returns {Promise<string|null>} Error message or null if successful
+ * @returns {Promise<{error?: string, skipped?: string}|null>} Outcome
  */
 const processSingleDataset = async (dataset, zoneName, protectedDatasets) => {
   // Safety Check: Intersection with protected datasets
@@ -289,34 +246,49 @@ const processSingleDataset = async (dataset, zoneName, protectedDatasets) => {
 
   if (isProtected) {
     log.task.warn('Skipping protected dataset', { zone_name: zoneName, dataset });
+    return { skipped: `${dataset} — used by another machine` };
+  }
+
+  const check = await executeCommand(`pfexec zfs list -H -o name "${dataset}" 2>/dev/null`);
+  if (!check.success) {
     return null;
   }
 
-  // Execute Safe Destroy
-  const check = await executeCommand(`pfexec zfs list -H -o name "${dataset}" 2>/dev/null`);
-  if (check.success) {
-    const destroyResult = await executeCommand(`pfexec zfs destroy -r "${dataset}"`);
-    if (!destroyResult.success) {
-      return `Failed to destroy ${dataset}: ${destroyResult.error}`;
-    }
-    log.task.info('Destroyed ZFS dataset', { dataset });
+  const source = await readDatasetSource(dataset);
+  if (!source) {
+    log.task.info('Skipping unstamped dataset — not created by this agent', {
+      zone_name: zoneName,
+      dataset,
+    });
+    return {
+      skipped: `${dataset} — no zoneweaver:source stamp (attached or pre-spec); destroy manually if intended`,
+    };
   }
+
+  const destroyResult = await executeCommand(`pfexec zfs destroy -r "${dataset}"`);
+  if (!destroyResult.success) {
+    return { error: `Failed to destroy ${dataset}: ${destroyResult.error}` };
+  }
+  log.task.info('Destroyed ZFS dataset', { dataset, source });
   return null;
 };
 
 /**
- * Clean up ZFS datasets for a zone
+ * Clean up ZFS datasets for a zone (ownership-gated).
  * @param {string} zoneName - Name of the zone
  * @param {Object} zoneDatasets - Datasets to clean up
- * @returns {Promise<string[]>} Array of error messages
+ * @returns {Promise<{errors: string[], skipped: string[]}>} Outcomes
  */
 export const cleanupZoneDatasets = async (zoneName, zoneDatasets) => {
   const protectedDatasets = await getProtectedDatasets(zoneName);
   const sortedDatasets = [...zoneDatasets.datasets].sort((a, b) => a.length - b.length);
 
-  const errors = await Promise.all(
+  const results = await Promise.all(
     sortedDatasets.map(dataset => processSingleDataset(dataset, zoneName, protectedDatasets))
   );
 
-  return errors.filter(Boolean);
+  return {
+    errors: results.filter(result => result?.error).map(result => result.error),
+    skipped: results.filter(result => result?.skipped).map(result => result.skipped),
+  };
 };

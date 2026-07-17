@@ -199,12 +199,6 @@ export const STORAGE_SCHEMA = {
             default: 3600,
             min: 60,
           },
-          progress_update_seconds: {
-            type: 'integer',
-            description: 'Progress update interval in seconds',
-            default: 10,
-            min: 1,
-          },
           max_download_size_gb: {
             type: 'integer',
             description: 'Maximum template download size in GB',

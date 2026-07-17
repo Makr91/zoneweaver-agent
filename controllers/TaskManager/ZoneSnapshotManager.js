@@ -11,7 +11,7 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
-import { getZoneConfig } from '../../lib/ZoneConfigUtils.js';
+import { getZoneConfig, collectZoneDiskDatasets } from '../../lib/ZoneConfigUtils.js';
 import { hasSuspendCheckpoint, deleteSuspendCheckpoint } from '../../lib/SuspendCheckpoint.js';
 import { isGuestAgentEnabled, guestSocketPath, runGuestCommand } from '../../lib/QemuGuestAgent.js';
 import Zones from '../../models/ZoneModel.js';
@@ -32,6 +32,9 @@ export const timestampSuffix = (date = new Date()) => {
 /**
  * The zone's snapshot targets: the zone ROOT dataset (recursive — covers
  * path, provisioning, and every in-tree zvol) plus media living outside it.
+ * Disk references come from THE shared reader (collectZoneDiskDatasets) —
+ * tolerant of both zadm bootdisk spellings (string and object), so external
+ * bootdisks are never silently skipped again.
  * @param {Object} zoneConfig - Live zadm configuration
  * @returns {{root: string|null, externals: string[]}}
  */
@@ -41,11 +44,9 @@ export const collectSnapshotTargets = zoneConfig => {
       ? zoneConfig.zonepath.replace(/^\/+/u, '').replace(/\/path$/u, '')
       : null;
   const externals = [];
-  for (const [key, value] of Object.entries(zoneConfig)) {
-    if ((key === 'bootdisk' || /^disk\d+$/u.test(key)) && typeof value === 'string' && value) {
-      if (!root || (value !== root && !value.startsWith(`${root}/`))) {
-        externals.push(value);
-      }
+  for (const dataset of collectZoneDiskDatasets(zoneConfig)) {
+    if (!root || (dataset !== root && !dataset.startsWith(`${root}/`))) {
+      externals.push(dataset);
     }
   }
   return { root, externals };

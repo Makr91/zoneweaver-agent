@@ -4,7 +4,7 @@ import config from '../../../../config/ConfigLoader.js';
 import { isTaskCancelled } from '../../../../lib/TaskContext.js';
 import { log } from '../../../../lib/Logger.js';
 import { buildRegistryCA } from '../../../../lib/TemplateRegistryUtils.js';
-import { updateTaskProgress } from './ProgressHelper.js';
+import { createTransferProgress } from '../../../../lib/TaskProgressHelper.js';
 
 /**
  * @fileoverview Registry upload utilities for template publish
@@ -57,25 +57,28 @@ export const ensureRegistryStructure = async (
 };
 
 /**
- * Helper to upload artifact to registry
+ * Helper to upload artifact to registry — byte progress rides the converged
+ * task wire ({status: 'uploading', received_bytes, total_bytes}) mapped into
+ * the caller's progress window.
  * @param {Object} client - Axios client
  * @param {Object} sourceConfig - Source configuration
  * @param {string} token - Auth token
  * @param {Object} registryParams - Registry parameters { organization, box_name, version }
- * @param {string} checksum - File checksum
- * @param {string} uploadFilePath - Path to file to upload
- * @param {Object} task - Task object for progress updates
+ * @param {Object} upload - Upload inputs
+ * @param {string} upload.checksum - File checksum
+ * @param {string} upload.filePath - Path to file to upload
+ * @param {Object} upload.task - Task object for progress updates
+ * @param {{start: number, end: number}} upload.window - Progress window
  */
 export const uploadRegistryArtifact = async (
   client,
   sourceConfig,
   token,
   registryParams,
-  checksum,
-  uploadFilePath,
-  task
+  upload
 ) => {
   const { organization, box_name, version } = registryParams;
+  const { checksum, filePath: uploadFilePath, task, window } = upload;
   const ignoreConflict = e => {
     // 200/201 = success, 400 = duplicate box, 409 = duplicate version/provider/arch
     if (![200, 201, 400, 409].includes(e.response?.status)) {
@@ -219,6 +222,12 @@ export const uploadRegistryArtifact = async (
   };
 
   // Upload chunks sequentially (intentional await in loop for sequential uploads)
+  const report = createTransferProgress(task, {
+    status: 'uploading',
+    windowStart: window.start,
+    windowEnd: window.end,
+    totalBytes: fileSize,
+  });
   const fileHandle = fs.openSync(uploadFilePath, 'r');
   try {
     const uploadNextChunk = async chunkIndex => {
@@ -242,18 +251,7 @@ export const uploadRegistryArtifact = async (
       // Upload chunk (sequential by design for reliable uploads)
       await uploadChunk(chunkIndex, buffer);
 
-      // Update progress
-      const uploadedBytes = (chunkIndex + 1) * chunkSize;
-      const progressPct = 85 + (Math.min(uploadedBytes, fileSize) / fileSize) * 10; // 85-95%
-
-      setImmediate(() => {
-        updateTaskProgress(task, Math.round(progressPct), {
-          status: 'uploading',
-          chunk: `${chunkIndex + 1}/${totalChunks}`,
-          uploaded_mb: Math.round(Math.min(uploadedBytes, fileSize) / 1024 / 1024),
-          total_mb: Math.round(fileSize / 1024 / 1024),
-        });
-      });
+      report(Math.min((chunkIndex + 1) * chunkSize, fileSize));
 
       await uploadNextChunk(chunkIndex + 1);
     };

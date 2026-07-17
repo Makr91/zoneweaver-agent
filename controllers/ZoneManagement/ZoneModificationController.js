@@ -1,7 +1,11 @@
 import Zones from '../../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
-import { validateZoneName } from '../../lib/ZoneValidation.js';
+import {
+  validateZoneName,
+  consoleportRangeError,
+  vcpusCountError,
+} from '../../lib/ZoneValidation.js';
 import { validateZoneModificationResources } from '../../lib/ResourceValidation.js';
 import {
   mergePendingChanges,
@@ -34,28 +38,24 @@ const ZONE_ATTR_FIELDS = ['boot_priority', 'consoleport', 'consolehost'];
 
 /**
  * Validate the direct-attr fields; answers the 400 (and returns false) on the
- * first invalid value, so callers just bail.
+ * first invalid value, so callers just bail. consoleport carries the agreed
+ * cross-agent refusal string (consensus 2026-07-17); null/'' clears the attr.
  */
 const validateZoneAttrFields = (body, res) => {
-  const numericRules = [
-    ['boot_priority', 1, 100, 'boot_priority must be an integer 1-100 (null clears; default 95)'],
-    [
-      'consoleport',
-      1025,
-      65535,
-      'consoleport must be an integer 1025-65535 (null clears — back to the dynamic pool)',
-    ],
-  ];
-  for (const [field, min, max, message] of numericRules) {
-    const value = body[field];
-    if (value === undefined || value === null || value === '') {
-      continue;
-    }
-    const num = Number(value);
-    if (!Number.isInteger(num) || num < min || num > max) {
-      res.status(400).json({ error: message });
+  const bootPriority = body.boot_priority;
+  if (bootPriority !== undefined && bootPriority !== null && bootPriority !== '') {
+    const num = Number(bootPriority);
+    if (!Number.isInteger(num) || num < 1 || num > 100) {
+      res
+        .status(400)
+        .json({ error: 'boot_priority must be an integer 1-100 (null clears; default 95)' });
       return false;
     }
+  }
+  const consoleportProblem = consoleportRangeError(body.consoleport);
+  if (consoleportProblem) {
+    res.status(400).json({ error: consoleportProblem });
+    return false;
   }
   return true;
 };
@@ -886,6 +886,13 @@ export const modifyZone = async (req, res) => {
 
     if (!validateZoneAttrFields(req.body, res)) {
       return undefined;
+    }
+
+    // vcpus pre-flight (agreed cross-agent string) — refused up front instead
+    // of failing (or landing garbage) in the queued zonecfg apply.
+    const vcpusProblem = vcpusCountError(req.body.vcpus);
+    if (vcpusProblem) {
+      return res.status(400).json({ error: vcpusProblem });
     }
 
     const guestAgent = await handleGuestAgentField(req, res, zoneName);

@@ -1,4 +1,5 @@
 import { executeCommand } from '../../lib/CommandManager.js';
+import { mapZvolDatasetsToZones } from '../../lib/ZoneConfigUtils.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -57,6 +58,14 @@ import { log } from '../../lib/Logger.js';
  *                         type: string
  *                       mountpoint:
  *                         type: string
+ *                       in_use_by:
+ *                         type: string
+ *                         nullable: true
+ *                         description: |
+ *                           Volume rows only — the machine whose live config
+ *                           references this zvol (bootdisk/diskN/device match),
+ *                           null when unattached. The attachability feed for
+ *                           the existing-disk picker.
  *                 total:
  *                   type: integer
  *       500:
@@ -103,6 +112,24 @@ export const listDatasets = async (req, res) => {
           mountpoint,
         };
       });
+
+    // Attachability feed (disk-spec H7): volume rows carry in_use_by — the
+    // machine whose live config references the zvol, else null. Best-effort:
+    // an unavailable zone map never breaks the listing.
+    if (datasets.some(dataset => dataset.type === 'volume')) {
+      try {
+        const zvolZones = await mapZvolDatasetsToZones();
+        for (const dataset of datasets) {
+          if (dataset.type === 'volume') {
+            dataset.in_use_by = zvolZones.get(dataset.name) || null;
+          }
+        }
+      } catch (mapError) {
+        log.api.warn('zvol in-use mapping unavailable — volume rows carry no in_use_by', {
+          error: mapError.message,
+        });
+      }
+    }
 
     return res.json({
       datasets,

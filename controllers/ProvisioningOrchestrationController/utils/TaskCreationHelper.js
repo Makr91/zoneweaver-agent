@@ -4,6 +4,7 @@
 
 import Tasks from '../../../models/TaskModel.js';
 import { waitForSSH } from '../../../lib/SSHManager.js';
+import { parseConfiguration, provisioningPathFromZonepath } from '../../../lib/ZoneConfigUtils.js';
 import { log } from '../../../lib/Logger.js';
 
 /**
@@ -26,48 +27,36 @@ export const createTask = params =>
   });
 
 /**
- * Create sequential folder sync tasks. The FIRST child depends on the outer
- * chain's previous task (never on its own parent — the parent is a running
- * anchor whose completion the children themselves drive, so a child gating
- * on it would deadlock the chain).
- * @param {Array} folders - Folders to sync
- * @param {string} zoneName - Zone name
- * @param {string} zoneIP - Zone IP address
- * @param {Object} credentials - SSH credentials
- * @param {Object} provisioning - Provisioning config
- * @param {string} syncParentTaskId - Parent anchor task ID
- * @param {string|null} firstDependsOn - Outer-chain dependency for the first child
- * @param {string} createdBy - Task creator
- * @returns {Promise<string|null>} The LAST sync child's task id (firstDependsOn when no folders)
+ * Create one sequential per-folder transfer chain (zone_sync pushes,
+ * zone_syncback pulls — the SAME creator, only the op differs). The FIRST
+ * child depends on the outer chain's previous task (never on its own parent
+ * — the parent is a running anchor whose completion the children themselves
+ * drive, so a child gating on it would deadlock the chain).
+ * @param {string} operation - 'zone_sync' | 'zone_syncback'
+ * @param {Array} folders - Folders to transfer, list order
+ * @param {Object} chain - {zoneName, zoneIP, credentials, provisioning,
+ *   parentTaskId, firstDependsOn, createdBy}
+ * @returns {Promise<string|null>} The LAST child's task id (chain.firstDependsOn when no folders)
  */
-export const createSequentialFolderTasks = (
-  folders,
-  zoneName,
-  zoneIP,
-  credentials,
-  provisioning,
-  syncParentTaskId,
-  firstDependsOn,
-  createdBy
-) =>
+export const createSequentialTransferTasks = (operation, folders, chain) =>
   folders.reduce(
     (promise, folder) =>
       promise.then(prevTaskId =>
         createTask({
-          zone_name: zoneName,
-          operation: 'zone_sync',
+          zone_name: chain.zoneName,
+          operation,
           metadata: {
-            ip: zoneIP,
-            port: provisioning.ssh_port || 22,
-            credentials,
+            ip: chain.zoneIP,
+            port: chain.provisioning.ssh_port || 22,
+            credentials: chain.credentials,
             folder,
           },
           depends_on: prevTaskId,
-          parent_task_id: syncParentTaskId,
-          created_by: createdBy,
+          parent_task_id: chain.parentTaskId,
+          created_by: chain.createdBy,
         }).then(task => task.id)
       ),
-    Promise.resolve(firstDependsOn)
+    Promise.resolve(chain.firstDependsOn)
   );
 
 /**
@@ -105,66 +94,14 @@ export const syncbackEligibleFolders = folders =>
   );
 
 /**
- * Create sequential syncback tasks (one zone_syncback per flagged folder).
- * Same first-child dependency rule as the sync chain.
- * @param {Array} folders - Flagged folders to pull back
- * @param {string} zoneName - Zone name
- * @param {string} zoneIP - Zone IP address
- * @param {Object} credentials - SSH credentials
- * @param {Object} provisioning - Provisioning config
- * @param {string} syncbackParentTaskId - Parent anchor task ID
- * @param {string|null} firstDependsOn - Outer-chain dependency for the first child
- * @param {string} createdBy - Task creator
- * @returns {Promise<string|null>} The LAST syncback child's task id
- */
-export const createSequentialSyncbackTasks = (
-  folders,
-  zoneName,
-  zoneIP,
-  credentials,
-  provisioning,
-  syncbackParentTaskId,
-  firstDependsOn,
-  createdBy
-) =>
-  folders.reduce(
-    (promise, folder) =>
-      promise.then(prevTaskId =>
-        createTask({
-          zone_name: zoneName,
-          operation: 'zone_syncback',
-          metadata: {
-            ip: zoneIP,
-            port: provisioning.ssh_port || 22,
-            credentials,
-            folder,
-          },
-          depends_on: prevTaskId,
-          parent_task_id: syncbackParentTaskId,
-          created_by: createdBy,
-        }).then(task => task.id)
-      ),
-    Promise.resolve(firstDependsOn)
-  );
-
-/**
  * Whether a zone has completed at least one successful provision.
  * Read from configuration.provisioner_state, stamped by the zone_provision
  * executor — the results.yml role in Hosts.rb's run-directive handling.
  * @param {Object} zone - Zone database record
  * @returns {boolean} True when a prior provision succeeded
  */
-export const hasZoneProvisionedBefore = zone => {
-  let zoneConfig = zone?.configuration;
-  if (typeof zoneConfig === 'string') {
-    try {
-      zoneConfig = JSON.parse(zoneConfig);
-    } catch {
-      return false;
-    }
-  }
-  return Boolean(zoneConfig?.provisioner_state?.last_provisioned_at);
-};
+export const hasZoneProvisionedBefore = zone =>
+  Boolean(parseConfiguration(zone).provisioner_state?.last_provisioned_at);
 
 /**
  * Filter playbooks by their run directive (Hosts.rb semantics: always = every
@@ -212,11 +149,7 @@ export const shouldSkipZoneSetup = async (zone, zoneIP, provisioning) => {
   }
 
   try {
-    const zoneConfig =
-      typeof zone.configuration === 'string' ? JSON.parse(zone.configuration) : zone.configuration;
-    const provisioningBasePath = zoneConfig.zonepath
-      ? `${zoneConfig.zonepath.replace('/path', '')}/provisioning`
-      : null;
+    const provisioningBasePath = provisioningPathFromZonepath(parseConfiguration(zone).zonepath);
 
     const sshCheck = await waitForSSH(
       zoneIP,

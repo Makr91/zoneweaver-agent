@@ -6,6 +6,7 @@ import Zones from '../../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import config from '../../config/ConfigLoader.js';
 import { log } from '../../lib/Logger.js';
+import { parseConfiguration } from '../../lib/ZoneConfigUtils.js';
 import { extractHooks } from '../../lib/ProvisionerConfigBuilder.js';
 import { validateProvisioningRequest } from './utils/ValidationHelper.js';
 import { buildProvisioningTaskChain } from './utils/TaskChainBuilder.js';
@@ -43,14 +44,7 @@ const hostHookPreflight = async (zone, provisioning, body) => {
     };
   }
 
-  let zoneConfig = zone.configuration || {};
-  if (typeof zoneConfig === 'string') {
-    try {
-      zoneConfig = JSON.parse(zoneConfig);
-    } catch {
-      zoneConfig = {};
-    }
-  }
+  const zoneConfig = parseConfiguration(zone);
   // The shared wire (Go parity): the confirmation records at the
   // configuration TOP LEVEL, and the 409 carries {needs_confirmation,
   // reason, confirm_with}.
@@ -274,15 +268,7 @@ export const getProvisioningStatus = async (req, res) => {
       limit: 20,
     });
 
-    let zoneConfig = zone.configuration || {};
-    if (typeof zoneConfig === 'string') {
-      try {
-        zoneConfig = JSON.parse(zoneConfig);
-      } catch (e) {
-        log.api.warn('Failed to parse zone configuration', { error: e.message });
-        zoneConfig = {};
-      }
-    }
+    const zoneConfig = parseConfiguration(zone);
     const provisionerState = zoneConfig.provisioner_state || {};
 
     return res.json({

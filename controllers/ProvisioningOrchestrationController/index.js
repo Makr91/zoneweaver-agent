@@ -16,6 +16,7 @@ export {
   deleteProvisioner,
   deleteProvisionerVersion,
   refreshProvisionerSpecs,
+  refreshProvisionerFromSource,
   getCatalog,
   getCatalogSources,
   installFromCatalog,

@@ -4,7 +4,7 @@
 
 import Recipes from '../../../models/RecipeModel.js';
 import { validateZoneName } from '../../../lib/ZoneValidation.js';
-import { log } from '../../../lib/Logger.js';
+import { parseConfiguration } from '../../../lib/ZoneConfigUtils.js';
 
 /**
  * Validate provisioning request and zone state (Hosts.yml structure:
@@ -12,7 +12,7 @@ import { log } from '../../../lib/Logger.js';
  * @param {string} zoneName - Zone name
  * @param {Object} zone - Zone database record
  * @param {boolean} skipRecipe - Whether to skip recipe
- * @returns {Promise<{valid: boolean, error?: string, provisioning?: Object, recipeId?: string, zoneIP?: string, credentials?: Object}>}
+ * @returns {Promise<{valid: boolean, error?: string, provisioning?: Object, zoneConfig?: Object, recipeId?: string, zoneIP?: string, credentials?: Object}>}
  */
 export const validateProvisioningRequest = async (zoneName, zone, skipRecipe) => {
   if (!validateZoneName(zoneName)) {
@@ -23,15 +23,7 @@ export const validateProvisioningRequest = async (zoneName, zone, skipRecipe) =>
     return { valid: false, error: `Zone '${zoneName}' not found` };
   }
 
-  let zoneConfig = zone.configuration;
-  if (typeof zoneConfig === 'string') {
-    try {
-      zoneConfig = JSON.parse(zoneConfig);
-    } catch (e) {
-      log.api.warn('Failed to parse zone configuration', { error: e.message });
-      zoneConfig = {};
-    }
-  }
+  const zoneConfig = parseConfiguration(zone);
 
   const config = zoneConfig?.provisioner;
   if (!config) {
@@ -76,6 +68,7 @@ export const validateProvisioningRequest = async (zoneName, zone, skipRecipe) =>
   return {
     valid: true,
     provisioning: config,
+    zoneConfig,
     recipeId,
     zoneIP,
     credentials,

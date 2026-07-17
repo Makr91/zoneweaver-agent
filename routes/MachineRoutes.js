@@ -25,6 +25,7 @@ import {
   listMachineSnapshots,
   takeMachineSnapshot,
   restoreMachineSnapshot,
+  modifyMachineSnapshot,
   deleteMachineSnapshot,
 } from '../controllers/ZoneManagement/index.js';
 import {
@@ -134,6 +135,7 @@ const registerLifecycleRoutes = router => {
     verifyApiKey,
     restoreMachineSnapshot
   );
+  router.put('/machines/:machineName/snapshots/:snapshotName', verifyApiKey, modifyMachineSnapshot); // Rename and/or edit description (snapshot_modify, shared wire)
   router.delete(
     '/machines/:machineName/snapshots/:snapshotName',
     verifyApiKey,

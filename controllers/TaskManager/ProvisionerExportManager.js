@@ -9,18 +9,15 @@
 
 import fs from 'fs';
 import path from 'path';
-import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { calculateChecksum } from '../../lib/ChecksumHelper.js';
 import { log } from '../../lib/Logger.js';
-import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';
+import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
 import { getRegistryDir, getPackageVersion } from '../../lib/ProvisionerRegistry.js';
 
 export const executeProvisionerExportTask = async task => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => (err ? reject(err) : resolve(result)));
-    });
+    const metadata = await parseTaskMetadata(task);
     const { name, version } = metadata;
     const { onData } = task;
 

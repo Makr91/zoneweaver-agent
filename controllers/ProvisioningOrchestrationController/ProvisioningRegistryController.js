@@ -15,26 +15,21 @@ import {
   deleteCollection,
   deletePackageVersion,
   refreshAllRoleSpecs,
+  readFamilySource,
 } from '../../lib/ProvisionerRegistry.js';
 import {
   getCatalogSources as getConfiguredCatalogSources,
   findCatalogSource,
   fetchCatalog,
+  catalogSourceError,
 } from '../../lib/ProvisionerCatalog.js';
+import { parseConfiguration } from '../../lib/ZoneConfigUtils.js';
 
 const provisionerReferences = async (name, version = '') => {
   const zones = await Zones.findAll();
   const references = [];
   for (const zone of zones) {
-    let zoneConfig = zone.configuration;
-    if (typeof zoneConfig === 'string') {
-      try {
-        zoneConfig = JSON.parse(zoneConfig);
-      } catch {
-        continue;
-      }
-    }
-    const ref = zoneConfig?.provisioner_ref;
+    const ref = parseConfiguration(zone).provisioner_ref;
     if (!ref || ref.name !== name) {
       continue;
     }
@@ -45,6 +40,24 @@ const provisionerReferences = async (name, version = '') => {
   }
   return references;
 };
+
+/**
+ * Queue one system-scoped registry task (import/export/catalog-install/
+ * refresh all share this exact row shape).
+ * @param {Object} req - Request (created_by rides req.entity.name)
+ * @param {string} operation - Task operation
+ * @param {Object} metadata - Task metadata
+ * @returns {Promise<Object>} Created task
+ */
+const queueRegistryTask = (req, operation, metadata) =>
+  Tasks.create({
+    zone_name: 'system',
+    operation,
+    priority: TaskPriority.MEDIUM,
+    created_by: req.entity.name,
+    status: 'pending',
+    metadata: JSON.stringify(metadata),
+  });
 
 /**
  * @swagger
@@ -231,13 +244,11 @@ export const importProvisioner = async (req, res) => {
       return res.status(400).json({ error: 'url must be an http(s) git repository URL' });
     }
 
-    const task = await Tasks.create({
-      zone_name: 'system',
-      operation: 'provisioner_import',
-      priority: TaskPriority.MEDIUM,
-      created_by: req.entity.name,
-      status: 'pending',
-      metadata: JSON.stringify({ source_type, path: sourcePath, url, branch }),
+    const task = await queueRegistryTask(req, 'provisioner_import', {
+      source_type,
+      path: sourcePath,
+      url,
+      branch,
     });
 
     return res.status(202).json({
@@ -296,18 +307,11 @@ export const importProvisionerUpload = async (req, res) => {
     }
     const checksum = typeof req.body?.checksum === 'string' ? req.body.checksum.trim() : '';
 
-    const task = await Tasks.create({
-      zone_name: 'system',
-      operation: 'provisioner_import',
-      priority: TaskPriority.MEDIUM,
-      created_by: req.entity.name,
-      status: 'pending',
-      metadata: JSON.stringify({
-        source_type: 'archive',
-        path: req.file.path,
-        checksum: checksum || undefined,
-        cleanup_source: true,
-      }),
+    const task = await queueRegistryTask(req, 'provisioner_import', {
+      source_type: 'archive',
+      path: req.file.path,
+      checksum: checksum || undefined,
+      cleanup_source: true,
     });
 
     return res.status(202).json({
@@ -321,6 +325,72 @@ export const importProvisionerUpload = async (req, res) => {
   } catch (error) {
     log.api.error('Failed to queue provisioner import-upload', { error: error.message });
     return res.status(500).json({ error: 'Failed to queue import task' });
+  }
+};
+
+/**
+ * @swagger
+ * /provisioning/provisioners/{name}/refresh-from-source:
+ *   post:
+ *     summary: Re-import a git-imported family from its recorded source
+ *     description: |
+ *       Families imported from git record their provenance ({source_type:
+ *       git, url, branch?} — exposed as `source` on the family detail/list).
+ *       This queues the ORDINARY provisioner_import task against that stored
+ *       source: existing versions refuse (immutable, non-clobber), NEW
+ *       versions land beside them. Families from folder/archive/catalog
+ *       imports carry no provenance and answer 400 (catalog families update
+ *       through the catalog).
+ *     tags: [Provisioner Registry]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       202:
+ *         description: Import task queued against the recorded git source
+ *       400:
+ *         description: Family carries no git provenance
+ *       404:
+ *         description: Provisioner not found
+ */
+export const refreshProvisionerFromSource = async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!getCollection(name)) {
+      return res.status(404).json({ error: 'Provisioner not found' });
+    }
+    const source = readFamilySource(name);
+    if (source?.source_type !== 'git' || !source.url) {
+      return res.status(400).json({
+        error: `${name} carries no git provenance — refresh-from-source works only for git imports (catalog families update through the catalog)`,
+      });
+    }
+
+    const task = await queueRegistryTask(req, 'provisioner_import', {
+      source_type: 'git',
+      url: source.url,
+      branch: source.branch,
+    });
+
+    return res.status(202).json({
+      success: true,
+      task_id: task.id,
+      name,
+      source,
+      status: 'pending',
+      message: `Refresh-from-source import task queued for ${name} (${source.url})`,
+    });
+  } catch (error) {
+    log.api.error('Failed to queue refresh-from-source', {
+      name: req.params.name,
+      error: error.message,
+    });
+    return res.status(500).json({ error: 'Failed to queue refresh-from-source task' });
   }
 };
 
@@ -363,13 +433,10 @@ export const exportProvisioner = async (req, res) => {
       return res.status(404).json({ error: 'Provisioner version not found' });
     }
 
-    const task = await Tasks.create({
-      zone_name: 'system',
-      operation: 'provisioner_export',
-      priority: TaskPriority.MEDIUM,
-      created_by: req.entity.name,
-      status: 'pending',
-      metadata: JSON.stringify({ name, version: entry.version, dir: entry.dir }),
+    const task = await queueRegistryTask(req, 'provisioner_export', {
+      name,
+      version: entry.version,
+      dir: entry.dir,
     });
 
     return res.status(202).json({
@@ -443,11 +510,7 @@ export const getCatalogSources = (req, res) => {
 export const getCatalog = async (req, res) => {
   const source = findCatalogSource(req.query.source);
   if (!source) {
-    return res.status(404).json({
-      error: req.query.source
-        ? `catalog source '${req.query.source}' is not configured or disabled`
-        : 'no catalog sources configured/enabled (provisioning.catalog_sources)',
-    });
+    return res.status(404).json({ error: catalogSourceError(req.query.source) });
   }
   try {
     // Parsed relay, the shared wire: the catalog document IS the response —
@@ -507,11 +570,7 @@ export const installFromCatalog = async (req, res) => {
     }
     const source = findCatalogSource(source_name);
     if (!source) {
-      return res.status(404).json({
-        error: source_name
-          ? `catalog source '${source_name}' is not configured or disabled`
-          : 'no catalog sources configured/enabled (provisioning.catalog_sources)',
-      });
+      return res.status(404).json({ error: catalogSourceError(source_name) });
     }
     if (getPackageVersion(name, version)) {
       return res.status(409).json({
@@ -519,13 +578,10 @@ export const installFromCatalog = async (req, res) => {
       });
     }
 
-    const task = await Tasks.create({
-      zone_name: 'system',
-      operation: 'provisioner_catalog_install',
-      priority: TaskPriority.MEDIUM,
-      created_by: req.entity.name,
-      status: 'pending',
-      metadata: JSON.stringify({ source_name: source.name, name, version }),
+    const task = await queueRegistryTask(req, 'provisioner_catalog_install', {
+      source_name: source.name,
+      name,
+      version,
     });
 
     return res.status(202).json({

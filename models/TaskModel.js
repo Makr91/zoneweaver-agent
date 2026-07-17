@@ -51,6 +51,7 @@ const { DataTypes } = Sequelize;
  *             - provisioner_catalog_install
  *             - snapshot_take
  *             - snapshot_restore
+ *             - snapshot_modify
  *             - snapshot_delete
  *             - zone_wait_ssh
  *             - zone_sync

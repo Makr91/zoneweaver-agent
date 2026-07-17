@@ -111,6 +111,14 @@ provisioning:
   provisioners_path: /var/lib/zoneweaver-agent/provisioners
   playbook_timeout_seconds: 21600
   ansible_install_timeout_seconds: 300
+  catalog_sources:
+    enabled: true
+    sources:
+      - name: startcloud
+        url: https://provisioner-catalog.startcloud.com/catalog.json
+        enabled: true
+        default: true
+        ca_file: ''
   ssh:
     key_path: /etc/zoneweaver-agent/ssh/provision_key
     timeout_seconds: 300

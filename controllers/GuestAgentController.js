@@ -9,6 +9,7 @@
 import Zones from '../models/ZoneModel.js';
 import { log } from '../lib/Logger.js';
 import { validateZoneName } from '../lib/ZoneValidation.js';
+import { parseConfiguration } from '../lib/ZoneConfigUtils.js';
 import { executeCommand } from '../lib/CommandManager.js';
 import {
   QGA_EXTRA_VALUE,
@@ -34,14 +35,7 @@ const resolveGuestChannel = async (req, res) => {
     res.status(404).json({ error: 'Machine not found' });
     return null;
   }
-  let zoneConfig = zone.configuration || {};
-  if (typeof zoneConfig === 'string') {
-    try {
-      zoneConfig = JSON.parse(zoneConfig);
-    } catch {
-      zoneConfig = {};
-    }
-  }
+  const zoneConfig = parseConfiguration(zone);
   if (!zoneConfig.zonepath) {
     res.status(400).json({ error: 'Machine has no zonepath yet — no guest-agent channel' });
     return null;
@@ -421,6 +415,24 @@ export const guestShutdown = async (req, res) => {
  *       200:
  *         description: Channel configured (takes effect on next boot)
  */
+/**
+ * Wire the qga virtio-console token into the zone's `extra` attr through
+ * zonecfg's offline store: the token APPENDS to an existing value
+ * (select-and-set when the attr exists, add when absent) — the ONE command
+ * builder the setup endpoint and the PUT toggle share.
+ * @param {string} zoneName - Zone name
+ * @param {boolean} exists - Whether the extra attr already exists
+ * @param {string} existingExtra - The attr's current value ('' when unset)
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+const wireGuestAgentChannel = (zoneName, exists, existingExtra) => {
+  const value = existingExtra ? `${existingExtra} ${QGA_EXTRA_VALUE}` : QGA_EXTRA_VALUE;
+  const command = exists
+    ? `select attr name=extra; set value=\\"${value}\\"; end;`
+    : `add attr; set name=extra; set value=\\"${value}\\"; set type=string; end;`;
+  return executeCommand(`pfexec zonecfg -z ${zoneName} "${command}"`);
+};
+
 export const guestAgentSetup = async (req, res) => {
   const channel = await resolveGuestChannel(req, res);
   if (!channel) {
@@ -437,11 +449,7 @@ export const guestAgentSetup = async (req, res) => {
         message: 'Guest-agent channel is already configured',
       });
     }
-    const value = existingExtra ? `${existingExtra} ${QGA_EXTRA_VALUE}` : QGA_EXTRA_VALUE;
-    const command = exists
-      ? `select attr name=extra; set value=\\"${value}\\"; end;`
-      : `add attr; set name=extra; set value=\\"${value}\\"; set type=string; end;`;
-    const result = await executeCommand(`pfexec zonecfg -z ${channel.zoneName} "${command}"`);
+    const result = await wireGuestAgentChannel(channel.zoneName, exists, existingExtra);
     if (!result.success) {
       return res
         .status(500)
@@ -487,11 +495,7 @@ export const applyGuestAgentToggle = async (zoneName, enabled) => {
     if (hasChannel) {
       return { changed: false };
     }
-    const value = existingExtra ? `${existingExtra} ${QGA_EXTRA_VALUE}` : QGA_EXTRA_VALUE;
-    const command = exists
-      ? `select attr name=extra; set value=\\"${value}\\"; end;`
-      : `add attr; set name=extra; set value=\\"${value}\\"; set type=string; end;`;
-    const result = await executeCommand(`pfexec zonecfg -z ${zoneName} "${command}"`);
+    const result = await wireGuestAgentChannel(zoneName, exists, existingExtra);
     if (!result.success) {
       throw new Error(`Failed to configure the guest-agent channel: ${result.error}`);
     }

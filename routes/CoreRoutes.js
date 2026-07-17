@@ -37,6 +37,7 @@ import {
   deleteProvisioner,
   deleteProvisionerVersion,
   refreshProvisionerSpecs,
+  refreshProvisionerFromSource,
   getCatalog,
   getCatalogSources,
   installFromCatalog,
@@ -104,6 +105,11 @@ const registerProvisioningRoutes = router => {
   router.post('/provisioning/catalog/install', verifyApiKey, installFromCatalog); // Fresh-fetch + download + verify + import a catalog version (async task)
   router.get('/provisioning/provisioners/:name', verifyApiKey, getProvisionerDetails);
   router.delete('/provisioning/provisioners/:name', verifyApiKey, deleteProvisioner);
+  router.post(
+    '/provisioning/provisioners/:name/refresh-from-source',
+    verifyApiKey,
+    refreshProvisionerFromSource
+  ); // Re-import a git-imported family from its recorded provenance (non-clobber)
   router.get(
     '/provisioning/provisioners/:name/versions/:version',
     verifyApiKey,

@@ -10,6 +10,7 @@ import {
   setSnapshotPolicy,
   readZonecfgAttr,
   getZoneConfig,
+  parseConfiguration,
 } from '../../lib/ZoneConfigUtils.js';
 import { resizeMachineDisks } from '../../lib/MachineDiskResize.js';
 import { executeCommand } from '../../lib/CommandManager.js';
@@ -129,17 +130,7 @@ const handleResizeDisks = async (res, zoneName, entries) => {
   }
 };
 
-const parsePendingSet = zone => {
-  let zoneConfig = zone.configuration || {};
-  if (typeof zoneConfig === 'string') {
-    try {
-      zoneConfig = JSON.parse(zoneConfig);
-    } catch {
-      zoneConfig = {};
-    }
-  }
-  return zoneConfig.pending_changes || {};
-};
+const parsePendingSet = zone => parseConfiguration(zone).pending_changes || {};
 
 const queueModifyTask = (zoneName, metadata, createdBy) =>
   Tasks.create({
@@ -190,17 +181,7 @@ const applyProvisionerImmediate = async (zone, zoneName, body, changeFields) => 
   if (!body.provisioner) {
     return null;
   }
-  let currentConfig = zone.configuration || {};
-  if (typeof currentConfig === 'string') {
-    try {
-      currentConfig = JSON.parse(currentConfig);
-    } catch (parseError) {
-      log.database.warn('Failed to parse current zone configuration', {
-        error: parseError.message,
-      });
-      currentConfig = {};
-    }
-  }
+  const currentConfig = parseConfiguration(zone);
   await zone.update({ configuration: { ...currentConfig, provisioner: body.provisioner } });
 
   const otherChanges = changeFields

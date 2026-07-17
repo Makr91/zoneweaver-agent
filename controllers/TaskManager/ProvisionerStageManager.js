@@ -8,12 +8,16 @@
 
 import fs from 'fs';
 import path from 'path';
-import yj from 'yieldable-json';
 import yaml from 'js-yaml';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';
+import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
+import { parseConfiguration } from '../../lib/ZoneConfigUtils.js';
 import { getPackageVersion } from '../../lib/ProvisionerRegistry.js';
+import {
+  ensureProvisioningDataset,
+  fixProvisioningKeyPermissions,
+} from './ZoneProvisionManager.js';
 import Zones from '../../models/ZoneModel.js';
 
 const buildHostsYml = zoneConfig => {
@@ -39,9 +43,7 @@ export const executeZoneProvisioningStageTask = async task => {
   const { zone_name } = task;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => (err ? reject(err) : resolve(result)));
-    });
+    const metadata = await parseTaskMetadata(task);
     const { provisioner_name, provisioner_version, dataset_path } = metadata;
     const { onData } = task;
 
@@ -57,31 +59,12 @@ export const executeZoneProvisioningStageTask = async task => {
     if (!zone) {
       return { success: false, error: `Zone '${zone_name}' not found` };
     }
-    let zoneConfig = zone.configuration || {};
-    if (typeof zoneConfig === 'string') {
-      try {
-        zoneConfig = JSON.parse(zoneConfig);
-      } catch {
-        zoneConfig = {};
-      }
-    }
+    const zoneConfig = parseConfiguration(zone);
 
     await updateTaskProgress(task, 10, { status: 'creating_dataset' });
-    const zfsDataset = dataset_path.replace(/^\/+/u, '');
-    const createResult = await executeCommand(
-      `pfexec zfs create -o mountpoint=${dataset_path} ${zfsDataset}`,
-      undefined,
-      onData
-    );
-    if (!createResult.success) {
-      const checkResult = await executeCommand(`pfexec zfs list ${zfsDataset}`);
-      if (!checkResult.success) {
-        return {
-          success: false,
-          error: 'Failed to create provisioning dataset',
-          details: createResult.error,
-        };
-      }
+    const ensured = await ensureProvisioningDataset(dataset_path, onData);
+    if (!ensured.success) {
+      return ensured;
     }
 
     await updateTaskProgress(task, 30, { status: 'staging_package' });
@@ -100,14 +83,14 @@ export const executeZoneProvisioningStageTask = async task => {
       mode: 0o600,
     });
 
+    await fixProvisioningKeyPermissions(dataset_path, onData);
+
+    await updateTaskProgress(task, 90, { status: 'snapshotting' });
     await executeCommand(
-      `pfexec find ${dataset_path} -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ecdsa' -o -name 'id_ed25519' \\) -exec chmod 600 {} +`,
+      `pfexec zfs snapshot ${ensured.zfsDataset}@pre-provision`,
       undefined,
       onData
     );
-
-    await updateTaskProgress(task, 90, { status: 'snapshotting' });
-    await executeCommand(`pfexec zfs snapshot ${zfsDataset}@pre-provision`, undefined, onData);
 
     await updateTaskProgress(task, 100, { status: 'completed' });
     return {

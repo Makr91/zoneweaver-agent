@@ -27,14 +27,15 @@ import {
 } from '../../../lib/ProvisionerConfigBuilder.js';
 import {
   createTask,
-  createSequentialFolderTasks,
-  createSequentialSyncbackTasks,
+  createSequentialTransferTasks,
   syncbackEligibleFolders,
   shouldSkipZoneSetup,
   filterPlaybooksByRun,
   filterHooksByRun,
   hasZoneProvisionedBefore,
 } from './TaskCreationHelper.js';
+import { winrmDefaults } from '../../TaskManager/ZoneEngineManager.js';
+import { parseConfiguration } from '../../../lib/ZoneConfigUtils.js';
 
 /**
  * Step 0: land the provisioning content — uploaded artifact, or the
@@ -171,16 +172,15 @@ const queueSyncBracket = async (ctx, folders, previousTaskId) => {
     folder_count: folders.length,
   });
 
-  return createSequentialFolderTasks(
-    folders,
-    ctx.zoneName,
-    ctx.zoneIP,
-    ctx.credentials,
-    ctx.provisioning,
-    syncParentTask.id,
-    previousTaskId,
-    ctx.createdBy
-  );
+  return createSequentialTransferTasks('zone_sync', folders, {
+    zoneName: ctx.zoneName,
+    zoneIP: ctx.zoneIP,
+    credentials: ctx.credentials,
+    provisioning: ctx.provisioning,
+    parentTaskId: syncParentTask.id,
+    firstDependsOn: previousTaskId,
+    createdBy: ctx.createdBy,
+  });
 };
 
 /**
@@ -217,16 +217,15 @@ const queueSyncbackBracket = async (ctx, folders, previousTaskId) => {
     folder_count: syncbackFolders.length,
   });
 
-  return createSequentialSyncbackTasks(
-    syncbackFolders,
-    ctx.zoneName,
-    ctx.zoneIP,
-    ctx.credentials,
-    ctx.provisioning,
-    syncbackParentTask.id,
-    previousTaskId,
-    ctx.createdBy
-  );
+  return createSequentialTransferTasks('zone_syncback', syncbackFolders, {
+    zoneName: ctx.zoneName,
+    zoneIP: ctx.zoneIP,
+    credentials: ctx.credentials,
+    provisioning: ctx.provisioning,
+    parentTaskId: syncbackParentTask.id,
+    firstDependsOn: previousTaskId,
+    createdBy: ctx.createdBy,
+  });
 };
 
 /**
@@ -464,22 +463,67 @@ export const buildProvisioningWalk = (ctx, firstDependsOn) =>
   );
 
 /**
+ * The four RULED communicator alias pairs (Mark specifically approved this
+ * dual naming — an explicit exception to the no-compat rule; nobody adds
+ * more): new spelling ≡ vagrant_* spelling, the NEW one wins when both are
+ * present (the shadowed key is narrated, never silent). Scope is exactly
+ * these four keys.
+ */
+const COMMUNICATOR_ALIASES = [
+  ['communicator', 'vagrant_communicator'],
+  ['winrm_port', 'vagrant_winrm_port'],
+  ['winrm_transport', 'vagrant_winrm_transport'],
+  ['winrm_ssl_peer_verification', 'vagrant_winrm_ssl_peer_verification'],
+];
+
+/**
+ * Resolve the document's communicator settings through the ruled alias
+ * pairs. Documents ride verbatim — this resolves at READ time only.
+ * @param {Object} settings - The document's settings section
+ * @returns {{communicator: string, winrm: Object, shadowed: string[]}}
+ */
+export const resolveCommunicatorSettings = (settings = {}) => {
+  const resolved = {};
+  const shadowed = [];
+  for (const [newKey, oldKey] of COMMUNICATOR_ALIASES) {
+    if (settings[newKey] !== undefined && settings[oldKey] !== undefined) {
+      shadowed.push(oldKey);
+    }
+    resolved[newKey] = settings[newKey] !== undefined ? settings[newKey] : settings[oldKey];
+  }
+  return {
+    communicator: resolved.communicator === 'winrm' ? 'winrm' : 'ssh',
+    // The Q2 defaults live in ONE place — the engine's winrmDefaults.
+    winrm: winrmDefaults({
+      port: resolved.winrm_port,
+      transport: resolved.winrm_transport,
+      ssl_peer_verification: resolved.winrm_ssl_peer_verification,
+    }),
+    shadowed,
+  };
+};
+
+/**
  * Walk-context inputs read from the STORED DOCUMENT (Q2 ruling — the old
- * vocabulary IS the vocabulary): settings.vagrant_communicator selects the
- * transport; vagrant_winrm_* carry vagrant's own defaults. Document vars
- * become the script/hook env.
+ * vocabulary IS the vocabulary, plus the four ruled aliases):
+ * settings.communicator/vagrant_communicator selects the transport;
+ * (vagrant_)winrm_* carry vagrant's own defaults. Document vars become the
+ * script/hook env.
  * @param {Object} ctx - Chain context (mutated)
  * @param {Object} zoneConfig - Parsed zone configuration
  */
 export const applyWalkSettings = (ctx, zoneConfig) => {
   const settings = zoneConfig?.settings || {};
-  ctx.communicator = settings.vagrant_communicator === 'winrm' ? 'winrm' : 'ssh';
-  const transport = settings.vagrant_winrm_transport ?? 'negotiate';
-  ctx.winrm = {
-    port: settings.vagrant_winrm_port ?? (transport === 'ssl' ? 5986 : 5985),
-    transport,
-    ssl_peer_verification: settings.vagrant_winrm_ssl_peer_verification ?? true,
-  };
+  const { communicator, winrm, shadowed } = resolveCommunicatorSettings(settings);
+  ctx.communicator = communicator;
+  ctx.winrm = winrm;
+  if (shadowed.length > 0) {
+    log.task.warn('communicator keys shadowed — both spellings present, the new one wins', {
+      zone_name: ctx.zoneName,
+      shadowed,
+    });
+    ctx.taskChain?.push({ step: 'communicator_keys_shadowed', keys: shadowed });
+  }
   ctx.env = buildScriptEnv(ctx.provisioning);
   ctx.provisionedBefore = hasZoneProvisionedBefore(ctx.zone);
 };
@@ -494,15 +538,7 @@ export const applyWalkSettings = (ctx, zoneConfig) => {
 export const buildProvisioningTaskChain = async params => {
   const ctx = { ...params, taskChain: [] };
 
-  let zoneConfig = ctx.zone.configuration || {};
-  if (typeof zoneConfig === 'string') {
-    try {
-      zoneConfig = JSON.parse(zoneConfig);
-    } catch (e) {
-      log.api.warn('Failed to parse zone configuration', { error: e.message });
-      zoneConfig = {};
-    }
-  }
+  const zoneConfig = parseConfiguration(ctx.zone);
   const zoneDataset = zoneConfig.zonepath
     ? zoneConfig.zonepath.replace('/path', '')
     : `/rpool/zones/${ctx.zoneName}`;

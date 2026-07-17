@@ -53,15 +53,7 @@ export const runProvisioners = async (req, res) => {
         .json({ error: validation.error });
     }
 
-    const { provisioning, zoneIP, credentials } = validation;
-    let zoneConfig = zone.configuration || {};
-    if (typeof zoneConfig === 'string') {
-      try {
-        zoneConfig = JSON.parse(zoneConfig);
-      } catch {
-        zoneConfig = {};
-      }
-    }
+    const { provisioning, zoneConfig, zoneIP, credentials } = validation;
 
     // The anchor is a pure anchor (born running, never dispatched); the
     // walk's children start immediately and drive its completion.
@@ -88,8 +80,11 @@ export const runProvisioners = async (req, res) => {
     await buildProvisioningWalk(ctx, null);
 
     // A childless anchor would sit running forever (the child rollup drives
-    // its state) — an empty walk completes it on the spot.
-    if (ctx.taskChain.length === 0) {
+    // its state) — an empty walk completes it on the spot. Count only REAL
+    // tasks: the chain also carries narration entries (winrm skips, shadowed
+    // communicator keys) that create no child.
+    const taskCount = ctx.taskChain.filter(entry => entry.task_id).length;
+    if (taskCount === 0) {
       await parentTask.update({
         status: 'completed',
         completed_at: new Date(),
@@ -100,14 +95,14 @@ export const runProvisioners = async (req, res) => {
     log.api.info('Ad-hoc provisioner walk created', {
       zone_name: zoneName,
       parent_task_id: parentTask.id,
-      steps: ctx.taskChain.length,
+      steps: taskCount,
     });
 
     return res.json({
       success: true,
       message:
-        ctx.taskChain.length > 0
-          ? `Provisioner walk created for ${zoneName} (${ctx.taskChain.length} step(s), document order)`
+        taskCount > 0
+          ? `Provisioner walk created for ${zoneName} (${taskCount} step(s), document order)`
           : `Nothing to run — the document's walk produced no steps (gates/run directives)`,
       machine_name: zoneName,
       parent_task_id: parentTask.id,

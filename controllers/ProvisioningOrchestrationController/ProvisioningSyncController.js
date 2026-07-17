@@ -6,10 +6,10 @@ import Zones from '../../models/ZoneModel.js';
 import { log } from '../../lib/Logger.js';
 import { extractFolders } from '../../lib/ProvisionerConfigBuilder.js';
 import { validateProvisioningRequest } from './utils/ValidationHelper.js';
+import { resolveCommunicatorSettings } from './utils/TaskChainBuilder.js';
 import {
   createTask,
-  createSequentialFolderTasks,
-  createSequentialSyncbackTasks,
+  createSequentialTransferTasks,
   syncbackEligibleFolders,
 } from './utils/TaskCreationHelper.js';
 
@@ -49,7 +49,7 @@ import {
  *       200:
  *         description: Sync task chain created
  *       400:
- *         description: Invalid request, missing provisioning config, or no eligible folders
+ *         description: Invalid request, missing provisioning config, no eligible folders, or a winrm guest (folders need ssh)
  *       404:
  *         description: Zone not found
  *       500:
@@ -69,7 +69,16 @@ export const syncZone = async (req, res) => {
         .json({ error: validation.error });
     }
 
-    const { provisioning, zoneIP, credentials } = validation;
+    const { provisioning, zoneConfig, zoneIP, credentials } = validation;
+
+    // Folders ride rsync/scp over ssh — a winrm guest has none (§5 transport
+    // matrix). Refuse up front rather than queueing tasks that must fail.
+    if (resolveCommunicatorSettings(zoneConfig.settings || {}).communicator === 'winrm') {
+      return res.status(400).json({
+        error:
+          'Folder sync needs ssh (rsync/scp) — this machine uses the winrm communicator, which cannot carry folders',
+      });
+    }
 
     const folders = extractFolders(provisioning);
     if (folders.length === 0) {
@@ -96,29 +105,15 @@ export const syncZone = async (req, res) => {
       created_by: req.entity.name,
     });
 
-    if (syncback) {
-      await createSequentialSyncbackTasks(
-        targetFolders,
-        zoneName,
-        zoneIP,
-        credentials,
-        provisioning,
-        parentTask.id,
-        null,
-        req.entity.name
-      );
-    } else {
-      await createSequentialFolderTasks(
-        targetFolders,
-        zoneName,
-        zoneIP,
-        credentials,
-        provisioning,
-        parentTask.id,
-        null,
-        req.entity.name
-      );
-    }
+    await createSequentialTransferTasks(syncback ? 'zone_syncback' : 'zone_sync', targetFolders, {
+      zoneName,
+      zoneIP,
+      credentials,
+      provisioning,
+      parentTaskId: parentTask.id,
+      firstDependsOn: null,
+      createdBy: req.entity.name,
+    });
 
     log.api.info('Zone sync task chain created', {
       zone_name: zoneName,

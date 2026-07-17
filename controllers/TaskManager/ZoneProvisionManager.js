@@ -14,18 +14,18 @@ import {
   scpSyncFiles,
   syncFilesFromZone,
   scpSyncFilesFromZone,
-  uploadFile,
 } from '../../lib/SSHManager.js';
-import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';
+import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
+import { parseConfiguration, provisioningPathFromZonepath } from '../../lib/ZoneConfigUtils.js';
 import Zones from '../../models/ZoneModel.js';
 import Artifacts from '../../models/ArtifactModel.js';
 import config from '../../config/ConfigLoader.js';
-import yj from 'yieldable-json';
 import {
-  shellEnvArgs,
   recordProvisionState,
   pollWinRMReady,
   runWinScriptViaAnsible,
+  runScriptInGuest,
+  getProvisioningBasePath,
 } from './ZoneEngineManager.js';
 
 /**
@@ -295,15 +295,7 @@ export const executeZoneWaitSSHTask = async task => {
   const { zone_name } = task;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseTaskMetadata(task);
 
     const { ip, port = 22, credentials = {}, communicator = 'ssh', winrm } = metadata;
 
@@ -318,23 +310,14 @@ export const executeZoneWaitSSHTask = async task => {
 
     await updateTaskProgress(task, 10, { status: 'waiting_for_ssh' });
 
-    // Get provisioning dataset path for relative SSH key resolution
+    // Provisioning dataset path for relative SSH key resolution
     const zone = await Zones.findOne({ where: { name: zone_name } });
-    let provisioningBasePath = null;
-    if (zone?.configuration) {
-      const zoneConfig =
-        typeof zone.configuration === 'string'
-          ? JSON.parse(zone.configuration)
-          : zone.configuration;
-      if (zoneConfig.zonepath) {
-        const zoneDataset = zoneConfig.zonepath.replace('/path', '');
-        provisioningBasePath = `${zoneDataset}/provisioning`;
-      }
-      // The document's settings.setup_wait wins when LARGER (Go waitSSH rule).
-      const setupWait = Number(zoneConfig.settings?.setup_wait) || 0;
-      if (setupWait * 1000 > timeout) {
-        timeout = setupWait * 1000;
-      }
+    const zoneConfig = parseConfiguration(zone);
+    const provisioningBasePath = provisioningPathFromZonepath(zoneConfig.zonepath);
+    // The document's settings.setup_wait wins when LARGER (Go waitSSH rule).
+    const setupWait = Number(zoneConfig.settings?.setup_wait) || 0;
+    if (setupWait * 1000 > timeout) {
+      timeout = setupWait * 1000;
     }
 
     // Windows guests have no sshd — readiness rides host-ansible win_ping
@@ -378,38 +361,27 @@ export const executeZoneWaitSSHTask = async task => {
 };
 
 /**
- * Get provisioning base path from zone configuration
- * @param {string} zoneName - Zone name
- * @returns {Promise<string|null>} Provisioning base path
+ * Narrate the scp transport's option downgrade (args/exclude/delete have no
+ * scp equivalents) — shared by the push and pull paths.
  */
-const getProvisioningBasePath = async zoneName => {
-  const zone = await Zones.findOne({ where: { name: zoneName } });
-  if (!zone?.configuration) {
-    return null;
+const narrateScpDowngrade = (folder, onData) => {
+  if (folder.args || folder.exclude || folder.delete) {
+    onData?.({
+      stream: 'stdout',
+      data: 'scp transport: args/exclude/delete have no scp equivalents — ignored\n',
+    });
   }
-  const zoneConfig =
-    typeof zone.configuration === 'string' ? JSON.parse(zone.configuration) : zone.configuration;
-  if (zoneConfig.zonepath) {
-    const zoneDataset = zoneConfig.zonepath.replace('/path', '');
-    return `${zoneDataset}/provisioning`;
-  }
-  return null;
 };
 
 /**
  * Run one folder's transfer over its configured transport: scp copies the
- * tree verbatim (args/exclude/delete have no scp equivalents and are
- * narrated as ignored); everything else rides rsync with its full options.
+ * tree verbatim (options narrated as ignored); everything else rides rsync
+ * with its full options.
  */
 const runFolderTransfer = (transfer, folder, onData) => {
   const { ip, username, credentials, resolvedSource, dest, port, provisioningBasePath } = transfer;
   if ((folder.type || '').toLowerCase() === 'scp') {
-    if (folder.args || folder.exclude || folder.delete) {
-      onData?.({
-        stream: 'stdout',
-        data: 'scp transport: args/exclude/delete have no scp equivalents — ignored\n',
-      });
-    }
+    narrateScpDowngrade(folder, onData);
     return scpSyncFiles(ip, username, credentials, resolvedSource, dest, port, {
       provisioningBasePath,
       onData,
@@ -460,15 +432,7 @@ export const executeZoneSyncTask = async task => {
   const { zone_name } = task;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseTaskMetadata(task);
 
     const { ip, port = 22, credentials = {}, folder } = metadata;
     const { onData } = task;
@@ -545,15 +509,7 @@ export const executeZoneSyncbackTask = async task => {
   const { zone_name } = task;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseTaskMetadata(task);
 
     const { ip, port = 22, credentials = {}, folder } = metadata;
     const { onData } = task;
@@ -581,12 +537,7 @@ export const executeZoneSyncbackTask = async task => {
     await updateTaskProgress(task, 30, { status: 'pulling_files' });
     let result;
     if ((folder.type || '').toLowerCase() === 'scp') {
-      if (folder.args || folder.exclude || folder.delete) {
-        onData?.({
-          stream: 'stdout',
-          data: 'scp transport: args/exclude/delete have no scp equivalents — ignored\n',
-        });
-      }
+      narrateScpDowngrade(folder, onData);
       onData?.({
         stream: 'stdout',
         data: 'scp pull reads as the SSH user — root-only guest files are skipped\n',
@@ -637,15 +588,7 @@ export const executeZoneShellTask = async task => {
   const { zone_name } = task;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseTaskMetadata(task);
 
     const {
       ip,
@@ -709,36 +652,20 @@ export const executeZoneShellTask = async task => {
       remote_path: remotePath,
     });
 
-    await updateTaskProgress(task, 10, { status: 'uploading_script' });
-    const upload = await uploadFile(ip, username, credentials, resolvedScript, remotePath, port, {
-      provisioningBasePath,
-      onData,
-    });
-    if (!upload.success) {
-      return { success: false, error: `Script upload failed: ${upload.error}` };
-    }
-
-    // vars→env (§5): the document's vars ride WHOLE under their EXACT
-    // names (lists/dicts as JSON strings); names env(1) can't carry are
-    // narrated-and-skipped loudly by shellEnvArgs.
-    const envArgs = shellEnvArgs(env, onData);
-    const runCommand = envArgs
-      ? `chmod +x ${remotePath} && sudo env ${envArgs} ${remotePath}`
-      : `chmod +x ${remotePath} && sudo ${remotePath}`;
-
-    await updateTaskProgress(task, 30, { status: 'running_script' });
-    const result = await executeSSHCommand(ip, username, credentials, runCommand, port, {
-      timeout: scriptTimeout,
-      provisioningBasePath,
-      onData,
-    });
-
-    // Best-effort cleanup — never fails the run.
-    await updateTaskProgress(task, 90, { status: 'cleaning_up' });
-    await executeSSHCommand(ip, username, credentials, `rm -f ${remotePath}`, port, {
-      provisioningBasePath,
-      onData,
-    });
+    // The shared guest script runner (vars→env rides WHOLE inside it; the
+    // step callback keeps this task's granular progress).
+    const stepPercents = { uploading_script: 10, running_script: 30, cleaning_up: 90 };
+    const result = await runScriptInGuest(
+      { ip, port, username, credentials, provisioningBasePath },
+      resolvedScript,
+      remotePath,
+      {
+        env,
+        timeout: scriptTimeout,
+        onData,
+        onStep: step => updateTaskProgress(task, stepPercents[step], { status: step }),
+      }
+    );
 
     if (result.success) {
       // Whole-walk stamp ruling: `final` rides the run's LAST step,
@@ -749,10 +676,12 @@ export const executeZoneShellTask = async task => {
       }
       return { success: true, message: `Shell script completed: ${script}` };
     }
-    const errorOutput = [result.stdout, result.stderr].filter(Boolean).join('\n---STDERR---\n');
     return {
       success: false,
-      error: `Shell script failed (exit ${result.exitCode}): ${script}\n${errorOutput}`,
+      error:
+        result.output !== undefined
+          ? `Shell script failed (exit ${result.exitCode}): ${script}\n${result.output}`
+          : `Shell script failed: ${result.error}`,
     };
   } catch (error) {
     log.task.error('Zone shell script failed', { zone_name, error: error.message });
@@ -770,15 +699,7 @@ export const executeZoneProvisionTask = async task => {
   const { zone_name } = task;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseTaskMetadata(task);
 
     const { ip, port = 22, credentials = {}, playbook, final = false } = metadata;
 
@@ -796,21 +717,8 @@ export const executeZoneProvisionTask = async task => {
       return { success: false, error: `Zone '${zone_name}' not found` };
     }
 
-    let zoneConfig = zone.configuration;
-    if (typeof zoneConfig === 'string') {
-      try {
-        zoneConfig = JSON.parse(zoneConfig);
-      } catch (e) {
-        log.task.warn('Failed to parse zone configuration', { error: e.message });
-        zoneConfig = {};
-      }
-    }
-
-    let provisioningBasePath = null;
-    if (zoneConfig.zonepath) {
-      const zoneDataset = zoneConfig.zonepath.replace('/path', '');
-      provisioningBasePath = `${zoneDataset}/provisioning`;
-    }
+    const zoneConfig = parseConfiguration(zone);
+    const provisioningBasePath = provisioningPathFromZonepath(zoneConfig.zonepath);
 
     // Build complete extra_vars from zone configuration
     const { buildExtraVarsFromZone, buildPlaybookExtraVars } =
@@ -871,19 +779,50 @@ export const executeZoneProvisionTask = async task => {
  * @param {Object} task - Task object from TaskQueue
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
+/**
+ * Create the zone's provisioning dataset at its mountpoint (idempotent — an
+ * already-existing dataset passes). Shared by the artifact-extract and
+ * registry-stage executors.
+ * @param {string} datasetPath - Mountpoint (matches the dataset name with a leading slash)
+ * @param {Function|null} onData - Output sink
+ * @returns {Promise<{success: boolean, zfsDataset?: string, error?: string, details?: string}>}
+ */
+export const ensureProvisioningDataset = async (datasetPath, onData) => {
+  const zfsDataset = datasetPath.replace(/^\/+/u, '');
+  const createResult = await executeCommand(
+    `pfexec zfs create -o mountpoint=${datasetPath} ${zfsDataset}`,
+    undefined,
+    onData
+  );
+  if (!createResult.success) {
+    const checkResult = await executeCommand(`pfexec zfs list ${zfsDataset}`);
+    if (!checkResult.success) {
+      return {
+        success: false,
+        error: 'Failed to create provisioning dataset',
+        details: createResult.error,
+      };
+    }
+  }
+  return { success: true, zfsDataset };
+};
+
+/**
+ * chmod 600 every SSH private key in the staged tree (shared by the
+ * artifact-extract and registry-stage executors).
+ */
+export const fixProvisioningKeyPermissions = (datasetPath, onData) =>
+  executeCommand(
+    `pfexec find ${datasetPath} -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ecdsa' -o -name 'id_ed25519' \\) -exec chmod 600 {} +`,
+    undefined,
+    onData
+  );
+
 export const executeZoneProvisioningExtractTask = async task => {
   const { zone_name } = task;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseTaskMetadata(task);
 
     const { artifact_id, dataset_path } = metadata;
 
@@ -892,29 +831,10 @@ export const executeZoneProvisioningExtractTask = async task => {
       return { success: false, error: `Artifact '${artifact_id}' not found` };
     }
 
-    // Create ZFS dataset
-    // dataset_path is like "/rpool/zones/myzone/provisioning" (mountpoint)
-    // We need the ZFS dataset name (rpool/zones/myzone/provisioning)
-    // Assuming dataset_path is the mountpoint which matches the dataset name with leading slash
-    const zfsDataset = dataset_path.replace(/^\/+/, '');
     const { onData } = task;
-
-    const createResult = await executeCommand(
-      `pfexec zfs create -o mountpoint=${dataset_path} ${zfsDataset}`,
-      undefined,
-      onData
-    );
-
-    // Check if dataset exists if creation failed (idempotency)
-    if (!createResult.success) {
-      const checkResult = await executeCommand(`pfexec zfs list ${zfsDataset}`);
-      if (!checkResult.success) {
-        return {
-          success: false,
-          error: 'Failed to create provisioning dataset',
-          details: createResult.error,
-        };
-      }
+    const ensured = await ensureProvisioningDataset(dataset_path, onData);
+    if (!ensured.success) {
+      return ensured;
     }
 
     // Extract artifact
@@ -934,16 +854,14 @@ export const executeZoneProvisioningExtractTask = async task => {
 
     // Fix ownership and permissions for service user (zwagent)
     await executeCommand(`pfexec chown -R zwagent:other ${dataset_path}`, undefined, onData);
+    await fixProvisioningKeyPermissions(dataset_path, onData);
 
-    // Fix SSH private key permissions (600 for security)
+    // Create snapshot
     await executeCommand(
-      `pfexec find ${dataset_path} -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ecdsa' -o -name 'id_ed25519' \\) -exec chmod 600 {} +`,
+      `pfexec zfs snapshot ${ensured.zfsDataset}@pre-provision`,
       undefined,
       onData
     );
-
-    // Create snapshot
-    await executeCommand(`pfexec zfs snapshot ${zfsDataset}@pre-provision`, undefined, onData);
 
     return { success: true, message: 'Provisioning artifact extracted successfully' };
   } catch (error) {

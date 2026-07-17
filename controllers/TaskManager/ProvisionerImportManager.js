@@ -9,11 +9,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import axios from 'axios';
-import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { calculateChecksum } from '../../lib/ChecksumHelper.js';
 import { log } from '../../lib/Logger.js';
-import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';
+import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
 import {
   COLLECTION_MANIFEST,
   VERSION_MANIFEST,
@@ -22,12 +21,14 @@ import {
   synthesizeCollectionManifest,
   buildRoleSpecs,
   buildFieldSchema,
+  recordFamilySource,
 } from '../../lib/ProvisionerRegistry.js';
 import { lintConfiguration, formatLintErrors } from '../../lib/FieldDslLint.js';
 import {
   findCatalogSource,
   fetchCatalog,
   findCatalogArtifact,
+  catalogSourceError,
 } from '../../lib/ProvisionerCatalog.js';
 import yaml from 'js-yaml';
 
@@ -155,6 +156,7 @@ const importCollection = (root, onData) => {
     stream: 'stdout',
     data: `Import complete: ${imported} version(s) imported, ${skipped} already present\n`,
   });
+  return name;
 };
 
 const importVersion = (root, onData) => {
@@ -193,6 +195,7 @@ const importVersion = (root, onData) => {
     onData?.({ stream: 'stdout', data: 'Derived answers schema.json from the field DSL\n' });
   }
   onData?.({ stream: 'stdout', data: `Import complete: ${name}/${version}\n` });
+  return name;
 };
 
 /**
@@ -337,20 +340,21 @@ const resolveSource = async (metadata, onData) => {
  * catalog-install task.
  * @param {string} dir - Resolved source directory
  * @param {Function|null} onData - Output sink
+ * @returns {string} The imported family name
  */
 const importFromDirectory = (dir, onData) => {
   const { root, kind } = findPackageRoot(dir);
   if (kind === COLLECTION_MANIFEST) {
     onData?.({ stream: 'stdout', data: `Found provisioner collection at ${root}\n` });
-    importCollection(root, onData);
-  } else if (kind === VERSION_MANIFEST) {
-    onData?.({ stream: 'stdout', data: `Found provisioner version at ${root}\n` });
-    importVersion(root, onData);
-  } else {
-    throw new Error(
-      `no ${COLLECTION_MANIFEST} or ${VERSION_MANIFEST} found within ${ROOT_SEARCH_DEPTH} directory levels of the source`
-    );
+    return importCollection(root, onData);
   }
+  if (kind === VERSION_MANIFEST) {
+    onData?.({ stream: 'stdout', data: `Found provisioner version at ${root}\n` });
+    return importVersion(root, onData);
+  }
+  throw new Error(
+    `no ${COLLECTION_MANIFEST} or ${VERSION_MANIFEST} found within ${ROOT_SEARCH_DEPTH} directory levels of the source`
+  );
 };
 
 /**
@@ -364,20 +368,13 @@ const importFromDirectory = (dir, onData) => {
  */
 export const executeProvisionerCatalogInstallTask = async task => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => (err ? reject(err) : resolve(result)));
-    });
+    const metadata = await parseTaskMetadata(task);
     const { source_name, name, version } = metadata;
     const { onData } = task;
 
     const source = findCatalogSource(source_name);
     if (!source) {
-      return {
-        success: false,
-        error: source_name
-          ? `catalog source '${source_name}' is not configured or disabled`
-          : 'no catalog sources configured/enabled (provisioning.catalog_sources)',
-      };
+      return { success: false, error: catalogSourceError(source_name) };
     }
 
     await updateTaskProgress(task, 10, { status: 'fetching_catalog' });
@@ -418,9 +415,7 @@ export const executeProvisionerCatalogInstallTask = async task => {
 export const executeProvisionerImportTask = async task => {
   let metadata = null;
   try {
-    metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => (err ? reject(err) : resolve(result)));
-    });
+    metadata = await parseTaskMetadata(task);
     const { onData } = task;
 
     await updateTaskProgress(task, 10, { status: 'resolving_source' });
@@ -428,7 +423,21 @@ export const executeProvisionerImportTask = async task => {
 
     try {
       await updateTaskProgress(task, 60, { status: 'importing_package' });
-      importFromDirectory(dir, onData);
+      const familyName = importFromDirectory(dir, onData);
+      // git imports record their provenance per FAMILY (registry-side,
+      // never inside the package files) so refresh-from-source can re-run
+      // the ordinary import against the same repo later.
+      if (metadata.source_type === 'git') {
+        recordFamilySource(familyName, {
+          source_type: 'git',
+          url: metadata.url,
+          ...(metadata.branch ? { branch: metadata.branch } : {}),
+        });
+        onData?.({
+          stream: 'stdout',
+          data: `Recorded git provenance for ${familyName} (refresh-from-source enabled)\n`,
+        });
+      }
     } finally {
       cleanup?.();
     }

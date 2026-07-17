@@ -8,29 +8,21 @@
  * agent answers; crash-consistent otherwise, never blocking).
  */
 
-import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';
+import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
 import { getZoneConfig } from '../../lib/ZoneConfigUtils.js';
 import { hasSuspendCheckpoint, deleteSuspendCheckpoint } from '../../lib/SuspendCheckpoint.js';
 import { isGuestAgentEnabled, guestSocketPath, runGuestCommand } from '../../lib/QemuGuestAgent.js';
 import Zones from '../../models/ZoneModel.js';
 
-const parseSnapshotMetadata = (task, { allowPrefix = false } = {}) =>
-  new Promise((resolve, reject) => {
-    yj.parseAsync(task.metadata, (err, result) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      if (!result?.snapshot_name && !(allowPrefix && result?.prefix)) {
-        reject(new Error('snapshot task metadata has no snapshot_name'));
-        return;
-      }
-      resolve(result);
-    });
-  });
+const parseSnapshotMetadata = async (task, { allowPrefix = false } = {}) => {
+  const result = await parseTaskMetadata(task);
+  if (!result?.snapshot_name && !(allowPrefix && result?.prefix)) {
+    throw new Error('snapshot task metadata has no snapshot_name');
+  }
+  return result;
+};
 
 export const timestampSuffix = (date = new Date()) => {
   const pad = n => String(n).padStart(2, '0');
@@ -335,6 +327,91 @@ export const executeSnapshotRestoreTask = async task => {
   } catch (error) {
     log.task.error('Snapshot restore failed', { zone_name, error: error.message });
     return { success: false, error: `Snapshot restore failed: ${error.message}` };
+  }
+};
+
+/**
+ * Rename a snapshot and/or edit its description (snapshot_modify — the
+ * shared PUT /machines/{name}/snapshots/{snapshot} wire). Rename walks the
+ * whole tree (`zfs rename -r` on the root + per-external renames); the
+ * description rides the zone-root snapshot's zoneweaver:description user
+ * property (exactly where snapshot_take writes it — an empty string clears
+ * it via zfs inherit).
+ */
+export const executeSnapshotModifyTask = async task => {
+  const { zone_name } = task;
+  try {
+    const metadata = await parseSnapshotMetadata(task);
+    const { snapshot_name, new_name, description } = metadata;
+    const { onData } = task;
+    const targets = await resolveTargets(zone_name);
+
+    let currentName = snapshot_name;
+    if (new_name && new_name !== snapshot_name) {
+      await updateTaskProgress(task, 20, { status: 'renaming_snapshots' });
+      let renamed = 0;
+      if (targets.root) {
+        onData?.({
+          stream: 'stdout',
+          data: `Renaming ${targets.root}@${snapshot_name} → @${new_name} (recursive)\n`,
+        });
+        const result = await executeCommand(
+          `pfexec zfs rename -r ${targets.root}@${snapshot_name} ${targets.root}@${new_name}`,
+          undefined,
+          onData
+        );
+        if (result.success) {
+          renamed++;
+        } else {
+          onData?.({
+            stream: 'stderr',
+            data: `${targets.root}@${snapshot_name}: ${result.error}\n`,
+          });
+        }
+      }
+      await runSequentially(targets.externals, async dataset => {
+        const result = await executeCommand(
+          `pfexec zfs rename ${dataset}@${snapshot_name} ${dataset}@${new_name}`,
+          undefined,
+          onData
+        );
+        if (result.success) {
+          renamed++;
+        } else {
+          onData?.({ stream: 'stderr', data: `${dataset}@${snapshot_name}: ${result.error}\n` });
+        }
+      });
+      if (renamed === 0) {
+        return {
+          success: false,
+          error: `Snapshot ${snapshot_name} could not be renamed on any dataset`,
+        };
+      }
+      currentName = new_name;
+    }
+
+    if (description !== undefined && targets.root) {
+      await updateTaskProgress(task, 70, { status: 'setting_description' });
+      const command = description
+        ? `pfexec zfs set zoneweaver:description="${description}" ${targets.root}@${currentName}`
+        : `pfexec zfs inherit zoneweaver:description ${targets.root}@${currentName}`;
+      const result = await executeCommand(command, undefined, onData);
+      if (!result.success) {
+        return { success: false, error: `Description update failed: ${result.error}` };
+      }
+    }
+
+    await updateTaskProgress(task, 100, { status: 'completed' });
+    return {
+      success: true,
+      message:
+        new_name && new_name !== snapshot_name
+          ? `Snapshot ${snapshot_name} renamed to ${currentName}`
+          : `Snapshot ${currentName} description updated`,
+    };
+  } catch (error) {
+    log.task.error('Snapshot modify failed', { zone_name, error: error.message });
+    return { success: false, error: `Snapshot modify failed: ${error.message}` };
   }
 };
 

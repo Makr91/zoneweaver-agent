@@ -44,6 +44,7 @@ import { executeZoneProvisioningStageTask } from '../TaskManager/ProvisionerStag
 import {
   executeSnapshotTakeTask,
   executeSnapshotRestoreTask,
+  executeSnapshotModifyTask,
   executeSnapshotDeleteTask,
 } from '../TaskManager/ZoneSnapshotManager.js';
 import { getHostMonitoringService } from '../HostMonitoringService.js';
@@ -68,6 +69,7 @@ export const TASK_OBJECT_OPERATIONS = {
   provisioner_import: executeProvisionerImportTask,
   snapshot_take: executeSnapshotTakeTask,
   snapshot_restore: executeSnapshotRestoreTask,
+  snapshot_modify: executeSnapshotModifyTask,
   snapshot_delete: executeSnapshotDeleteTask,
   zone_wait_ssh: executeZoneWaitSSHTask,
   zone_sync: executeZoneSyncTask,

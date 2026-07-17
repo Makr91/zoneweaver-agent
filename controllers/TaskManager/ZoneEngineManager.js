@@ -13,33 +13,35 @@
 
 import fs from 'fs';
 import path from 'path';
-import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
-import { executeSSHCommand, uploadFile } from '../../lib/SSHManager.js';
-import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';
+import {
+  executeSSHCommand,
+  uploadFile,
+  getSSHKeyPath,
+  resolveRelativeKeyPath,
+} from '../../lib/SSHManager.js';
+import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
+import { parseConfiguration, provisioningPathFromZonepath } from '../../lib/ZoneConfigUtils.js';
 import { log } from '../../lib/Logger.js';
 import Zones from '../../models/ZoneModel.js';
 import config from '../../config/ConfigLoader.js';
 
-const parseTaskMetadata = task =>
-  new Promise((resolve, reject) => {
-    yj.parseAsync(task.metadata, (err, result) => (err ? reject(err) : resolve(result)));
-  });
-
-const getProvisioningBasePath = async zoneName => {
+/**
+ * The zone's provisioning dataset path, read from its stored record — THE
+ * one lookup (ZoneProvisionManager imports it too).
+ * @param {string} zoneName - Zone name
+ * @returns {Promise<string|null>} Provisioning dataset path
+ */
+export const getProvisioningBasePath = async zoneName => {
   const zone = await Zones.findOne({ where: { name: zoneName } });
-  if (!zone?.configuration) {
-    return null;
-  }
-  const zoneConfig =
-    typeof zone.configuration === 'string' ? JSON.parse(zone.configuration) : zone.configuration;
-  if (zoneConfig.zonepath) {
-    return `${zoneConfig.zonepath.replace('/path', '')}/provisioning`;
-  }
-  return null;
+  return provisioningPathFromZonepath(parseConfiguration(zone).zonepath);
 };
 
 const shellQuote = value => `'${String(value).replace(/'/gu, "'\\''")}'`;
+
+/** The one wording for a winrm/remote run on an ansible-less agent host. */
+const ANSIBLE_MISSING_WINRM =
+  'winrm transport needs ansible (+pywinrm) on the agent host — not installed';
 
 const POSIX_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
@@ -76,10 +78,7 @@ export const shellEnvArgs = (env, onData = null) => {
 export const recordProvisionState = async zoneName => {
   try {
     const freshZone = await Zones.findOne({ where: { name: zoneName } });
-    let freshConfig = freshZone?.configuration || {};
-    if (typeof freshConfig === 'string') {
-      freshConfig = JSON.parse(freshConfig);
-    }
+    const freshConfig = parseConfiguration(freshZone);
     freshConfig.provisioner_state = {
       ...(freshConfig.provisioner_state || {}),
       last_provisioned_at: new Date().toISOString(),
@@ -104,8 +103,9 @@ const hostAnsibleAvailable = async (binary = 'ansible-playbook') => {
   return result.success;
 };
 
-/** The ruled winrm defaults (Q2: vagrant's own). */
-const winrmDefaults = winrm => {
+/** The ruled winrm defaults (Q2: vagrant's own) — the ONE place they live;
+ * the chain builder's alias resolver imports this. */
+export const winrmDefaults = winrm => {
   const transport = winrm?.transport ?? 'negotiate';
   return {
     transport,
@@ -145,13 +145,9 @@ const buildTransportArgs = target => {
     return { args: extra.join(' ') };
   }
 
-  let keyPath = credentials.ssh_key_path;
-  if (keyPath && provisioningBasePath && !keyPath.startsWith('/')) {
-    keyPath = `${provisioningBasePath}/${keyPath}`;
-  }
+  let keyPath = resolveRelativeKeyPath(credentials.ssh_key_path, provisioningBasePath);
   if (!keyPath) {
-    const provConfig = config.get('provisioning') || {};
-    keyPath = provConfig.ssh?.key_path || '/etc/zoneweaver-agent/ssh/provision_key';
+    keyPath = getSSHKeyPath();
     if (!fs.existsSync(keyPath) && credentials.password) {
       return {
         args: '',
@@ -181,10 +177,7 @@ const buildTransportArgs = target => {
  */
 export const pollWinRMReady = async (target, timeoutMs, intervalMs, onData) => {
   if (!(await hostAnsibleAvailable('ansible'))) {
-    return {
-      success: false,
-      error: 'winrm transport needs ansible (+pywinrm) on the agent host — not installed',
-    };
+    return { success: false, error: ANSIBLE_MISSING_WINRM };
   }
   const transport = buildTransportArgs({ ...target, communicator: 'winrm' });
   const deadline = Date.now() + timeoutMs;
@@ -239,10 +232,7 @@ const legalEnvEntries = (env, onData) =>
  */
 export const runWinScriptViaAnsible = async (target, localScript, taskId, options = {}) => {
   if (!(await hostAnsibleAvailable('ansible'))) {
-    return {
-      success: false,
-      error: 'winrm transport needs ansible (+pywinrm) on the agent host — not installed',
-    };
+    return { success: false, error: ANSIBLE_MISSING_WINRM };
   }
   const transport = buildTransportArgs({ ...target, communicator: 'winrm' });
   const inventory = shellQuote(`${target.ip},`);
@@ -410,10 +400,7 @@ export const executeZoneProvisionRemoteTask = async task => {
     }
     const { zone, provisioningBasePath, transport, playbookPath } = prep;
 
-    let zoneConfig = zone.configuration;
-    if (typeof zoneConfig === 'string') {
-      zoneConfig = JSON.parse(zoneConfig);
-    }
+    const zoneConfig = parseConfiguration(zone);
     const { buildExtraVarsFromZone, buildPlaybookExtraVars } =
       await import('../../lib/ProvisionerConfigBuilder.js');
     const extraVars = buildPlaybookExtraVars(
@@ -506,12 +493,22 @@ export const executeZoneDockerComposeTask = async task => {
   }
 };
 
-const runGuestHook = async (target, resolvedScript, taskId, options) => {
-  const { env, timeout, onData, communicator } = options;
-  if (communicator === 'winrm') {
-    return runWinScriptViaAnsible(target, resolvedScript, taskId, { env, timeout, onData });
-  }
-  const remotePath = `/tmp/zoneweaver-hook-${taskId}`;
+/**
+ * Upload one host-side script into the guest over ssh, run it privileged
+ * (chmod +x, sudo, vars→env prefix), and remove the upload afterwards
+ * (best-effort) — the ONE script runner the shell method and guest hooks
+ * share. onStep narrates the stages for callers tracking progress.
+ * @param {Object} target - {ip, port, username, credentials, provisioningBasePath}
+ * @param {string} resolvedScript - Host path of the script
+ * @param {string} remotePath - Guest-side upload path
+ * @param {Object} options - {env, timeout, onData, onStep}
+ * @returns {Promise<{success: boolean, exitCode?: number, output?: string, error?: string}>}
+ */
+export const runScriptInGuest = async (target, resolvedScript, remotePath, options = {}) => {
+  const { env = {}, timeout, onData = null, onStep = null } = options;
+  const sshOptions = { provisioningBasePath: target.provisioningBasePath, onData };
+
+  await onStep?.('uploading_script');
   const upload = await uploadFile(
     target.ip,
     target.username,
@@ -519,34 +516,65 @@ const runGuestHook = async (target, resolvedScript, taskId, options) => {
     resolvedScript,
     remotePath,
     target.port,
-    { provisioningBasePath: target.provisioningBasePath, onData }
+    sshOptions
   );
   if (!upload.success) {
-    return { success: false, error: `hook upload failed: ${upload.error}` };
+    return { success: false, error: `script upload failed: ${upload.error}` };
   }
+
   const envArgs = shellEnvArgs(env, onData);
   const runCommand = envArgs
     ? `chmod +x ${remotePath} && sudo env ${envArgs} ${remotePath}`
     : `chmod +x ${remotePath} && sudo ${remotePath}`;
+  await onStep?.('running_script');
   const result = await executeSSHCommand(
     target.ip,
     target.username,
     target.credentials,
     runCommand,
     target.port,
-    { timeout, provisioningBasePath: target.provisioningBasePath, onData }
+    { timeout, ...sshOptions }
   );
+
+  // Best-effort cleanup — never fails the run.
+  await onStep?.('cleaning_up');
   await executeSSHCommand(
     target.ip,
     target.username,
     target.credentials,
     `rm -f ${remotePath}`,
     target.port,
-    { provisioningBasePath: target.provisioningBasePath, onData }
+    sshOptions
   );
+
   if (!result.success) {
-    const output = [result.stdout, result.stderr].filter(Boolean).join('\n---STDERR---\n');
-    return { success: false, error: `hook failed (exit ${result.exitCode}):\n${output}` };
+    return {
+      success: false,
+      exitCode: result.exitCode,
+      output: [result.stdout, result.stderr].filter(Boolean).join('\n---STDERR---\n'),
+    };
+  }
+  return { success: true };
+};
+
+const runGuestHook = async (target, resolvedScript, taskId, options) => {
+  const { env, timeout, onData, communicator } = options;
+  if (communicator === 'winrm') {
+    return runWinScriptViaAnsible(target, resolvedScript, taskId, { env, timeout, onData });
+  }
+  const result = await runScriptInGuest(target, resolvedScript, `/tmp/zoneweaver-hook-${taskId}`, {
+    env,
+    timeout,
+    onData,
+  });
+  if (!result.success) {
+    return {
+      success: false,
+      error:
+        result.output !== undefined
+          ? `hook failed (exit ${result.exitCode}):\n${result.output}`
+          : `hook ${result.error}`,
+    };
   }
   return { success: true, message: 'hook completed in guest' };
 };

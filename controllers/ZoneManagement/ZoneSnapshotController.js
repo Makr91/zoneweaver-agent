@@ -298,6 +298,74 @@ export const restoreMachineSnapshot = (req, res) => {
 /**
  * @swagger
  * /machines/{machineName}/snapshots/{snapshotName}:
+ *   put:
+ *     summary: Rename a machine snapshot and/or edit its description
+ *     description: |
+ *       Queues a snapshot_modify task (shared wire with the Go agent).
+ *       new_name renames the snapshot across the machine's whole ZFS tree
+ *       (`zfs rename -r` on the root plus the out-of-tree media); description
+ *       rewrites the zoneweaver:description user property on the zone-root
+ *       snapshot (empty string clears it). Either or both fields.
+ *     tags: [Machine Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: machineName
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: snapshotName
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               new_name:
+ *                 type: string
+ *                 description: New snapshot name (renamed across every dataset carrying it)
+ *               description:
+ *                 type: string
+ *                 description: New description ('' clears it)
+ *     responses:
+ *       200:
+ *         description: Modify task queued
+ *       400:
+ *         description: Neither new_name nor description provided, or invalid names
+ */
+export const modifyMachineSnapshot = (req, res) => {
+  const { snapshotName } = req.params;
+  const { new_name, description } = req.body || {};
+  if (!SNAPSHOT_NAME_PATTERN.test(snapshotName)) {
+    return res.status(400).json({ error: 'snapshot name contains unsupported characters' });
+  }
+  if (new_name === undefined && description === undefined) {
+    return res.status(400).json({ error: 'new_name or description is required' });
+  }
+  if (new_name !== undefined && !SNAPSHOT_NAME_PATTERN.test(new_name)) {
+    return res.status(400).json({ error: 'new_name contains unsupported characters' });
+  }
+  if (description !== undefined && typeof description !== 'string') {
+    return res.status(400).json({ error: 'description must be a string' });
+  }
+  return queueSnapshotTask(
+    req,
+    res,
+    'snapshot_modify',
+    { snapshot_name: snapshotName, new_name, description },
+    'Snapshot modify task queued successfully'
+  );
+};
+
+/**
+ * @swagger
+ * /machines/{machineName}/snapshots/{snapshotName}:
  *   delete:
  *     summary: Delete a machine snapshot
  *     tags: [Machine Snapshots]

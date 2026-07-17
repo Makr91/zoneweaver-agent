@@ -37,5 +37,6 @@ export {
   listMachineSnapshots,
   takeMachineSnapshot,
   restoreMachineSnapshot,
+  modifyMachineSnapshot,
   deleteMachineSnapshot,
 } from './ZoneSnapshotController.js';

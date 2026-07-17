@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.9](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.8...v0.3.9) (2026-07-17)
+
+
+### Bug Fixes
+
+* RDP, API Shaping, General Improvments ([17cc2e7](https://github.com/Makr91/zoneweaver-agent/commit/17cc2e7563121b2f0e3473c81e0efa2b98e34899))
+* RDP, API Shaping, General Improvments ([df70ade](https://github.com/Makr91/zoneweaver-agent/commit/df70ade2586cfa380671ed4f9cab9e238932127f))
+* RDP, API Shaping, General Improvments ([c073128](https://github.com/Makr91/zoneweaver-agent/commit/c073128def5c027574dca21c00213ad49cf54c16))
+* UI, API, Docs OIDC CHnages ([3993258](https://github.com/Makr91/zoneweaver-agent/commit/39932582e2f378c65b1501d62bb5b1e1a3587089))
+* updating provisioning system ([337683e](https://github.com/Makr91/zoneweaver-agent/commit/337683e907928645aba5e4a20f64c745fe0a3ee0))
+* updating provisioning system ([101d16d](https://github.com/Makr91/zoneweaver-agent/commit/101d16d39b4a877e960db2fa1af72ee16f8defc7))
+* updating provisioning system ([94488fd](https://github.com/Makr91/zoneweaver-agent/commit/94488fd00fe6fa7021d4d258ad8b44722031c56a))
+* updating provisioning system ([c75de24](https://github.com/Makr91/zoneweaver-agent/commit/c75de24416ae0db2656d6dca915a855138bbaa2b))
+* updating provisioning system ([fc1f92e](https://github.com/Makr91/zoneweaver-agent/commit/fc1f92ea2db99e670933e9d9d3bfe33ff56886d8))
+* updating provisioning system ([03f1936](https://github.com/Makr91/zoneweaver-agent/commit/03f19361b2beaa73ee1fa770a0defd2f25ecefdf))
+* updating provisioning system ([cdd94cf](https://github.com/Makr91/zoneweaver-agent/commit/cdd94cf28854989b2c4733fd9d7face68122de8b))
+* updating provisioning system ([27b2c6d](https://github.com/Makr91/zoneweaver-agent/commit/27b2c6d7160a047fe484b983c8f0e014061b1649))
+* updating provisioning system ([986343c](https://github.com/Makr91/zoneweaver-agent/commit/986343ce19d6dcbe05f1d382675fa5a37a18509b))
+
 ## [0.3.8](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.7...v0.3.8) (2026-07-06)
 
 

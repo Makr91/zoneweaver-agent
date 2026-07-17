@@ -1,4 +1,4 @@
-version: 0.3.8
+version: 0.3.9
 server:
   http_port: 5000
   https_port: 5001
@@ -337,5 +337,6 @@ template_sources:
     timeout_seconds: 7200
     chunk_size_mb: 100
 updates:
-  versioninfo_url: https://github.com/Makr91/zoneweaver-agent/releases/latest/download/update-info.json
+  versioninfo_url: >-
+    https://github.com/Makr91/zoneweaver-agent/releases/latest/download/update-info.json
   check_interval: 0

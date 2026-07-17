@@ -434,7 +434,7 @@ export const getCatalogSources = (req, res) => {
  *         description: Configured catalog source name (default-flagged source when unset)
  *     responses:
  *       200:
- *         description: The catalog document + the resolved source
+ *         description: The catalog document itself, relayed FLAT (the shared wire — {name, format_version, updated, provisioners[]}; no envelope)
  *       404:
  *         description: No such catalog source (or catalogs disabled)
  *       502:
@@ -450,8 +450,11 @@ export const getCatalog = async (req, res) => {
     });
   }
   try {
+    // Parsed relay, the shared wire: the catalog document IS the response —
+    // the UI reads data.provisioners directly. The resolved source rides
+    // /provisioning/catalog/sources, never an envelope here.
     const catalog = await fetchCatalog(source);
-    return res.json({ source: { name: source.name, url: source.url }, catalog });
+    return res.json(catalog);
   } catch (error) {
     log.api.error('Catalog fetch failed', { source: source.url, error: error.message });
     return res.status(502).json({ error: `Catalog fetch failed: ${error.message}` });

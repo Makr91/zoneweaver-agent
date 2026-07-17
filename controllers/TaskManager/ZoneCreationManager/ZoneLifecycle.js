@@ -71,6 +71,11 @@ export const rollbackCreation = async (zoneName, zonecfgApplied, zfsCreated) => 
  * @param {string} zoneName - Zone name
  */
 export const storeInfrastructureConfig = async (zone, metadata, zoneName) => {
+  // The JSON column hands back the row's LIVE object — mutating it in place
+  // makes Sequelize's change detection compare the object to itself and SKIP
+  // the write (the saveConfiguration bug: the document silently never stored,
+  // so stage/provision/detail all read an empty document). Mutate a detached
+  // clone and mark the column changed explicitly.
   let zoneConfig = zone.configuration || {};
   if (typeof zoneConfig === 'string') {
     try {
@@ -80,6 +85,7 @@ export const storeInfrastructureConfig = async (zone, metadata, zoneName) => {
       zoneConfig = {};
     }
   }
+  zoneConfig = structuredClone(zoneConfig);
 
   // Store Hosts.yml infrastructure sections if present
   if (metadata.settings) {
@@ -107,7 +113,9 @@ export const storeInfrastructureConfig = async (zone, metadata, zoneName) => {
     zoneConfig.metadata = metadata.metadata;
   }
 
-  await zone.update({ configuration: zoneConfig });
+  zone.set('configuration', zoneConfig);
+  zone.changed('configuration', true);
+  await zone.save();
   log.task.info('Stored infrastructure configuration in zone record', {
     zone_name: zoneName,
     has_settings: !!metadata.settings,

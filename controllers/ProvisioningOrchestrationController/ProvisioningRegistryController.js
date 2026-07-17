@@ -24,6 +24,7 @@ import {
   catalogSourceError,
 } from '../../lib/ProvisionerCatalog.js';
 import { parseConfiguration } from '../../lib/ZoneConfigUtils.js';
+import { TOKEN_NAME_PATTERN } from '../TaskManager/ProvisionerImportManager.js';
 
 const provisionerReferences = async (name, version = '') => {
   const zones = await Zones.findAll();
@@ -225,6 +226,14 @@ export const refreshProvisionerSpecs = (req, res) => {
  *                 description: http(s) git repository URL (git imports)
  *               branch:
  *                 type: string
+ *               token_name:
+ *                 type: string
+ *                 description: |
+ *                   git imports only — names a git_api_keys entry in the
+ *                   global secrets store (PUT /secrets) for private
+ *                   repositories. The TOKEN itself never rides the request,
+ *                   task metadata, provenance, or logs — the import resolves
+ *                   it at run time.
  *     responses:
  *       202:
  *         description: Import task queued
@@ -233,7 +242,7 @@ export const refreshProvisionerSpecs = (req, res) => {
  */
 export const importProvisioner = async (req, res) => {
   try {
-    const { source_type, path: sourcePath, url, branch } = req.body || {};
+    const { source_type, path: sourcePath, url, branch, token_name } = req.body || {};
     if (!['folder', 'archive', 'git'].includes(source_type)) {
       return res.status(400).json({ error: 'source_type must be "folder", "archive", or "git"' });
     }
@@ -243,12 +252,16 @@ export const importProvisioner = async (req, res) => {
     if (source_type === 'git' && !url) {
       return res.status(400).json({ error: 'url must be an http(s) git repository URL' });
     }
+    if (token_name && !TOKEN_NAME_PATTERN.test(token_name)) {
+      return res.status(400).json({ error: 'token_name contains unsupported characters' });
+    }
 
     const task = await queueRegistryTask(req, 'provisioner_import', {
       source_type,
       path: sourcePath,
       url,
       branch,
+      token_name: source_type === 'git' ? token_name : undefined,
     });
 
     return res.status(202).json({
@@ -335,12 +348,14 @@ export const importProvisionerUpload = async (req, res) => {
  *     summary: Re-import a git-imported family from its recorded source
  *     description: |
  *       Families imported from git record their provenance ({source_type:
- *       git, url, branch?} — exposed as `source` on the family detail/list).
- *       This queues the ORDINARY provisioner_import task against that stored
- *       source: existing versions refuse (immutable, non-clobber), NEW
- *       versions land beside them. Families from folder/archive/catalog
- *       imports carry no provenance and answer 400 (catalog families update
- *       through the catalog).
+ *       git, url, branch?, token_name?} — exposed as `source` on the family
+ *       detail/list). This queues the ORDINARY provisioner_import task
+ *       against that stored source, replaying token_name for private repos
+ *       (the token resolves from the secrets store at run time): existing
+ *       versions refuse (immutable, non-clobber), NEW versions land beside
+ *       them. Families from folder/archive/catalog imports carry no
+ *       provenance and answer 400 (catalog families update through the
+ *       catalog).
  *     tags: [Provisioner Registry]
  *     security:
  *       - ApiKeyAuth: []
@@ -375,6 +390,7 @@ export const refreshProvisionerFromSource = async (req, res) => {
       source_type: 'git',
       url: source.url,
       branch: source.branch,
+      token_name: source.token_name,
     });
 
     return res.status(202).json({

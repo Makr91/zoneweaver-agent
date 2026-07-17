@@ -56,6 +56,7 @@ import {
   deleteBackup,
   restartServer,
 } from '../controllers/SettingsController/index.js';
+import { getSecrets, updateSecrets } from '../controllers/SecretsController.js';
 import { getVersion, checkForAppUpdates } from '../controllers/VersionController.js';
 import { getStatus } from '../controllers/StatusController.js';
 import { getTicketConfig } from '../controllers/TicketConfigController.js';
@@ -213,6 +214,11 @@ export const registerCoreRoutes = router => {
 
   // WebSocket Ticket Route (every WS upgrade requires ?ticket= minted here)
   router.get('/ws-ticket', verifyApiKey, getWsTicket);
+
+  // Global Secrets Routes (architecture D-C — the converged /secrets wire;
+  // advertised by the `secrets` feature token)
+  router.get('/secrets', verifyApiKey, getSecrets); // The whole secrets document, plain by design
+  router.put('/secrets', verifyApiKey, updateSecrets); // Replace submitted categories (settings-style shallow merge)
 
   // Settings Management Routes
   router.get('/settings', verifyApiKey, getSettings); // Get current application settings

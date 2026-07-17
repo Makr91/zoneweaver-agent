@@ -22,27 +22,33 @@ class ConfigLoader {
   }
 
   /**
+   * The config file's path — CONFIG_PATH (set by SMF) first, local fallback.
+   * THE one resolution; everything living "beside the config file"
+   * (setup.token, secrets.yaml) derives from it.
+   * @returns {string} Absolute path to config.yaml
+   */
+  getConfigPath() {
+    return process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+  }
+
+  /**
    * Loads configuration from config.yaml file
    * @description Reads and parses the YAML configuration file, checking CONFIG_PATH environment variable first
    * @throws {Error} If configuration file cannot be loaded or parsed
    */
   load() {
+    const configPath = this.getConfigPath();
     try {
-      // Check environment variable first (set by SMF), then fallback to local config
-      const configPath =
-        process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
       // eslint-disable-next-line no-console
       console.log(`Loading configuration from: ${configPath}`);
       const fileContents = fs.readFileSync(configPath, 'utf8');
       const fullConfig = yaml.load(fileContents);
       this.config = fullConfig.zoneweaver_api_backend || fullConfig;
     } catch (error) {
-      const attemptedPath =
-        process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
       // eslint-disable-next-line no-console
       console.error('Error loading config file:', error);
       // eslint-disable-next-line no-console
-      console.error('Tried path:', attemptedPath);
+      console.error('Tried path:', configPath);
       throw new Error('Failed to load configuration');
     }
   }
@@ -89,8 +95,7 @@ class ConfigLoader {
    * @returns {string} Absolute path to the setup.token file
    */
   getSetupTokenPath() {
-    const configPath = process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
-    return path.join(path.dirname(configPath), 'setup.token');
+    return path.join(path.dirname(this.getConfigPath()), 'setup.token');
   }
 
   /**

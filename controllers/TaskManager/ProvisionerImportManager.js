@@ -30,10 +30,13 @@ import {
   findCatalogArtifact,
   catalogSourceError,
 } from '../../lib/ProvisionerCatalog.js';
+import { getGitToken } from '../../lib/SecretsStore.js';
 import yaml from 'js-yaml';
 
 const ROOT_SEARCH_DEPTH = 3;
 const BRANCH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/u;
+/** The secrets store's entry-name rule (shared wire with the Go agent). */
+export const TOKEN_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/u;
 
 const isArchive = file =>
   file.endsWith('.tar.gz') || file.endsWith('.tgz') || file.endsWith('.zip');
@@ -316,13 +319,36 @@ const resolveSource = async (metadata, onData) => {
     if (branch && !BRANCH_PATTERN.test(branch)) {
       throw new Error('branch contains unsupported characters');
     }
+    if (metadata.token_name && !TOKEN_NAME_PATTERN.test(metadata.token_name)) {
+      throw new Error('token_name contains unsupported characters');
+    }
+
+    // Private repositories (Mark's ruling): token_name NAMES a git_api_keys
+    // secrets-store entry, resolved HERE at run time — the token rides the
+    // clone URL as userinfo (SHI's exact clone shape) and never lands in
+    // provenance, task metadata, narration, or logs (logCommand below).
+    let cloneUrl = url;
+    if (metadata.token_name) {
+      const token = getGitToken(metadata.token_name);
+      if (!token) {
+        throw new Error(`no git API key named ${metadata.token_name} in the secrets store`);
+      }
+      const withToken = new URL(url);
+      withToken.username = token;
+      cloneUrl = withToken.toString();
+    }
+
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'zw-provisioner-clone-'));
     const branchArg = branch ? ` --branch "${branch}"` : '';
+    const cloneCommand = remote =>
+      `git -c core.longpaths=true clone --depth 1 --recursive${branchArg} "${remote}" "${temp}"`;
     onData?.({ stream: 'stdout', data: `Cloning ${url}\n` });
     const result = await executeCommand(
-      `git -c core.longpaths=true clone --depth 1 --recursive${branchArg} "${url}" "${temp}"`,
+      cloneCommand(cloneUrl),
       900000,
-      onData
+      onData,
+      null,
+      cloneCommand(url)
     );
     if (!result.success) {
       fs.rmSync(temp, { recursive: true, force: true });
@@ -426,12 +452,14 @@ export const executeProvisionerImportTask = async task => {
       const familyName = importFromDirectory(dir, onData);
       // git imports record their provenance per FAMILY (registry-side,
       // never inside the package files) so refresh-from-source can re-run
-      // the ordinary import against the same repo later.
+      // the ordinary import against the same repo later. token_name NAMES
+      // the secrets-store entry — the token itself never lands here.
       if (metadata.source_type === 'git') {
         recordFamilySource(familyName, {
           source_type: 'git',
           url: metadata.url,
           ...(metadata.branch ? { branch: metadata.branch } : {}),
+          ...(metadata.token_name ? { token_name: metadata.token_name } : {}),
         });
         onData?.({
           stream: 'stdout',

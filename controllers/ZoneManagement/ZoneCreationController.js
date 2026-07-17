@@ -951,10 +951,21 @@ const prepareMultiHostEntry = async (hostBody, index) => {
   }
   const resourceValidation = await validateZoneCreationResources(hostBody);
   if (!resourceValidation.valid) {
+    // The CONVERGED shape (Go parity): the single-host wording, each detail
+    // annotated with which host entry (1-based, matching the entry labels)
+    // and machine failed — richer than a prefixed message, and details[]
+    // has no single message to prefix.
     return {
       problem: {
         status: 400,
-        payload: { error: `${label}: insufficient resources`, details: resourceValidation.errors },
+        payload: {
+          error: 'Insufficient resources',
+          details: resourceValidation.errors.map(detail => ({
+            ...detail,
+            entry: index + 1,
+            machine_name: nameResult.finalZoneName,
+          })),
+        },
       },
     };
   }

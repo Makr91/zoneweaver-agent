@@ -72,6 +72,13 @@ const PLATFORM_FEATURES = [
   // (/provisioning/provisioners*) — D14 token, shipped with the registry
   // parity phase.
   'provisioner-registry',
+  // secrets: the global secrets store (GET/PUT /secrets, architecture D-C) —
+  // always available, no config kill-switch; the UI's Secrets tab gates on it.
+  'secrets',
+  // hosts-file: the /system/hosts editor (Mark's token-gating pick,
+  // 2026-07-17) — twin of the Go agent's mint; the UI's Hosts File tab
+  // gates on it.
+  'hosts-file',
 ];
 
 /**
@@ -177,7 +184,7 @@ const buildFeatures = () => [
  *                     advertised. UIs must gate panels with features.includes(token).
  *                   items:
  *                     type: string
- *                   example: ["machines", "machine-create", "machine-modify", "machine-screenshot", "machine-snapshots", "services", "zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "system-users", "processes", "ssh", "host-terminal", "host-power", "tasks", "provisioning", "provisioner-registry", "fault-management", "devices", "monitoring", "syslog", "log-streaming", "file-browser", "artifacts", "templates", "guest-agent", "machine-suspend"]
+ *                   example: ["machines", "machine-create", "machine-modify", "machine-screenshot", "machine-snapshots", "services", "zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "system-users", "processes", "ssh", "host-terminal", "host-power", "tasks", "provisioning", "provisioner-registry", "secrets", "hosts-file", "fault-management", "devices", "monitoring", "syslog", "log-streaming", "file-browser", "artifacts", "templates", "guest-agent", "machine-suspend"]
  *                 uptime:
  *                   type: integer
  *                   description: Process uptime in seconds

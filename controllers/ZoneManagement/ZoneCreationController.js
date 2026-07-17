@@ -128,8 +128,7 @@ const renderPackageDocument = body => {
   // knob provisioning.default_network_interface; '' when unset — an
   // absent key renders empty either way).
   if (!settings.default_network_interface) {
-    settings.default_network_interface =
-      config.get('provisioning.default_network_interface') || '';
+    settings.default_network_interface = config.get('provisioning.default_network_interface') || '';
   }
   const rendered = renderHostsTemplate({
     version: pkg,

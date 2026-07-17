@@ -14,6 +14,8 @@ import {
   scpSyncFiles,
   syncFilesFromZone,
   scpSyncFilesFromZone,
+  fetchGuestKeyViaZlogin,
+  resolveRelativeKeyPath,
 } from '../../lib/SSHManager.js';
 import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
 import { parseConfiguration, provisioningPathFromZonepath } from '../../lib/ZoneConfigUtils.js';
@@ -336,9 +338,10 @@ export const executeZoneWaitSSHTask = async task => {
       return { success: false, error: ready.error };
     }
 
+    const username = credentials.username || 'root';
     const result = await waitForSSH(
       ip,
-      credentials.username || 'root',
+      username,
       credentials,
       port,
       timeout,
@@ -353,7 +356,46 @@ export const executeZoneWaitSSHTask = async task => {
       };
     }
 
-    return { success: false, error: result.error };
+    // Tier-3 RECOVERY (Mark's three-tier connect ruling): both known keys
+    // rejected = unknown state — fetch the guest's rotated key over zlogin
+    // (the platform's non-SSH transport), land it at the working-copy path,
+    // retry ONCE. Anything less recoverable fails honestly.
+    const keySetting = zoneConfig.settings?.vagrant_user_private_key_path;
+    if (keySetting && provisioningBasePath) {
+      const destPath = resolveRelativeKeyPath(keySetting, provisioningBasePath);
+      task.onData?.({
+        stream: 'stdout',
+        data: 'SSH not answering with the known keys — attempting tier-3 key recovery over zlogin\n',
+      });
+      const recovered = await fetchGuestKeyViaZlogin(zone_name, username, destPath, task.onData);
+      if (recovered) {
+        const retry = await waitForSSH(
+          ip,
+          username,
+          credentials,
+          port,
+          Math.min(timeout, 120000),
+          interval,
+          provisioningBasePath
+        );
+        if (retry.success) {
+          return {
+            success: true,
+            message: `SSH available on ${zone_name} (${ip}:${port}) after tier-3 key recovery`,
+          };
+        }
+      } else {
+        task.onData?.({
+          stream: 'stdout',
+          data: 'Tier-3 recovery unavailable — no rotated key on the guest or zlogin unreachable\n',
+        });
+      }
+    }
+
+    return {
+      success: false,
+      error: `${result.error} — re-provision or supply the key (vagrant_user_private_key_path)`,
+    };
   } catch (error) {
     log.task.error('Zone SSH wait failed', { zone_name, error: error.message });
     return { success: false, error: `SSH wait failed: ${error.message}` };

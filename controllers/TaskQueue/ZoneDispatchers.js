@@ -34,6 +34,7 @@ import {
   executeZoneProvisionRemoteTask,
   executeZoneDockerComposeTask,
   executeZoneHookTask,
+  executeZoneKeyRotateTask,
 } from '../TaskManager/ZoneEngineManager.js';
 import {
   executeProvisionerImportTask,
@@ -79,6 +80,7 @@ export const TASK_OBJECT_OPERATIONS = {
   zone_hook: executeZoneHookTask,
   zone_provision: executeZoneProvisionTask,
   zone_provision_remote: executeZoneProvisionRemoteTask,
+  zone_key_rotate: executeZoneKeyRotateTask,
   provisioner_export: executeProvisionerExportTask,
   provisioner_catalog_install: executeProvisionerCatalogInstallTask,
 };

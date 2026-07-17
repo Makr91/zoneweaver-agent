@@ -64,6 +64,7 @@ const { DataTypes } = Sequelize;
  *             - zone_provision
  *             - zone_provision_parent
  *             - zone_provision_remote
+ *             - zone_key_rotate
  *             - zone_provision_orchestration
  *             - zone_clone_orchestration
  *             - service_enable

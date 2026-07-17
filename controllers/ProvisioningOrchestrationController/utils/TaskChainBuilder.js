@@ -571,7 +571,36 @@ export const buildProvisioningTaskChain = async params => {
   const folders = extractFolders(ctx.provisioning);
   previousTaskId = await queueSyncBracket(ctx, folders, previousTaskId);
   previousTaskId = await buildProvisioningWalk(ctx, previousTaskId);
-  await queueSyncbackBracket(ctx, folders, previousTaskId);
+  previousTaskId = await queueSyncbackBracket(ctx, folders, previousTaskId);
+
+  // Post-walk SSH key rotation (converged design, Mark-consumed): gated on
+  // the DOCUMENT'S OWN vagrant_ssh_insert_key === true, ONE child after the
+  // syncback bracket. It never owns `final` — the whole-walk stamp already
+  // rides the walk's last step, and a rotation failure must not unmark a
+  // completed run.
+  if (zoneConfig.settings?.vagrant_ssh_insert_key === true) {
+    if (ctx.communicator === 'winrm') {
+      log.task.warn('Key rotation skipped — no ssh key semantics on a winrm guest', {
+        zone_name: ctx.zoneName,
+      });
+      ctx.taskChain.push({ step: 'key_rotate_skipped_winrm' });
+    } else {
+      const rotateTask = await createTask({
+        zone_name: ctx.zoneName,
+        operation: 'zone_key_rotate',
+        metadata: {
+          ip: ctx.zoneIP,
+          port: ctx.provisioning.ssh_port || 22,
+          credentials: ctx.credentials,
+          communicator: ctx.communicator,
+        },
+        depends_on: previousTaskId,
+        parent_task_id: ctx.parentTaskId,
+        created_by: ctx.createdBy,
+      });
+      ctx.taskChain.push({ step: 'key_rotate', task_id: rotateTask.id });
+    }
+  }
 
   return ctx.taskChain;
 };

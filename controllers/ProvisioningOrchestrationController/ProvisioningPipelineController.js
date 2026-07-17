@@ -262,6 +262,7 @@ export const getProvisioningStatus = async (req, res) => {
           'zone_provision_remote',
           'zone_syncback_parent',
           'zone_syncback',
+          'zone_key_rotate',
         ],
       },
       order: [['created_at', 'DESC']],

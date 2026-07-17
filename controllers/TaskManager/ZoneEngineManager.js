@@ -18,6 +18,7 @@ import {
   executeSSHCommand,
   uploadFile,
   getSSHKeyPath,
+  resolveConnectKeyPath,
   resolveRelativeKeyPath,
 } from '../../lib/SSHManager.js';
 import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
@@ -145,16 +146,18 @@ const buildTransportArgs = target => {
     return { args: extra.join(' ') };
   }
 
-  let keyPath = resolveRelativeKeyPath(credentials.ssh_key_path, provisioningBasePath);
+  // The three-tier connect ruling governs the host-ansible transport too.
+  let keyPath = resolveConnectKeyPath(credentials, provisioningBasePath);
   if (!keyPath) {
-    keyPath = getSSHKeyPath();
-    if (!fs.existsSync(keyPath) && credentials.password) {
+    if (credentials.password) {
       return {
         args: '',
         error:
           'ansible remote over ssh needs a key (credentials.ssh_key_path or the provisioning key) — password-only transport is not supported host-side',
       };
     }
+    // No key exists anywhere — the agent key path errors honestly downstream.
+    keyPath = getSSHKeyPath();
   }
   const args = [
     `--user ${shellQuote(username)}`,
@@ -626,6 +629,100 @@ const runHookOnTarget = params => {
     onData,
     communicator: params.communicator,
   });
+};
+
+/**
+ * Execute the post-walk SSH key rotation (op zone_key_rotate — the
+ * converged design, Mark-consumed 2026-07-17): gated on the DOCUMENT'S OWN
+ * settings.vagrant_ssh_insert_key === true, ONE child after the syncback
+ * bracket, NEVER the stamp owner (a rotation failure must not unmark a
+ * completed run). Hosts.rb's exact mechanics: fetch the guest's
+ * /home/<user>/.ssh/id_ssh_rsa, land it at the working copy's
+ * vagrant_user_private_key_path (0600 — tier 1 of the connect ruling stays
+ * warm), then strip the bootstrap pubkey line from the guest file
+ * (`sed -i '/vagrantup/d'`, Hosts.rb verbatim). winrm guests and missing
+ * guest keys skip LOUDLY (a box built without rotation is not a failure).
+ * @param {Object} task - Task object from TaskQueue
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeZoneKeyRotateTask = async task => {
+  const { zone_name } = task;
+  try {
+    const metadata = await parseTaskMetadata(task);
+    const { ip, port = 22, credentials = {}, communicator = 'ssh' } = metadata;
+    const { onData } = task;
+    const username = credentials.username || 'root';
+
+    if (communicator === 'winrm') {
+      onData?.({
+        stream: 'stdout',
+        data: 'Key rotation skipped — no ssh key file semantics on a winrm guest\n',
+      });
+      return { success: true, message: 'Key rotation skipped (winrm guest)' };
+    }
+    if (!ip) {
+      return { success: false, error: 'ip is required in task metadata' };
+    }
+
+    const zone = await Zones.findOne({ where: { name: zone_name } });
+    const zoneConfig = parseConfiguration(zone);
+    const keySetting = zoneConfig.settings?.vagrant_user_private_key_path;
+    if (!keySetting) {
+      onData?.({
+        stream: 'stdout',
+        data: 'Key rotation skipped — the document names no vagrant_user_private_key_path\n',
+      });
+      return { success: true, message: 'Key rotation skipped (no key path in document)' };
+    }
+    const provisioningBasePath = provisioningPathFromZonepath(zoneConfig.zonepath);
+    const destPath = resolveRelativeKeyPath(keySetting, provisioningBasePath);
+
+    await updateTaskProgress(task, 20, { status: 'fetching_guest_key' });
+    const guestKeyFile = `/home/${username}/.ssh/id_ssh_rsa`;
+    const fetched = await executeSSHCommand(
+      ip,
+      username,
+      credentials,
+      `cat ${guestKeyFile}`,
+      port,
+      { provisioningBasePath, onData: null }
+    );
+    if (!fetched.success || !fetched.stdout.includes('PRIVATE KEY')) {
+      onData?.({
+        stream: 'stdout',
+        data: `Key rotation skipped — ${guestKeyFile} is absent on the guest (box built without rotation)\n`,
+      });
+      return { success: true, message: 'Key rotation skipped (no rotated key on guest)' };
+    }
+
+    await updateTaskProgress(task, 55, { status: 'landing_key' });
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.writeFileSync(destPath, `${fetched.stdout.trim()}\n`, { mode: 0o600 });
+    fs.chmodSync(destPath, 0o600);
+    onData?.({ stream: 'stdout', data: `Rotated key landed at ${destPath}\n` });
+
+    // Hosts.rb's exact strip — the bootstrap pubkey line dies on the guest.
+    await updateTaskProgress(task, 80, { status: 'stripping_bootstrap_key' });
+    const stripped = await executeSSHCommand(
+      ip,
+      username,
+      credentials,
+      `sed -i '/vagrantup/d' ${guestKeyFile}`,
+      port,
+      { provisioningBasePath, onData }
+    );
+    if (!stripped.success) {
+      return {
+        success: false,
+        error: `bootstrap key strip failed on the guest: ${stripped.stderr || stripped.stdout}`,
+      };
+    }
+
+    return { success: true, message: `SSH key rotated — tier-1 key warm at ${destPath}` };
+  } catch (error) {
+    log.task.error('Key rotation failed', { zone_name, error: error.message });
+    return { success: false, error: `Key rotation failed: ${error.message}` };
+  }
 };
 
 /**

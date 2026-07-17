@@ -24,7 +24,7 @@ export const buildAttrCommand = (name, value) =>
  */
 export const buildDatasetPath = (basePath, zoneName, serverId) => {
   const zonesConfig = config.getZones();
-  const paddedId = serverId.padStart(4, '0');
+  const paddedId = String(serverId || '').padStart(4, '0');
   if (zonesConfig.prefix_datasets && serverId && !zoneName.startsWith(paddedId)) {
     return `${basePath}/${paddedId}--${zoneName}`;
   }

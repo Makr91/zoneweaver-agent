@@ -118,39 +118,36 @@ const detectActiveInterface = async () => {
  *   get:
  *     summary: List all valid VNIC parents
  *     description: |
- *       Every datalink a VNIC can be created over, grouped by class
- *       (phys/aggr/etherstub/simnet/overlay). Aggregate MEMBER links are
- *       excluded — their traffic rides the aggr. The provisioning etherstub is
- *       included and badged `provisioning: true` (it is how provisioning
- *       networks attach — never hidden). Link state is carried, never
- *       filtered; pickers filter client-side (external = phys/aggr,
- *       internal = etherstub).
+ *       Every datalink a VNIC can be created over, as FLAT rows `{name,
+ *       class, state}` (the converged uplink-picker wire, shared with the Go
+ *       agent). Classes here: phys/aggr/etherstub/simnet/overlay. Aggregate
+ *       MEMBER links are excluded — their traffic rides the aggr. The
+ *       provisioning etherstub is included and badged `provisioning: true`
+ *       (it is how provisioning networks attach — never hidden). Link state
+ *       is carried, never filtered; pickers filter client-side (external =
+ *       phys/aggr, internal = etherstub).
  *     tags: [Provisioning Network]
  *     security:
  *       - ApiKeyAuth: []
  *     responses:
  *       200:
- *         description: VNIC parents grouped by class
+ *         description: VNIC parent rows
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 interfaces:
- *                   type: object
- *                   properties:
- *                     phys:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           link: { type: string }
- *                           state: { type: string }
- *                           provisioning: { type: boolean }
- *                     aggr: { type: array, items: { type: object } }
- *                     etherstub: { type: array, items: { type: object } }
- *                     simnet: { type: array, items: { type: object } }
- *                     overlay: { type: array, items: { type: object } }
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name: { type: string }
+ *                       class:
+ *                         type: string
+ *                         enum: [phys, aggr, etherstub, simnet, overlay]
+ *                       state: { type: string }
+ *                       provisioning: { type: boolean }
  *                 excluded_aggr_members:
  *                   type: array
  *                   items: { type: string }
@@ -185,8 +182,7 @@ export const getBridgedInterfaces = async (req, res) => {
       }
     }
 
-    const interfaces = { phys: [], aggr: [], etherstub: [], simnet: [], overlay: [] };
-    let total = 0;
+    const interfaces = [];
     for (const line of linksResult.output.split('\n')) {
       if (!line.trim()) {
         continue;
@@ -195,18 +191,17 @@ export const getBridgedInterfaces = async (req, res) => {
       if (!vnicParentClasses.includes(linkClass) || memberLinks.has(link)) {
         continue;
       }
-      const entry = { link, state };
+      const entry = { name: link, class: linkClass, state };
       if (link === netConfig.etherstub_name) {
         entry.provisioning = true;
       }
-      interfaces[linkClass].push(entry);
-      total++;
+      interfaces.push(entry);
     }
 
     return res.json({
       interfaces,
       excluded_aggr_members: [...memberLinks],
-      total,
+      total: interfaces.length,
     });
   } catch (error) {
     log.api.error('Failed to list bridged interfaces', { error: error.message });

@@ -5,6 +5,7 @@ import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import config from '../../config/ConfigLoader.js';
 import { findSourceConfig, queryLatestBoxVersion } from '../../lib/TemplateRegistryUtils.js';
+import { buildDatasetPath } from '../TaskManager/ZoneCreationManager/utils/ConfigBuilders.js';
 
 /**
  * @fileoverview Zone creation helper functions - template resolution, naming, sub-task creation
@@ -213,6 +214,38 @@ export const createZoneCreationSubTasks = async (
     install: installTask.id,
     finalize: finalizeTask.id,
   };
+  let lastTaskId = finalizeTask.id;
+
+  // Create-time package staging (Go's machine_prepare parity): a create that
+  // names a provisioner lands the working copy — package tree + Hosts.yml —
+  // the moment the machine exists, not at first provision. The stage executor
+  // reads the STORED document, so it chains after finalize (which stores it).
+  const ref = requestBody.provisioner_ref;
+  if (ref?.name && ref?.version) {
+    const pool = requestBody.disks?.boot?.pool || 'rpool';
+    const dataset = requestBody.disks?.boot?.dataset || 'zones';
+    const datasetPath = buildDatasetPath(
+      `${pool}/${dataset}`,
+      zoneName,
+      requestBody.settings?.server_id ? String(requestBody.settings.server_id) : ''
+    );
+    const stageTask = await Tasks.create({
+      zone_name: zoneName,
+      operation: 'zone_provisioning_stage',
+      priority: TaskPriority.MEDIUM,
+      created_by: createdBy,
+      parent_task_id: parentTaskId,
+      depends_on: finalizeTask.id,
+      metadata: JSON.stringify({
+        provisioner_name: ref.name,
+        provisioner_version: ref.version,
+        dataset_path: `/${datasetPath}/provisioning`,
+      }),
+      status: 'pending',
+    });
+    subTasks.stage = stageTask.id;
+    lastTaskId = stageTask.id;
+  }
 
   // Optional: Start task
   if (startAfterCreate) {
@@ -222,7 +255,7 @@ export const createZoneCreationSubTasks = async (
       priority: TaskPriority.MEDIUM,
       created_by: createdBy,
       parent_task_id: parentTaskId,
-      depends_on: finalizeTask.id,
+      depends_on: lastTaskId,
       status: 'pending',
     });
     subTasks.start = startTask.id;

@@ -943,6 +943,10 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                     finalize:
  *                       type: string
  *                       format: uuid
+ *                     stage:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Create-time package staging (only when the create names a provisioner) — lands the working copy the moment the machine exists
  *                     start:
  *                       type: string
  *                       format: uuid
@@ -1137,7 +1141,7 @@ const createMultiHostMachines = async (req, res, hostBodies) => {
           if (hostWarnings?.length > 0) {
             warnings[finalZoneName] = hostWarnings;
           }
-          return subTasks.start || subTasks.finalize;
+          return subTasks.start || subTasks.stage || subTasks.finalize;
         }),
       Promise.resolve(null)
     );

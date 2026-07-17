@@ -137,6 +137,12 @@ export const PROVISIONING_SCHEMA = {
           'Allow host-target sequence hooks (provisioning.pre/post entries with target: host) to run ON THIS AGENT HOST. Default OFF — zoneweaver hosts are typically shared; documents carrying host hooks are refused pre-flight while off.',
         default: false,
       },
+      default_network_interface: {
+        type: 'string',
+        description:
+          'Value injected into the packaged-create render context as settings.default_network_interface when the request carries none (the ruled two-injection set, shared with the Go agent). Empty = inject nothing meaningful (absent keys render empty).',
+        default: '',
+      },
       catalog_sources: {
         type: 'object',
         description:

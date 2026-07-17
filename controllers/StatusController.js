@@ -79,6 +79,14 @@ const PLATFORM_FEATURES = [
   // 2026-07-17) — twin of the Go agent's mint; the UI's Hosts File tab
   // gates on it.
   'hosts-file',
+  // hostname / dns / ip-addresses: the host-network config surfaces
+  // (GET/PUT /network/hostname · GET/PUT /system/dns · the
+  // /network/addresses family) — minted 2026-07-17 so the UI's per-section
+  // Network-tab gates light up; zoneweaver's wires are the D1 reference the
+  // Go agent mirrors.
+  'hostname',
+  'dns',
+  'ip-addresses',
 ];
 
 /**
@@ -184,7 +192,7 @@ const buildFeatures = () => [
  *                     advertised. UIs must gate panels with features.includes(token).
  *                   items:
  *                     type: string
- *                   example: ["machines", "machine-create", "machine-modify", "machine-screenshot", "machine-snapshots", "services", "zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "system-users", "processes", "ssh", "host-terminal", "host-power", "tasks", "provisioning", "provisioner-registry", "secrets", "hosts-file", "fault-management", "devices", "monitoring", "syslog", "log-streaming", "file-browser", "artifacts", "templates", "guest-agent", "machine-suspend"]
+ *                   example: ["machines", "machine-create", "machine-modify", "machine-screenshot", "machine-snapshots", "services", "zfs", "vnics", "boot-environments", "packages", "repositories", "swap", "time-sync", "system-users", "processes", "ssh", "host-terminal", "host-power", "tasks", "provisioning", "provisioner-registry", "secrets", "hosts-file", "hostname", "dns", "ip-addresses", "fault-management", "devices", "monitoring", "syslog", "log-streaming", "file-browser", "artifacts", "templates", "guest-agent", "machine-suspend"]
  *                 uptime:
  *                   type: integer
  *                   description: Process uptime in seconds

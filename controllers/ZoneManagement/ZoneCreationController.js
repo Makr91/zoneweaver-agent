@@ -1,5 +1,6 @@
 import Zones from '../../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
+import config from '../../config/ConfigLoader.js';
 import { log } from '../../lib/Logger.js';
 import { validateZoneName } from '../../lib/ZoneValidation.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
@@ -121,6 +122,14 @@ const renderPackageDocument = body => {
   const settings = { ...(body.settings || {}) };
   if (!settings.sync_method) {
     settings.sync_method = 'rsync';
+  }
+  // The TWO ruled render-context injections (Mark, 2026-07-17 — both
+  // agents): sync_method above, default_network_interface here (config
+  // knob provisioning.default_network_interface; '' when unset — an
+  // absent key renders empty either way).
+  if (!settings.default_network_interface) {
+    settings.default_network_interface =
+      config.get('provisioning.default_network_interface') || '';
   }
   const rendered = renderHostsTemplate({
     version: pkg,

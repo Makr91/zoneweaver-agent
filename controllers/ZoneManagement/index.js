@@ -25,6 +25,7 @@ export {
   applyZonePendingChanges,
 } from './ZoneModificationController.js';
 export { deleteZone } from './ZoneDeletionController.js';
+export { getZoneHostsYaml, updateZoneHostsYaml } from './ZoneHostsYamlController.js';
 export {
   getZoneNotes,
   updateZoneNotes,

@@ -59,12 +59,15 @@ const defaultRecipes = [
     updated_at: new Date(),
   },
 
-  // 2. Older Linux (ifconfig/interfaces-based)
+  // 2. Older Linux (ifconfig/interfaces-based). Discovers the guest-side
+  // interface name, then writes static config from the agent-populated
+  // nic_0_* variables — DHCP when the document carries no address (an
+  // unresolved {{nic_0_ip}} stays literal, which the case pattern detects).
   {
     id: uuidv4(),
     name: 'linux-ifconfig',
     description:
-      'Older Linux (Debian 8-11, Ubuntu 16) network configuration via /etc/network/interfaces',
+      'Older Linux (Debian 8-11, Ubuntu 16) network configuration via /etc/network/interfaces (agent-populated addressing, DHCP fallback)',
     os_family: 'linux',
     brand: 'bhyve',
     is_default: false,
@@ -75,11 +78,6 @@ const defaultRecipes = [
     variables: {
       username: 'root',
       password: 'changeme',
-      vnic_name: 'eth0',
-      ip: '10.190.190.10',
-      netmask: '255.255.255.0',
-      gateway: '10.190.190.1',
-      dns: '8.8.8.8',
     },
     steps: [
       { type: 'wait', pattern: '{{login_prompt}}', timeout: 60 },
@@ -89,41 +87,38 @@ const defaultRecipes = [
       { type: 'wait', pattern: '{{shell_prompt}}', timeout: 30 },
       { type: 'command', value: 'sudo su -', expect_prompt: '#', check_exit_code: false },
       {
-        type: 'template',
-        dest: '/etc/network/interfaces.d/{{vnic_name}}',
-        method: 'heredoc',
-        content:
-          'auto {{vnic_name}}\niface {{vnic_name}} inet static\n  address {{ip}}\n  netmask {{netmask}}\n  gateway {{gateway}}\n  dns-nameservers {{dns}}',
+        type: 'command',
+        value:
+          "IF=$(ls /sys/class/net | grep -v lo | head -1); IP='{{nic_0_ip}}'; P='{{nic_0_prefix}}'; case $P in *'{{'*) P=24;; esac; case $IP in *'{{'*) printf 'auto %s\\niface %s inet dhcp\\n' $IF $IF > /etc/network/interfaces.d/$IF;; *) printf 'auto %s\\niface %s inet static\\n  address %s/%s\\n' $IF $IF $IP $P > /etc/network/interfaces.d/$IF; G='{{nic_0_gateway}}'; case $G in *'{{'*) :;; *) echo '  gateway' $G >> /etc/network/interfaces.d/$IF;; esac; D='{{nic_0_dns}}'; case $D in *'{{'*) :;; *) echo '  dns-nameservers' $(echo $D | tr , ' ') >> /etc/network/interfaces.d/$IF;; esac;; esac; ifdown $IF 2>/dev/null; ifup $IF",
+        check_exit_code: false,
       },
-      { type: 'command', value: 'ifdown {{vnic_name}}', check_exit_code: false },
-      { type: 'command', value: 'ifup {{vnic_name}}' },
       { type: 'delay', seconds: 5 },
-      { type: 'command', value: 'ifconfig {{vnic_name}}' },
+      { type: 'command', value: 'ip addr show 2>/dev/null || ifconfig -a' },
     ],
     created_by: 'system',
     created_at: new Date(),
     updated_at: new Date(),
   },
 
-  // 3. OmniOS / illumos (dladm/ipadm-based)
+  // 3. OmniOS / illumos (dladm/ipadm-based). Discovers the guest-side link
+  // (vioif0 under bhyve, never the host vnic name), addresses from the
+  // agent-populated nic_0_* variables, DHCP when the document carries no
+  // address. Root's illumos prompt ends '#' — ':~#', not ':~$'.
   {
     id: uuidv4(),
     name: 'omnios-dladm',
-    description: 'OmniOS / illumos network configuration via dladm/ipadm',
+    description:
+      'OmniOS / illumos network configuration via dladm/ipadm (agent-populated addressing, DHCP fallback)',
     os_family: 'solaris',
     brand: 'bhyve',
     is_default: true,
     boot_string: 'Console login:',
     login_prompt: 'login:',
-    shell_prompt: ':~$',
+    shell_prompt: ':~#',
     timeout_seconds: 300,
     variables: {
       username: 'root',
       password: 'changeme',
-      vnic_name: 'net0',
-      ip: '10.190.190.10',
-      prefix: '24',
-      gateway: '10.190.190.1',
     },
     steps: [
       { type: 'wait', pattern: '{{login_prompt}}', timeout: 60 },
@@ -133,28 +128,34 @@ const defaultRecipes = [
       { type: 'wait', pattern: '{{shell_prompt}}', timeout: 30 },
       {
         type: 'command',
-        value: 'pfexec ipadm delete-addr {{vnic_name}}/dhcp',
+        value:
+          "IF=$(dladm show-phys -p -o link | head -1); IP='{{nic_0_ip}}'; P='{{nic_0_prefix}}'; case $P in *'{{'*) P=24;; esac; pfexec ipadm create-if $IF 2>/dev/null; case $IP in *'{{'*) pfexec ipadm create-addr -T dhcp $IF/v4;; *) pfexec ipadm delete-addr $IF/dhcp 2>/dev/null; pfexec ipadm create-addr -T static -a $IP/$P $IF/v4static; G='{{nic_0_gateway}}'; case $G in *'{{'*) :;; *) pfexec route -p add {{nic_0_route}} $G;; esac;; esac",
         check_exit_code: false,
       },
       {
         type: 'command',
-        value: 'pfexec ipadm create-addr -T static -a {{ip}}/{{prefix}} {{vnic_name}}/v4static',
+        value:
+          "D='{{nic_0_dns}}'; case $D in *'{{'*) :;; *) echo $D | tr , ' ' | xargs -n1 echo nameserver | pfexec tee /etc/resolv.conf;; esac",
+        check_exit_code: false,
       },
-      { type: 'command', value: 'pfexec route add default {{gateway}}' },
       { type: 'delay', seconds: 3 },
-      { type: 'command', value: 'ipadm show-addr {{vnic_name}}/v4static' },
-      { type: 'command', value: 'netstat -rn | grep default' },
+      { type: 'command', value: 'ipadm show-addr' },
+      { type: 'command', value: 'netstat -rn' },
     ],
     created_by: 'system',
     created_at: new Date(),
     updated_at: new Date(),
   },
 
-  // 4. Windows (SAC console + netsh)
+  // 4. Windows (SAC console + PowerShell). Matches the adapter by the
+  // agent-populated MAC (never a guessed 'Ethernet' name), static from
+  // nic_0_* when the document carries an address, DHCP otherwise — an
+  // unresolved {{nic_0_ip}} fails the ^[0-9] test and selects DHCP.
   {
     id: uuidv4(),
     name: 'windows-sac',
-    description: 'Windows Server network configuration via SAC console and netsh',
+    description:
+      'Windows Server network configuration via SAC console and PowerShell (MAC-matched adapter, agent-populated addressing, DHCP fallback)',
     os_family: 'windows',
     brand: 'bhyve',
     is_default: true,
@@ -165,11 +166,6 @@ const defaultRecipes = [
     variables: {
       username: 'Administrator',
       password: 'changeme',
-      interface_name: 'Ethernet',
-      ip: '10.190.190.10',
-      netmask: '255.255.255.0',
-      gateway: '10.190.190.1',
-      dns: '8.8.8.8',
     },
     steps: [
       { type: 'wait', pattern: 'SAC>', timeout: 120 },
@@ -184,16 +180,12 @@ const defaultRecipes = [
       {
         type: 'command',
         value:
-          'netsh interface ip set address name="{{interface_name}}" static {{ip}} {{netmask}} {{gateway}}',
+          "powershell -NoProfile -Command \"$m='{{nic_0_mac}}'.ToUpper().Replace(':','-'); $a=Get-NetAdapter | Where-Object {$_.MacAddress -eq $m}; if(-not $a){$a=Get-NetAdapter | Sort-Object ifIndex | Select-Object -First 1}; $ip='{{nic_0_ip}}'; if($ip -match '^[0-9]'){ $p='{{nic_0_prefix}}'; if($p -notmatch '^[0-9]'){$p='24'}; Remove-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue; Remove-NetRoute -InterfaceIndex $a.ifIndex -DestinationPrefix 0.0.0.0/0 -Confirm:$false -ErrorAction SilentlyContinue; $g='{{nic_0_gateway}}'; if($g -match '^[0-9]'){New-NetIPAddress -InterfaceIndex $a.ifIndex -IPAddress $ip -PrefixLength $p -DefaultGateway $g | Out-Null}else{New-NetIPAddress -InterfaceIndex $a.ifIndex -IPAddress $ip -PrefixLength $p | Out-Null}; $d='{{nic_0_dns}}'; if($d -match '^[0-9]'){Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses ($d -split ',')} }else{ Set-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -Dhcp Enabled; Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ResetServerAddresses }\"",
         expect_prompt: '{{shell_prompt}}',
-      },
-      {
-        type: 'command',
-        value: 'netsh interface ip set dns name="{{interface_name}}" static {{dns}}',
-        expect_prompt: '{{shell_prompt}}',
+        check_exit_code: false,
       },
       { type: 'delay', seconds: 5 },
-      { type: 'command', value: 'ipconfig', expect_prompt: '{{shell_prompt}}' },
+      { type: 'command', value: 'ipconfig /all', expect_prompt: '{{shell_prompt}}' },
     ],
     created_by: 'system',
     created_at: new Date(),

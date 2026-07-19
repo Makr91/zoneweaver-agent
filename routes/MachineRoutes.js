@@ -3,6 +3,8 @@ import {
   listZones,
   getZoneDetails,
   getZoneConfig,
+  getZoneHostsYaml,
+  updateZoneHostsYaml,
   getZoneNotes,
   updateZoneNotes,
   getZoneTags,
@@ -155,6 +157,8 @@ const registerLifecycleRoutes = router => {
   router.get('/machines', verifyApiKey, listZones); // List all zones
   router.get('/machines/:machineName', verifyApiKey, getZoneDetails); // Get zone details
   router.get('/machines/:machineName/config', verifyApiKey, getZoneConfig); // Get zone configuration
+  router.get('/machines/:machineName/hosts-yml', verifyApiKey, getZoneHostsYaml); // Machine document as editable YAML (frozen cross-agent contract)
+  router.put('/machines/:machineName/hosts-yml', verifyApiKey, updateZoneHostsYaml); // Replace the machine document from YAML
   router.get('/machines/:machineName/notes', verifyApiKey, getZoneNotes); // Get zone notes
   router.put('/machines/:machineName/notes', verifyApiKey, updateZoneNotes); // Update zone notes
   router.get('/machines/:machineName/tags', verifyApiKey, getZoneTags); // Get zone tags

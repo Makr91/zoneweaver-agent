@@ -6,10 +6,80 @@ import { log } from '../../lib/Logger.js';
 import config from '../../config/ConfigLoader.js';
 import { findSourceConfig, queryLatestBoxVersion } from '../../lib/TemplateRegistryUtils.js';
 import { buildDatasetPath } from '../TaskManager/ZoneCreationManager/utils/ConfigBuilders.js';
+import { attachProvisioningNetwork } from '../../lib/ProvisioningNetwork.js';
 
 /**
  * @fileoverview Zone creation helper functions - template resolution, naming, sub-task creation
  */
+
+/**
+ * Derive the zonecfg nic half from the document's networks[] — the DRY
+ * ruling (sync 2026-07-18): networks[] is the ONE cross-agent section and
+ * the ONLY source of the nic half (the create-body nics[] key is DEAD —
+ * the classic system never had one either; Hosts.rb derived everything).
+ * Mapping: `bridge` → global-nic (the uplink), `type` internal|external →
+ * the vnic-naming class, `mac` (non-auto) → mac-addr, `vlan` → vlan-id.
+ * networks[].nic_type is the DRIVER MODEL (virtio) — never the class; it is
+ * deliberately not read here. Entry i pairs with net resource i (the
+ * declared pairing rule).
+ * @param {Object} body - Create request body (mutated)
+ */
+export const deriveNicsFromNetworks = body => {
+  const networks = Array.isArray(body.networks) ? body.networks : [];
+  if (networks.length === 0) {
+    return;
+  }
+  body.nics = networks.map(net => {
+    const nic = { nic_type: net?.type === 'internal' ? 'internal' : 'external' };
+    if (net?.bridge) {
+      nic.global_nic = net.bridge;
+    }
+    const vlan = Number(net?.vlan);
+    if (Number.isInteger(vlan) && vlan > 0) {
+      nic.vlan_id = vlan;
+    }
+    if (net?.mac && net.mac !== 'auto') {
+      nic.mac_addr = net.mac;
+    }
+    return nic;
+  });
+};
+
+/**
+ * Declare wire dns entries into the DOCUMENT contract — the MAP shape
+ * `[{nameserver: ip}]` the networking role hard-consumes and the package
+ * template renders (sync-converged 2026-07-18; Go ships the same declare):
+ * plain strings become {nameserver} (empty strings drop), map entries ride
+ * untouched.
+ * @param {Object} body - Create request body (mutated)
+ */
+export const declareNetworkDns = body => {
+  const networks = Array.isArray(body.networks) ? body.networks : [];
+  for (const net of networks) {
+    if (net && Array.isArray(net.dns)) {
+      net.dns = net.dns
+        .filter(entry => !(typeof entry === 'string' && entry.trim() === ''))
+        .map(entry => (typeof entry === 'string' ? { nameserver: entry } : entry));
+    }
+  }
+};
+
+/**
+ * The create path's network preparation (sync-converged 2026-07-18), ONE
+ * call for every create flavor (single, multi-host, clone): a packaged
+ * create (provisioner_ref) first gains the provisioning transport entry —
+ * dhcp4 on the interconnect, no address; the agent's dhcpd allocates and
+ * zone_wait_ssh records the lease — then dns declares into the document
+ * shape and the zonecfg nic half derives from networks[].
+ * @param {Object} body - Create request body (mutated)
+ */
+export const prepareNetworkSections = body => {
+  if (body.provisioner_ref) {
+    attachProvisioningNetwork(body);
+  }
+  declareNetworkDns(body);
+  deriveNicsFromNetworks(body);
+};
 
 /**
  * Resolve box reference to template dataset path. Typed wire (disk spec):

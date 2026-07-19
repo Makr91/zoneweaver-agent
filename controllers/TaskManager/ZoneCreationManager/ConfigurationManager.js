@@ -133,9 +133,11 @@ export const configureBootdisk = async (zoneName, bootdiskPath, onData = null) =
 
 /**
  * Configure additional disks in zone — TYPED entries (disk spec): blank =
- * create a fresh zvol and stamp it ours; image = attach the declared path
- * as-is (never created, never stamped; per-ENTRY force overrides the in-use
- * refusal, frozen H3 semantics).
+ * create a fresh zvol and stamp it ours; template = materialize from a
+ * snapshot (the clone path's data-complete enrichment — zfs clone, or full
+ * send/recv when clone_strategy is copy — stamped ours); image = attach the
+ * declared path as-is (never created, never stamped; per-ENTRY force
+ * overrides the in-use refusal, frozen H3 semantics).
  * @param {string} zoneName - Zone name
  * @param {Array} disks - Typed additional_disks[] entries
  * @param {Array} zfsCreated - Array to track created datasets for rollback
@@ -174,6 +176,28 @@ export const configureAdditionalDisks = async (
             return diskPath;
           }
         )
+      );
+    } else if (disk.type === 'template') {
+      const pool = disk.pool || 'rpool';
+      const dset = disk.dataset || 'zones';
+      const volName = disk.volume_name || `disk${i}`;
+      const datasetPath = buildDatasetPath(`${pool}/${dset}`, zoneName, metadata.server_id);
+      diskPath = `${datasetPath}/${volName}`;
+
+      const snapshotSource = `${disk.template_dataset}@${disk.snapshot_name}`;
+      const materialize =
+        disk.clone_strategy === 'copy'
+          ? `pfexec zfs send ${snapshotSource} | pfexec zfs recv -F ${diskPath}`
+          : `pfexec zfs clone ${snapshotSource} ${diskPath}`;
+      zfsPromises.push(
+        executeCommand(materialize, 3600 * 1000, onData).then(async res => {
+          if (!res.success) {
+            throw new Error(`Failed to clone disk ${i} from ${snapshotSource}: ${res.error}`);
+          }
+          zfsCreated.push(diskPath);
+          await stampDataset(diskPath, disk.provenance === 'clone' ? 'clone' : 'template');
+          return diskPath;
+        })
       );
     } else {
       // type: image — task-time in-use guard (pre-flight ran at create; a

@@ -15,8 +15,10 @@ import {
   readZonecfgAttr,
   getZoneConfig,
   parseConfiguration,
+  setDocumentNetworkKey,
 } from '../../lib/ZoneConfigUtils.js';
 import { resizeMachineDisks } from '../../lib/MachineDiskResize.js';
+import { validateTypedDiskEntries, validateTypedImageEntries } from '../../lib/DiskSpec.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { isGuestAgentEnabled } from '../../lib/QemuGuestAgent.js';
 import { applyGuestAgentToggle } from '../GuestAgentController.js';
@@ -290,6 +292,58 @@ const extractInfrastructureBody = (body, changeFields) => {
 };
 
 /**
+ * Apply remove_on_completion flips riding update_nics entries (the converged
+ * post-create toggle wire, 2026-07-18): a DOCUMENT-side edit, applied
+ * immediately — the agent maps the NIC's physical to the paired networks[]
+ * entry (live net index ↔ document index, the declared pairing rule) and
+ * records the flag. The key is STRIPPED from the entries afterwards so the
+ * zonecfg path never sees it; entries reduced to bare selectors drop.
+ * @param {string} zoneName - Zone name
+ * @param {Object} body - Request body (update_nics mutated)
+ * @returns {Promise<string[]>} The physicals whose flag was recorded
+ * @throws {Error} Unknown physical / no paired document entry
+ */
+const applyTransportFlagFlips = async (zoneName, body) => {
+  if (!Array.isArray(body.update_nics)) {
+    return [];
+  }
+  const flips = body.update_nics.filter(entry => entry && entry.remove_on_completion !== undefined);
+  if (flips.length === 0) {
+    return [];
+  }
+  const liveConfig = await getZoneConfig(zoneName);
+  const nets = Array.isArray(liveConfig?.net) ? liveConfig.net : [];
+  const applied = await Promise.all(
+    flips.map(async entry => {
+      const index = nets.findIndex(net => net?.physical === entry.physical);
+      if (index === -1) {
+        throw new Error(`update_nics: no net resource with physical ${entry.physical}`);
+      }
+      const recorded = await setDocumentNetworkKey(
+        zoneName,
+        index,
+        'remove_on_completion',
+        entry.remove_on_completion === true
+      );
+      if (!recorded) {
+        throw new Error(
+          `update_nics: ${entry.physical} has no paired document networks[${index}] entry`
+        );
+      }
+      delete entry.remove_on_completion;
+      return entry.physical;
+    })
+  );
+  body.update_nics = body.update_nics.filter(
+    entry => entry && Object.keys(entry).some(key => key !== 'physical')
+  );
+  if (body.update_nics.length === 0) {
+    delete body.update_nics;
+  }
+  return applied;
+};
+
+/**
  * Handle the guest_agent toggle field (shared contract with the Go agent):
  * applied SYNCHRONOUSLY through zonecfg's offline store regardless of power
  * state — never accrues, never queues; the caller's answer carries
@@ -369,6 +423,111 @@ export const queuePendingApply = async (zone, createdBy) => {
     });
     return null;
   }
+};
+
+/**
+ * Validate the add_disks wire at the PUT (frozen TYPED entries, converged
+ * 2026-07-18) — shape + image host-truth refused up front on both the queue
+ * and accrue paths; the executor re-enforces. Returns the entries' warnings;
+ * a refusal answers the request and returns null.
+ * @param {import('express').Request} req - Request
+ * @param {import('express').Response} res - Response
+ * @returns {Promise<Array|null>} Warnings, or null when the request was answered
+ */
+const validateAddDisksWire = async (req, res) => {
+  if (req.body.add_disks === undefined) {
+    return [];
+  }
+  if (!Array.isArray(req.body.add_disks) || req.body.add_disks.length === 0) {
+    res.status(400).json({ error: 'add_disks must be a non-empty array' });
+    return null;
+  }
+  const typed = validateTypedDiskEntries(req.body.add_disks, 'add_disks');
+  if (typed.errors.length > 0) {
+    res.status(400).json({ error: typed.errors[0] });
+    return null;
+  }
+  const imageErrors = await validateTypedImageEntries(req.body.add_disks, 'add_disks');
+  if (imageErrors.length > 0) {
+    res.status(400).json({ error: imageErrors[0] });
+    return null;
+  }
+  return typed.warnings;
+};
+
+/**
+ * Apply update_nics remove_on_completion flips and answer the flag-only PUT
+ * (status completed + transport_flags_applied). Returns the applied list; a
+ * refusal or flag-only completion answers the request and returns null.
+ * @param {import('express').Request} req - Request
+ * @param {import('express').Response} res - Response
+ * @param {string} zoneName - Zone name
+ * @param {string[]} changeFields - The recognized change fields
+ * @returns {Promise<string[]|null>} Applied physicals, or null when answered
+ */
+const handleTransportFlags = async (req, res, zoneName, changeFields) => {
+  let transportFlags = [];
+  try {
+    transportFlags = await applyTransportFlagFlips(zoneName, req.body);
+  } catch (flipError) {
+    res.status(400).json({ error: flipError.message });
+    return null;
+  }
+  if (transportFlags.length > 0 && !changeFields.some(field => req.body[field] !== undefined)) {
+    res.json({
+      success: true,
+      machine_name: zoneName,
+      operation: 'zone_modify',
+      status: 'completed',
+      message: 'Transport removal flag updated.',
+      requires_restart: false,
+      transport_flags_applied: transportFlags,
+    });
+    return null;
+  }
+  return transportFlags;
+};
+
+/**
+ * The infrastructure tail of the PUT: accrue against a non-powered-off zone
+ * (pending_power_cycle) or queue the zone_modify task, folding the
+ * immediately-applied results and transport flags into whichever answer.
+ * @param {import('express').Request} req - Request
+ * @param {import('express').Response} res - Response
+ * @param {string} zoneName - Zone name
+ * @param {Object} ctx - {changeFields, warnings, transportFlags, guestAgentApplied, resized, appliedAttrs}
+ * @returns {Promise<Object>} The answered response
+ */
+const queueInfrastructureChanges = async (req, res, zoneName, ctx) => {
+  const { changeFields, warnings, transportFlags, guestAgentApplied, resized, appliedAttrs } = ctx;
+  const infrastructureBody = extractInfrastructureBody(req.body, changeFields);
+  const pendingResponse = await maybeAccrueChanges(zoneName, infrastructureBody, warnings);
+  if (pendingResponse) {
+    if (transportFlags.length > 0) {
+      pendingResponse.transport_flags_applied = transportFlags;
+    }
+    return res.json(
+      decorateWithImmediate(pendingResponse, guestAgentApplied, resized, appliedAttrs)
+    );
+  }
+
+  const modifyTask = await queueModifyTask(zoneName, infrastructureBody, req.entity.name);
+  const modifyResponse = {
+    success: true,
+    task_id: modifyTask.id,
+    machine_name: zoneName,
+    operation: 'zone_modify',
+    status: 'pending',
+    message: 'Modification queued. Changes will take effect on next zone boot.',
+    requires_restart: true,
+  };
+  if (warnings.length > 0) {
+    modifyResponse.resource_warnings = warnings;
+  }
+  if (transportFlags.length > 0) {
+    modifyResponse.transport_flags_applied = transportFlags;
+  }
+  return res.json(decorateWithImmediate(modifyResponse, guestAgentApplied, resized, appliedAttrs));
 };
 
 /**
@@ -598,28 +757,59 @@ export const queuePendingApply = async (zone, createdBy) => {
  *                       type: object
  *                       description: net properties to REPLACE (current pair removed, new pair added)
  *                       example: { "promiscphys": "on" }
+ *                     remove_on_completion:
+ *                       type: boolean
+ *                       description: |
+ *                         The provisioning-transport removal flag (converged wire,
+ *                         2026-07-18) — a DOCUMENT-side edit applied IMMEDIATELY: the
+ *                         agent maps this NIC to its paired networks[] entry (same
+ *                         index rule as knob_current) and records the flag; nothing
+ *                         queues, nothing accrues. Absent flag = this agent's default:
+ *                         REMOVE after the whole-walk stamp (knob_defaults
+ *                         'transport.remove_on_completion'). An entry carrying ONLY
+ *                         this key + physical answers status completed with
+ *                         transport_flags_applied[].
  *               add_disks:
  *                 type: array
- *                 description: Disks to add (new zvols or existing datasets)
+ *                 description: |
+ *                   Disks to add — the frozen TYPED entries (the create wire's
+ *                   additional-disk vocabulary verbatim, converged 2026-07-18):
+ *                   every entry DECLARES its type; refusals answer AT the PUT
+ *                   with the add_disks[<n>] prefix (1-based) on both the queue
+ *                   and accrue paths, and the executor re-enforces.
  *                 items:
  *                   type: object
+ *                   required: [type]
  *                   properties:
- *                     create_new:
- *                       type: boolean
- *                     existing_dataset:
+ *                     type:
  *                       type: string
- *                     pool:
- *                       type: string
- *                       example: "rpool"
- *                     dataset:
- *                       type: string
- *                       example: "zones"
- *                     volume_name:
- *                       type: string
- *                       example: "extra"
+ *                       enum: [image, blank]
+ *                       description: blank = create a fresh zvol (size REQUIRED, stamped ours) · image = attach an EXISTING zvol by path (never created, never stamped)
  *                     size:
  *                       type: string
+ *                       description: blank REQUIRES it — no default
  *                       example: "100G"
+ *                     sparse:
+ *                       type: boolean
+ *                       default: true
+ *                     volume_name:
+ *                       type: string
+ *                       description: blank only (defaults diskN)
+ *                       example: "extra"
+ *                     pool:
+ *                       type: string
+ *                       default: "rpool"
+ *                     dataset:
+ *                       type: string
+ *                       default: "zones"
+ *                     path:
+ *                       type: string
+ *                       description: image only — the existing zvol's dataset path
+ *                       example: "rpool/vms/old-server/data"
+ *                     force:
+ *                       type: boolean
+ *                       default: false
+ *                       description: image only — attach even when another machine references the zvol
  *               resize_disks:
  *                 type: array
  *                 description: |
@@ -782,10 +972,10 @@ export const queuePendingApply = async (zone, createdBy) => {
  *                   - physical: "vnic1"
  *                     global_nic: "igb0"
  *             add_disk:
- *               summary: Add a new disk
+ *               summary: Add a new disk (typed wire)
  *               value:
  *                 add_disks:
- *                   - create_new: true
+ *                   - type: "blank"
  *                     pool: "rpool"
  *                     dataset: "zones"
  *                     volume_name: "extra"
@@ -895,6 +1085,11 @@ export const modifyZone = async (req, res) => {
       return res.status(400).json({ error: vcpusProblem });
     }
 
+    const addDiskWarnings = await validateAddDisksWire(req, res);
+    if (addDiskWarnings === null) {
+      return undefined;
+    }
+
     const guestAgent = await handleGuestAgentField(req, res, zoneName);
     if (guestAgent.response) {
       return guestAgent.response;
@@ -912,6 +1107,11 @@ export const modifyZone = async (req, res) => {
 
     await applyImmediateFields(zone, zoneName, req.body);
     const appliedAttrs = await applyZoneAttrFields(zoneName, req.body);
+
+    const transportFlags = await handleTransportFlags(req, res, zoneName, changeFields);
+    if (transportFlags === null) {
+      return undefined;
+    }
 
     // Immediately-applied fields: nothing queues, nothing accrues.
     const dbOnlyFields = [
@@ -948,36 +1148,14 @@ export const modifyZone = async (req, res) => {
       });
     }
 
-    const infrastructureBody = extractInfrastructureBody(req.body, changeFields);
-    const pendingResponse = await maybeAccrueChanges(
-      zoneName,
-      infrastructureBody,
-      resourceValidation.warnings
-    );
-    if (pendingResponse) {
-      return res.json(
-        decorateWithImmediate(pendingResponse, guestAgentApplied, resized, appliedAttrs)
-      );
-    }
-
-    // Create the zone_modify task
-    const modifyTask = await queueModifyTask(zoneName, infrastructureBody, req.entity.name);
-
-    const modifyResponse = {
-      success: true,
-      task_id: modifyTask.id,
-      machine_name: zoneName,
-      operation: 'zone_modify',
-      status: 'pending',
-      message: 'Modification queued. Changes will take effect on next zone boot.',
-      requires_restart: true,
-    };
-    if (resourceValidation.warnings.length > 0) {
-      modifyResponse.resource_warnings = resourceValidation.warnings;
-    }
-    return res.json(
-      decorateWithImmediate(modifyResponse, guestAgentApplied, resized, appliedAttrs)
-    );
+    return await queueInfrastructureChanges(req, res, zoneName, {
+      changeFields,
+      warnings: [...resourceValidation.warnings, ...addDiskWarnings],
+      transportFlags,
+      guestAgentApplied,
+      resized,
+      appliedAttrs,
+    });
   } catch (error) {
     log.database.error('Database error modifying zone task', {
       error: error.message,

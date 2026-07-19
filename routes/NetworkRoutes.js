@@ -56,6 +56,7 @@ import {
   getDhcpStatus,
   controlDhcpService,
 } from '../controllers/DhcpController.js';
+import { getIpSuggestions } from '../controllers/IpSuggestionsController.js';
 
 /**
  * @fileoverview Network management routes — hostname, IP addresses, VNICs,
@@ -70,6 +71,9 @@ export const registerNetworkRoutes = router => {
   // Network Management Routes - Hostname
   router.get('/network/hostname', verifyApiKey, getHostname); // Get current hostname
   router.put('/network/hostname', verifyApiKey, setHostname); // Set hostname
+
+  // Free-IP suggestions (converged static-IP picker feed, Go's exact wire)
+  router.get('/network/ip-suggestions', verifyApiKey, getIpSuggestions);
 
   // Network Management Routes - IP Addresses
   router.get('/network/addresses', verifyApiKey, getManageableIPAddresses); // List IP addresses

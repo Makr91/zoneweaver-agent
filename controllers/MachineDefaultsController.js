@@ -185,12 +185,14 @@ const readZadmSchemaVocab = async () => {
  * BHYVE_RELEASE_CSM/virtio-blk/virtio-net-viona). Parsed live below; these
  * statics mirror /usr/lib/brand/bhyve/boot on host-1162 and serve as the
  * off-platform fallback. vnc/cloud_init are simply off-when-absent (the boot
- * program adds their devices only when the attr enables them). Knobs with no
- * fixed default (bootorder — firmware NVRAM order; memreserve) are
- * deliberately absent.
+ * program adds their devices only when the attr enables them). bootorder's
+ * default is bhyve(7)'s documented path0,bootdisk,cdrom0
+ * (https://man.omnios.org/man7/bhyve). memreserve alone has no fixed
+ * default and stays absent.
  */
 const KNOB_DEFAULTS = {
   'zones.acpi': 'on',
+  'zones.bootorder': 'path0,bootdisk,cdrom0',
   'zones.bootrom': 'BHYVE_RELEASE_CSM',
   'zones.cloud_init': 'off',
   'zones.diskif': 'virtio-blk',
@@ -200,6 +202,11 @@ const KNOB_DEFAULTS = {
   'zones.uefivars': 'on',
   'zones.vnc': 'off',
   'zones.xhci': 'on',
+  // The remove-on-completion ABSENT-flag default (Mark's per-agent ruling,
+  // converged 2026-07-18): zoneweaver REMOVES the provisioning transport
+  // after the whole-walk stamp (datacenter model); the Go agent keeps
+  // (home/dev). The UI prefills its toggle from this key.
+  'transport.remove_on_completion': true,
 };
 
 const BRAND_BOOT_PATH = '/usr/lib/brand/bhyve/boot';
@@ -207,6 +214,7 @@ const BRAND_BOOT_PATH = '/usr/lib/brand/bhyve/boot';
 /** Keys in the boot program's defaults dict, mapped to wire knob keys. */
 const BRAND_DEFAULT_KEYS = {
   'zones.acpi': 'acpi',
+  'zones.bootorder': 'bootorder',
   'zones.bootrom': 'bootrom',
   'zones.diskif': 'diskif',
   'zones.hostbridge': 'hostbridge',
@@ -283,6 +291,11 @@ export const getMachineDefaults = async (req, res) => {
       box_version: 'latest',
       box_arch: 'amd64',
       sync_method: 'rsync',
+      boot_priority: 95,
+      os_type: 'generic',
+      consolehost: '0.0.0.0',
+      vagrant_user: 'root',
+      vagrant_ssh_insert_key: false,
     },
     zones: {
       vmtype: 'production',
@@ -315,7 +328,7 @@ export const getMachineDefaults = async (req, res) => {
     nic_props_by_netif: NIC_PROPS_BY_NETIF,
     notes: {
       settings:
-        'hostname + domain are REQUIRED (they form the FQDN). vcpus/memory omitted fall through to the bhyve brand defaults (1 vCPU, 256M) — set them explicitly for real guests. box_version/box_arch/sync_method are this agent’s fallbacks.',
+        "hostname + domain are REQUIRED (they form the FQDN). vcpus/memory omitted fall through to the bhyve brand defaults (1 vCPU, 256M) — set them explicitly for real guests. box_version/box_arch/sync_method are this agent's fallbacks. boot_priority is the orchestration default when the attr is unset (1-100, 95 = infrastructure); os_type absent writes no type attr — the brand runs generic; consolehost is the VNC web-console bind when unset; vagrant_user is the SSH credentials default when the document names none (Hosts.rb's own root default); vagrant_ssh_insert_key absent means NO post-provision key rotation. NO static default exists for: consoleport (absent = the dynamic web-console pool, config vnc.web_port_range_start/end, 8000-8100), setup_wait (absent = the HOST config's provisioning.ssh.timeout_seconds; the document's setup_wait wins when larger), and provider_type/show_console/debug_build/post_provision (driver vocabulary — nothing on this agent reads them; they ride the document verbatim).",
       zones:
         'brand is REQUIRED (no default). Attr knobs omitted at create write NO attr — the zone runs on the brand defaults listed in knob_defaults. guest_agent (boolean, default false) opts the machine into the QEMU guest-agent virtio-console channel — per-machine, under the guest_agent.enabled master gate (the Proxmox model, shared with the Go agent).',
       disks:
@@ -323,9 +336,9 @@ export const getMachineDefaults = async (req, res) => {
       config:
         'Live agent-config values: zone names gain the NNNN-- prefix when prefix_zone_names is on (settings.server_id then required); guest_agent_enabled is the master gate for the per-machine zones.guest_agent toggle.',
       knob_values:
-        "Value vocabularies for enum knobs, keyed like the wire (flat dotted keys). A knob present here is a dropdown; a knob absent is free-form or numeric. Values pass to zonecfg unvalidated — unknown values stay legal (the brand answers). LIVE-sourced: zones.bootrom enumerates /usr/share/bhyve/firmware (BHYVE_VARS excluded); zones.diskif + zones.netif parse the host's own zadm Schema/Bhyve.pm. hostbridge additionally accepts vendor=N,device=N. bootorder/bootnext take compact cd|dc or comma-separated device tokens (bootdisk, disk[N], cdrom[N], net[N][=pxe|http], path[N], boot[N], shell).",
+        "Value vocabularies for enum knobs, keyed like the wire (flat dotted keys). A knob present here is a dropdown; a knob absent is free-form or numeric. Values pass to zonecfg unvalidated — unknown values stay legal (the brand answers). LIVE-sourced: zones.bootrom enumerates /usr/share/bhyve/firmware (BHYVE_VARS excluded); zones.diskif + zones.netif parse the host's own zadm Schema/Bhyve.pm. hostbridge additionally accepts vendor=N,device=N. bootorder/bootnext take comma-separated device tokens — UEFI: shell, path[N], bootdisk, disk[N], cdrom[N], net[N][=pxe|http]; CSM: bootdisk, cdrom; plus the DEPRECATED legacy aliases cd and dc (each character one device: c=cdrom, d=disk) — per bhyve(7), https://man.omnios.org/man7/bhyve.",
       knob_defaults:
-        'The value an UNSET attr effectively runs with, flat dotted keys — parsed LIVE from the brand boot program (/usr/lib/brand/bhyve/boot defaults dict; statics as off-platform fallback). NOT zadm schema defaults, which differ on bootrom/diskif/netif and apply only to zadm-materialized configs. Knobs with no fixed default (bootorder — firmware NVRAM order; memreserve) are absent. The nics.props.* entries come from bhyve(8) and are NOT guessable: promiscphys defaults FALSE, but promiscsap/promiscmulti/promiscrxonly all default TRUE.',
+        'The value an UNSET attr effectively runs with, flat dotted keys — parsed LIVE from the brand boot program (/usr/lib/brand/bhyve/boot defaults dict; statics as off-platform fallback). NOT zadm schema defaults, which differ on bootrom/diskif/netif and apply only to zadm-materialized configs. zones.bootorder absent runs bhyve(7)’s documented default path0,bootdisk,cdrom0. memreserve alone has no fixed default and is absent. The nics.props.* entries come from bhyve(8) and are NOT guessable: promiscphys defaults FALSE, but promiscsap/promiscmulti/promiscrxonly all default TRUE.',
       nic_props_by_netif:
         "Which brand-props each network backend actually consumes (bhyve(8)). The accelerated viona backend takes the ring/queue knobs (feature_mask, vqsize, txvqsize, rxvqsize, qpair, speed); the legacy virtio and e1000 backends take the promiscuous-mode knobs. Offer only the props that apply to a NIC's effective netif — bhyve ignores the rest. NOTE: `mtu` and `backend` are legal zonecfg net properties (zadm's schema accepts them and the brand passes them through verbatim), but bhyve(8) does NOT document them as network-backend options — only the four promisc flags are listed. So no default is served for them, and they may be no-ops; label them as undocumented rather than showing an invented default. MAC/IP spoofing is NOT among these: it is the dladm `protection` LINK property (GET/PUT /network/vnics/{vnic}/properties). WARN before enabling promiscphys — it is known to break host→VM traffic on this platform (illumos-omnios#1039, open).",
     },

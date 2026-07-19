@@ -33,6 +33,7 @@ const defaultRecipes = [
       nic_0_ip: '10.190.190.10',
       nic_0_prefix: '24',
       nic_0_gateway: '10.190.190.1',
+      nic_0_route: 'default',
       nic_0_dns: '8.8.8.8',
     },
     steps: [
@@ -48,7 +49,7 @@ const defaultRecipes = [
         dest: '/etc/netplan/{{nic_0_vnic_name}}.yaml',
         method: 'heredoc',
         content:
-          'network:\n  version: 2\n  ethernets:\n    {{nic_0_vnic_name}}:\n      match:\n        macaddress: "{{nic_0_mac}}"\n      set-name: {{nic_0_vnic_name}}\n      addresses: [{{nic_0_ip}}/{{nic_0_prefix}}]\n      routes:\n        - to: default\n          via: {{nic_0_gateway}}\n      nameservers:\n        addresses: [{{nic_0_dns}}]',
+          'network:\n  version: 2\n  ethernets:\n    {{nic_0_vnic_name}}:\n      match:\n        macaddress: "{{nic_0_mac}}"\n      set-name: {{nic_0_vnic_name}}\n      addresses: [{{nic_0_ip}}/{{nic_0_prefix}}]\n      routes:\n        - to: {{nic_0_route}}\n          via: {{nic_0_gateway}}\n      nameservers:\n        addresses: [{{nic_0_dns}}]',
       },
       { type: 'command', value: 'chmod 600 /etc/netplan/{{nic_0_vnic_name}}.yaml' },
       { type: 'command', value: 'netplan apply' },

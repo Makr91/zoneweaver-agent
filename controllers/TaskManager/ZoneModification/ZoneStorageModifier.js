@@ -74,33 +74,39 @@ const getNextCdromNumber = zoneConfig => {
 };
 
 /**
- * Add disks to zone configuration
+ * Add disks to zone configuration — TYPED entries ONLY (the frozen disk
+ * spec adopted by the modify wire, converged 2026-07-18): blank creates a
+ * fresh zvol (size REQUIRED — no default) and stamps it ours; image
+ * attaches the declared path as-is (never stamped; per-ENTRY force
+ * overrides the in-use refusal). The executor re-enforces the wire shape
+ * the controller already refused at the PUT.
  * @param {string} zoneName - Zone name
  * @param {Object} zoneConfig - Current zone configuration
- * @param {Array} disks - Array of disk configurations
- * @param {boolean} force - Whether to force attach in-use datasets
+ * @param {Array} disks - Typed add_disks[] entries
  */
-const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
+const addDisks = async (zoneName, zoneConfig, disks, onData = null) => {
   let nextNum = getNextDiskNumber(zoneConfig);
   const zfsPromises = [];
   const zonecfgCmds = [];
   const documentEntries = [];
 
-  for (const disk of disks) {
+  for (const [index, disk] of disks.entries()) {
     let diskPath = null;
 
-    if (disk.create_new) {
+    if (disk?.type === 'blank') {
+      if (!disk.size) {
+        throw new Error(`add_disks[${index + 1}].type blank requires size`);
+      }
       const pool = disk.pool || 'rpool';
       const dset = disk.dataset || 'zones';
       const volName = disk.volume_name || `disk${nextNum}`;
-      const size = disk.size || '50G';
       diskPath = `${pool}/${dset}/${zoneName}/${volName}`;
 
       const sparseFlag = disk.sparse !== false ? '-s' : '';
       const createdPath = diskPath;
       zfsPromises.push(
         executeCommand(
-          `pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`,
+          `pfexec zfs create ${sparseFlag} -V ${disk.size} ${diskPath}`,
           undefined,
           onData
         ).then(async res => {
@@ -117,30 +123,35 @@ const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
         pool,
         dataset: dset,
         volume_name: volName,
-        size,
+        size: disk.size,
         sparse: disk.sparse !== false,
       });
-    } else if (disk.existing_dataset) {
-      diskPath = disk.existing_dataset;
+    } else if (disk?.type === 'image') {
+      if (!disk.path) {
+        throw new Error(`add_disks[${index + 1}].type image requires path`);
+      }
+      diskPath = disk.path;
 
       zfsPromises.push(
         checkZvolInUse(diskPath, zoneName).then(usageCheck => {
-          if (usageCheck.inUse && !force) {
-            throw new Error(`Disk ${diskPath} is already in use by zone ${usageCheck.usedBy}`);
+          if (usageCheck.inUse && disk.force !== true) {
+            throw new Error(
+              `add_disks[${index + 1}].path ${diskPath} is attached to ${usageCheck.usedBy} (set force: true to attach anyway)`
+            );
           }
           return diskPath;
         })
       );
       // Attach = image in the typed document (never stamped — foreign).
       documentEntries.push({ type: 'image', path: diskPath });
+    } else {
+      throw new Error(`add_disks[${index + 1}].type is required (image|blank)`);
     }
 
-    if (diskPath) {
-      zonecfgCmds.push(
-        `add attr; set name=disk${nextNum}; set value=\\"${diskPath}\\"; set type=string; end; add device; set match=/dev/zvol/rdsk/${diskPath}; end;`
-      );
-      nextNum++;
-    }
+    zonecfgCmds.push(
+      `add attr; set name=disk${nextNum}; set value=\\"${diskPath}\\"; set type=string; end; add device; set match=/dev/zvol/rdsk/${diskPath}; end;`
+    );
+    nextNum++;
   }
 
   // Wait for ZFS operations
@@ -355,7 +366,7 @@ export const handleStorageModifications = async (
 ) => {
   if (metadata.add_disks?.length > 0) {
     await updateTaskProgress(task, 60, { status: 'adding_disks' });
-    await addDisks(zoneName, zoneConfig, metadata.add_disks, metadata.force, onData);
+    await addDisks(zoneName, zoneConfig, metadata.add_disks, onData);
     changes.push('add_disks');
     await syncZoneToDatabase(zoneName);
   }

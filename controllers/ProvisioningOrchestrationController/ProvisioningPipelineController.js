@@ -144,13 +144,16 @@ export const provisionZone = async (req, res) => {
     const zoneName = req.params.name;
     const { skip_boot = false, skip_recipe = false } = req.body || {};
 
-    // Validate request
+    // Validate request. Zone existence answers 404 EXPLICITLY — the old
+    // error-string sniff ("not found") misfired on every validation message
+    // containing those words (the no-transport refusal answered 404).
     const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (!zone) {
+      return res.status(404).json({ error: `Zone '${zoneName}' not found` });
+    }
     const validation = await validateProvisioningRequest(zoneName, zone, skip_recipe);
     if (!validation.valid) {
-      return res
-        .status(validation.error.includes('not found') ? 404 : 400)
-        .json({ error: validation.error });
+      return res.status(400).json({ error: validation.error });
     }
 
     const { provisioning, recipeId, zoneIP, credentials } = validation;
@@ -263,6 +266,7 @@ export const getProvisioningStatus = async (req, res) => {
           'zone_syncback_parent',
           'zone_syncback',
           'zone_key_rotate',
+          'zone_transport_remove',
         ],
       },
       order: [['created_at', 'DESC']],

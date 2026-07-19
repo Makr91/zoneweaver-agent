@@ -60,13 +60,15 @@ export const syncZone = async (req, res) => {
     const zoneName = req.params.name;
     const syncback = req.body?.syncback === true;
 
-    // Validate request
+    // Validate request. Zone existence answers 404 explicitly — never the
+    // error-string sniff (the no-transport refusal contains "not found").
     const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (!zone) {
+      return res.status(404).json({ error: `Zone '${zoneName}' not found` });
+    }
     const validation = await validateProvisioningRequest(zoneName, zone, true);
     if (!validation.valid) {
-      return res
-        .status(validation.error.includes('not found') ? 404 : 400)
-        .json({ error: validation.error });
+      return res.status(400).json({ error: validation.error });
     }
 
     const { provisioning, zoneConfig, zoneIP, credentials } = validation;

@@ -14,8 +14,6 @@ import {
   scpSyncFiles,
   syncFilesFromZone,
   scpSyncFilesFromZone,
-  fetchGuestKeyViaZlogin,
-  resolveRelativeKeyPath,
 } from '../../lib/SSHManager.js';
 import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
 import { parseConfiguration, provisioningPathFromZonepath } from '../../lib/ZoneConfigUtils.js';
@@ -28,7 +26,10 @@ import {
   runWinScriptViaAnsible,
   runScriptInGuest,
   getProvisioningBasePath,
+  readDocumentControlIP,
+  NO_CONTROL_IP_ERROR,
 } from './ZoneEngineManager.js';
+import { waitForProvisionalTransport } from '../../lib/ProvisioningNetwork.js';
 
 /**
  * STARTcloud ansible progress adoption — the callback-plugin contract
@@ -299,11 +300,7 @@ export const executeZoneWaitSSHTask = async task => {
   try {
     const metadata = await parseTaskMetadata(task);
 
-    const { ip, port = 22, credentials = {}, communicator = 'ssh', winrm } = metadata;
-
-    if (!ip) {
-      return { success: false, error: 'ip is required in task metadata' };
-    }
+    const { port = 22, credentials = {}, communicator = 'ssh', winrm } = metadata;
 
     const provConfig = config.get('provisioning') || {};
     const sshConfig = provConfig.ssh || {};
@@ -320,6 +317,22 @@ export const executeZoneWaitSSHTask = async task => {
     const setupWait = Number(zoneConfig.settings?.setup_wait) || 0;
     if (setupWait * 1000 > timeout) {
       timeout = setupWait * 1000;
+    }
+
+    // A chain built before the guest ever booted carries no address (the
+    // packaged provisional entry is a DHCP client) — poll OUR dhcpd's lease
+    // and record it into the document (document honesty). Deterministic:
+    // the agent reads its own server's assignment, never the guest.
+    let { ip } = metadata;
+    if (!ip) {
+      task.onData?.({
+        stream: 'stdout',
+        data: 'Waiting for the provisioning lease (agent dhcpd)...\n',
+      });
+      ip = await waitForProvisionalTransport(zone_name, timeout, interval);
+    }
+    if (!ip) {
+      return { success: false, error: NO_CONTROL_IP_ERROR };
     }
 
     // Windows guests have no sshd — readiness rides host-ansible win_ping
@@ -354,42 +367,6 @@ export const executeZoneWaitSSHTask = async task => {
         success: true,
         message: `SSH available on ${zone_name} (${ip}:${port}) after ${Math.round(result.elapsed_ms / 1000)}s`,
       };
-    }
-
-    // Tier-3 RECOVERY (Mark's three-tier connect ruling): both known keys
-    // rejected = unknown state — fetch the guest's rotated key over zlogin
-    // (the platform's non-SSH transport), land it at the working-copy path,
-    // retry ONCE. Anything less recoverable fails honestly.
-    const keySetting = zoneConfig.settings?.vagrant_user_private_key_path;
-    if (keySetting && provisioningBasePath) {
-      const destPath = resolveRelativeKeyPath(keySetting, provisioningBasePath);
-      task.onData?.({
-        stream: 'stdout',
-        data: 'SSH not answering with the known keys — attempting tier-3 key recovery over zlogin\n',
-      });
-      const recovered = await fetchGuestKeyViaZlogin(zone_name, username, destPath, task.onData);
-      if (recovered) {
-        const retry = await waitForSSH(
-          ip,
-          username,
-          credentials,
-          port,
-          Math.min(timeout, 120000),
-          interval,
-          provisioningBasePath
-        );
-        if (retry.success) {
-          return {
-            success: true,
-            message: `SSH available on ${zone_name} (${ip}:${port}) after tier-3 key recovery`,
-          };
-        }
-      } else {
-        task.onData?.({
-          stream: 'stdout',
-          data: 'Tier-3 recovery unavailable — no rotated key on the guest or zlogin unreachable\n',
-        });
-      }
     }
 
     return {
@@ -476,11 +453,16 @@ export const executeZoneSyncTask = async task => {
   try {
     const metadata = await parseTaskMetadata(task);
 
-    const { ip, port = 22, credentials = {}, folder } = metadata;
+    const { port = 22, credentials = {}, folder } = metadata;
     const { onData } = task;
 
-    if (!ip || !folder) {
-      return { success: false, error: 'ip and folder are required in task metadata' };
+    if (!folder) {
+      return { success: false, error: 'folder is required in task metadata' };
+    }
+    // The chain may predate the provisioning lease — the document is the truth.
+    const ip = metadata.ip || (await readDocumentControlIP(zone_name));
+    if (!ip) {
+      return { success: false, error: NO_CONTROL_IP_ERROR };
     }
 
     const { map, to, disabled = false } = folder;
@@ -553,11 +535,16 @@ export const executeZoneSyncbackTask = async task => {
   try {
     const metadata = await parseTaskMetadata(task);
 
-    const { ip, port = 22, credentials = {}, folder } = metadata;
+    const { port = 22, credentials = {}, folder } = metadata;
     const { onData } = task;
 
-    if (!ip || !folder) {
-      return { success: false, error: 'ip and folder are required in task metadata' };
+    if (!folder) {
+      return { success: false, error: 'folder is required in task metadata' };
+    }
+    // The chain may predate the provisioning lease — the document is the truth.
+    const ip = metadata.ip || (await readDocumentControlIP(zone_name));
+    if (!ip) {
+      return { success: false, error: NO_CONTROL_IP_ERROR };
     }
 
     const source = folder.to || folder.dest;
@@ -633,7 +620,6 @@ export const executeZoneShellTask = async task => {
     const metadata = await parseTaskMetadata(task);
 
     const {
-      ip,
       port = 22,
       credentials = {},
       script,
@@ -644,8 +630,13 @@ export const executeZoneShellTask = async task => {
     } = metadata;
     const { onData } = task;
 
-    if (!ip || !script) {
-      return { success: false, error: 'ip and script are required in task metadata' };
+    if (!script) {
+      return { success: false, error: 'script is required in task metadata' };
+    }
+    // The chain may predate the provisioning lease — the document is the truth.
+    const ip = metadata.ip || (await readDocumentControlIP(zone_name));
+    if (!ip) {
+      return { success: false, error: NO_CONTROL_IP_ERROR };
     }
 
     const provisioningBasePath = await getProvisioningBasePath(zone_name);
@@ -743,14 +734,15 @@ export const executeZoneProvisionTask = async task => {
   try {
     const metadata = await parseTaskMetadata(task);
 
-    const { ip, port = 22, credentials = {}, playbook, final = false } = metadata;
-
-    if (!ip) {
-      return { success: false, error: 'ip is required in task metadata' };
-    }
+    const { port = 22, credentials = {}, playbook, final = false } = metadata;
 
     if (!playbook) {
       return { success: false, error: 'playbook is required in task metadata' };
+    }
+    // The chain may predate the provisioning lease — the document is the truth.
+    const ip = metadata.ip || (await readDocumentControlIP(zone_name));
+    if (!ip) {
+      return { success: false, error: NO_CONTROL_IP_ERROR };
     }
 
     // Get zone record and provisioning dataset path

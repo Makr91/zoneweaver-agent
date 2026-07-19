@@ -25,6 +25,7 @@ import {
   resolveZoneName,
   createZoneCreationSubTasks,
   handleAutoDownload,
+  prepareNetworkSections,
 } from './ZoneCreationHelpers.js';
 
 /**
@@ -48,8 +49,8 @@ const splitAndStampHost = (host, ref, pkg) => {
 
 /**
  * Build a standalone create body for one host of a MULTI-HOST render (§5
- * hosts[]): each machine gets its own document; the request's nics apply to
- * every machine MINUS the vnic name (auto-generates per server_id).
+ * hosts[]): each machine gets its own document; each machine's zonecfg nic
+ * half derives from its OWN rendered networks[].
  * @param {Object} host - One rendered hosts[] entry
  * @param {Object} body - The original request body
  * @param {Object} ref - Provisioner reference
@@ -74,13 +75,6 @@ const buildMultiHostBody = (host, body, ref, pkg) => {
   }
   if (infra.cloud_init) {
     sub.cloud_init = infra.cloud_init;
-  }
-  if (Array.isArray(body.nics)) {
-    sub.nics = body.nics.map(nic => {
-      const copy = { ...nic };
-      delete copy.physical;
-      return copy;
-    });
   }
   return sub;
 };
@@ -483,7 +477,17 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                         threads: 1
  *               networks:
  *                 type: array
- *                 description: Network configuration (Hosts.yml format)
+ *                 description: |
+ *                   Network configuration (Hosts.yml format) — the ONE cross-agent
+ *                   network section and the ONLY source of the zonecfg nic half:
+ *                   every entry DERIVES its net resource (bridge → global-nic,
+ *                   type → the vnic class, mac non-auto → mac-addr, vlan → vlan-id;
+ *                   entry i pairs with net resource i; VNIC names are always
+ *                   generated). A create that names a provisioner additionally gets
+ *                   the PROVISIONING NETWORK attached as one dhcp4 entry on the
+ *                   interconnect etherstub (provisional + is_control, NO address —
+ *                   the agent's dhcpd allocates and zone_wait_ssh records the lease
+ *                   into the document).
  *                 items:
  *                   type: object
  *                   properties:
@@ -491,6 +495,25 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                       type: string
  *                       enum: [internal, external]
  *                       example: "internal"
+ *                     bridge:
+ *                       type: string
+ *                       description: The uplink datalink (GET /provisioning/bridged-interfaces rows) — becomes the derived nic's global-nic
+ *                       example: "igb0"
+ *                     nic_type:
+ *                       type: string
+ *                       description: The guest NIC DRIVER MODEL (Hosts.yml vocabulary, default virtio) — never the vnic class; the class is `type`
+ *                       example: "virtio"
+ *                     vlan:
+ *                       type: integer
+ *                       description: VLAN tag on the uplink — becomes the derived nic's vlan-id
+ *                       example: 176
+ *                     mac:
+ *                       type: string
+ *                       description: MAC address, or "auto" (default) for a generated one
+ *                       example: "auto"
+ *                     dhcp4:
+ *                       type: boolean
+ *                       description: DHCP client entry — the provisioning transport entry uses this (the agent's dhcpd allocates)
  *                     address:
  *                       type: string
  *                       description: IP address
@@ -501,6 +524,10 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                     gateway:
  *                       type: string
  *                       example: "10.190.190.1"
+ *                     route:
+ *                       type: string
+ *                       description: Guest route destination for this NIC (default "default"; a scoped CIDR keeps the NIC from owning the default route) — rides VERBATIM to guest-side machinery per the guest-owns-routes ruling
+ *                       example: "default"
  *                     is_control:
  *                       type: boolean
  *                       description: Whether this is the control/management network
@@ -509,10 +536,17 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                       description: Whether this is the provisioning network
  *                     dns:
  *                       type: array
- *                       description: DNS servers
+ *                       description: |
+ *                         DNS servers — the DOCUMENT contract is the map shape
+ *                         [{nameserver: ip}] (the networking role consumes it).
+ *                         Plain strings are accepted on the wire and DECLARED into
+ *                         that shape at create.
  *                       items:
- *                         type: string
- *                       example: ["8.8.8.8"]
+ *                         type: object
+ *                         properties:
+ *                           nameserver:
+ *                             type: string
+ *                       example: [{"nameserver": "8.8.8.8"}]
  *               disks:
  *                 type: object
  *                 description: |
@@ -613,37 +647,6 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                           type: string
  *                           description: Cached ISO filename resolved through the artifact registry
  *                           example: "debian-12.5.0-amd64-netinst.iso"
- *               nics:
- *                 type: array
- *                 description: Network interfaces to configure
- *                 items:
- *                   type: object
- *                   properties:
- *                     physical:
- *                       type: string
- *                       description: VNIC name. Auto-generated from server_id if omitted.
- *                       example: "vnice3_0001_0"
- *                     global_nic:
- *                       type: string
- *                       description: Bridge/physical NIC for on-demand VNIC creation at zone boot. Omit for pre-created VNICs.
- *                       example: "ixgbe1"
- *                     nic_type:
- *                       type: string
- *                       description: NIC type for auto-naming convention (e=external, i=internal, etc.)
- *                       enum: [external, internal, carp, management, host]
- *                       default: "external"
- *                     vlan_id:
- *                       type: integer
- *                       description: VLAN tag ID
- *                       example: 11
- *                     mac_addr:
- *                       type: string
- *                       description: MAC address for the VNIC
- *                       example: "02:08:20:c1:38:e7"
- *                     allowed_address:
- *                       type: string
- *                       description: IP/prefix for cloud-init allowed-address (e.g. "192.168.1.10/24")
- *                       example: "192.168.1.10/24"
  *               filesystems:
  *                 type: array
  *                 description: Filesystem mounts into the zone (generic lofs shares)
@@ -737,6 +740,17 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                 items:
  *                   type: string
  *                 example: ["web", "production", "critical"]
+ *               remove_transport_on_completion:
+ *                 type: boolean
+ *                 description: |
+ *                   Per-create transport-removal signal (converged wire, 2026-07-18) —
+ *                   folds into the agent-attached provisioning entry as its
+ *                   remove_on_completion flag. Send ONLY when the user chose; absent =
+ *                   this agent's default (REMOVE after the whole-walk stamp — the
+ *                   pipeline then removes the provisional NIC, updates the document,
+ *                   flips is_control to the real NIC, and power-cycles the machine
+ *                   with NO post-boot gate). knob_defaults
+ *                   'transport.remove_on_completion' feeds the UI's prefill.
  *               force:
  *                 type: boolean
  *                 description: Force attach zvols even if in use by another zone
@@ -774,9 +788,9 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                     volume_name: "boot"
  *                     size: "30G"
  *                     sparse: true
- *                 nics:
- *                   - global_nic: "igb0"
- *                     nic_type: "external"
+ *                 networks:
+ *                   - type: "external"
+ *                     bridge: "igb0"
  *                 start_after_create: true
  *             from_template:
  *               summary: Zone from a box template with an additional blank disk (typed wire)
@@ -811,12 +825,12 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                       volume_name: "data"
  *                       size: "100G"
  *                       sparse: true
- *                 nics:
- *                   - global_nic: "estub_vz_1"
- *                     nic_type: "internal"
- *                   - global_nic: "ixgbe1"
- *                     vlan_id: 11
- *                     nic_type: "external"
+ *                 networks:
+ *                   - type: "internal"
+ *                     bridge: "estub_vz_1"
+ *                   - type: "external"
+ *                     bridge: "ixgbe1"
+ *                     vlan: 11
  *                 start_after_create: false
  *             attach_existing_image:
  *               summary: Zone attaching an EXISTING zvol as its boot disk (typed wire)
@@ -850,9 +864,9 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                 disks:
  *                   boot:
  *                     type: "template"
- *                 nics:
- *                   - global_nic: "estub_vz_1"
- *                     nic_type: "internal"
+ *                 networks:
+ *                   - type: "internal"
+ *                     bridge: "estub_vz_1"
  *                 start_after_create: false
  *             from_box_latest:
  *               summary: Zone from box (latest version — disks.boot may be omitted entirely, the documented default is template when settings.box is set)
@@ -888,10 +902,10 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                     source:
  *                       type: "template"
  *                       template_dataset: "rpool/templates/STARTcloud/debian13-server/2025.8.22"
- *                 nics:
- *                   - global_nic: "ixgbe1"
- *                     vlan_id: 11
- *                     nic_type: "external"
+ *                 networks:
+ *                   - type: "external"
+ *                     bridge: "ixgbe1"
+ *                     vlan: 11
  *     responses:
  *       200:
  *         description: Zone creation orchestration queued successfully
@@ -996,6 +1010,9 @@ const prepareMultiHostEntry = async (hostBody, index) => {
       problem: { status: 400, payload: { error: `${label}: ${preflightProblem}` } },
     };
   }
+  // Packaged transport + the DRY nic derivation (sync-converged 2026-07-18).
+  prepareNetworkSections(hostBody);
+
   // Typed disk wire — frozen strings, entry-prefixed.
   normalizeDisks(hostBody);
   const diskValidation = validateDisksWire(hostBody);
@@ -1182,6 +1199,9 @@ export const createZone = async (req, res) => {
     if (bodyProblem) {
       return res.status(bodyProblem.status).json(bodyProblem.payload);
     }
+
+    // Packaged transport + the DRY nic derivation (sync-converged 2026-07-18).
+    prepareNetworkSections(req.body);
 
     // Typed disk wire (frozen disk spec): normalize the documented default,
     // refuse with the frozen strings, then verify image paths on the host.

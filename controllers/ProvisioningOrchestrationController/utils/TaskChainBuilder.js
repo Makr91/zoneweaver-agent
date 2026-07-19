@@ -36,6 +36,7 @@ import {
 } from './TaskCreationHelper.js';
 import { winrmDefaults } from '../../TaskManager/ZoneEngineManager.js';
 import { parseConfiguration } from '../../../lib/ZoneConfigUtils.js';
+import { effectiveRemoveOnCompletion } from '../../../lib/ProvisioningNetwork.js';
 
 /**
  * Step 0: land the provisioning content — uploaded artifact, or the
@@ -600,6 +601,36 @@ export const buildProvisioningTaskChain = async params => {
       });
       ctx.taskChain.push({ step: 'key_rotate', task_id: rotateTask.id });
     }
+  }
+
+  const provisionalEntry = Array.isArray(zoneConfig.networks)
+    ? zoneConfig.networks.find(net => net?.provisional === true)
+    : null;
+  if (provisionalEntry && effectiveRemoveOnCompletion(provisionalEntry)) {
+    const removeTask = await createTask({
+      zone_name: ctx.zoneName,
+      operation: 'zone_transport_remove',
+      depends_on: previousTaskId,
+      parent_task_id: ctx.parentTaskId,
+      created_by: ctx.createdBy,
+    });
+    ctx.taskChain.push({ step: 'transport_remove', task_id: removeTask.id });
+    const stopTask = await createTask({
+      zone_name: ctx.zoneName,
+      operation: 'stop',
+      depends_on: removeTask.id,
+      parent_task_id: ctx.parentTaskId,
+      created_by: ctx.createdBy,
+    });
+    ctx.taskChain.push({ step: 'post_removal_stop', task_id: stopTask.id });
+    const startTask = await createTask({
+      zone_name: ctx.zoneName,
+      operation: 'start',
+      depends_on: stopTask.id,
+      parent_task_id: ctx.parentTaskId,
+      created_by: ctx.createdBy,
+    });
+    ctx.taskChain.push({ step: 'post_removal_boot', task_id: startTask.id });
   }
 
   return ctx.taskChain;

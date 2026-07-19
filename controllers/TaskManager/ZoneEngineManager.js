@@ -22,7 +22,13 @@ import {
   resolveRelativeKeyPath,
 } from '../../lib/SSHManager.js';
 import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
-import { parseConfiguration, provisioningPathFromZonepath } from '../../lib/ZoneConfigUtils.js';
+import {
+  parseConfiguration,
+  provisioningPathFromZonepath,
+  getZoneConfig,
+  removeDocumentNetworkEntry,
+} from '../../lib/ZoneConfigUtils.js';
+import { extractControlIP } from '../../lib/ProvisionerConfigBuilder.js';
 import { log } from '../../lib/Logger.js';
 import Zones from '../../models/ZoneModel.js';
 import config from '../../config/ConfigLoader.js';
@@ -37,6 +43,24 @@ export const getProvisioningBasePath = async zoneName => {
   const zone = await Zones.findOne({ where: { name: zoneName } });
   return provisioningPathFromZonepath(parseConfiguration(zone).zonepath);
 };
+
+/**
+ * The DOCUMENT's control address (is_control → provisional → first) — the
+ * executors' fallback when the chain was built before the provisioning
+ * lease existed: zone_wait_ssh records the lease into the document, and the
+ * document is the truth from then on.
+ * @param {string} zoneName - Zone name
+ * @returns {Promise<string|null>} Control address or null
+ */
+export const readDocumentControlIP = async zoneName => {
+  const zone = await Zones.findOne({ where: { name: zoneName } });
+  return zone ? extractControlIP(parseConfiguration(zone).networks || []) : null;
+};
+
+/** The one wording for a missing transport address (the document carries
+ * none and no provisioning lease has been recorded). */
+export const NO_CONTROL_IP_ERROR =
+  'No control address in the document — set is_control: true on a networks[] entry, or run the provision pipeline so zone_wait_ssh records the provisioning lease';
 
 const shellQuote = value => `'${String(value).replace(/'/gu, "'\\''")}'`;
 
@@ -390,14 +414,19 @@ export const executeZoneProvisionRemoteTask = async task => {
   const { zone_name } = task;
   try {
     const metadata = await parseTaskMetadata(task);
-    const { ip, playbook, communicator = 'ssh', final = false } = metadata;
+    const { playbook, communicator = 'ssh', final = false } = metadata;
     const { onData } = task;
-    if (!ip || !playbook?.playbook) {
-      return { success: false, error: 'ip and playbook are required in task metadata' };
+    if (!playbook?.playbook) {
+      return { success: false, error: 'playbook is required in task metadata' };
+    }
+    // The chain may predate the provisioning lease — the document is the truth.
+    const ip = metadata.ip || (await readDocumentControlIP(zone_name));
+    if (!ip) {
+      return { success: false, error: NO_CONTROL_IP_ERROR };
     }
 
     await updateTaskProgress(task, 10, { status: 'checking_host_ansible' });
-    const prep = await prepareRemoteRun(zone_name, { ...metadata, communicator });
+    const prep = await prepareRemoteRun(zone_name, { ...metadata, ip, communicator });
     if (prep.error) {
       return { success: false, error: prep.error };
     }
@@ -461,10 +490,15 @@ export const executeZoneDockerComposeTask = async task => {
   const { zone_name } = task;
   try {
     const metadata = await parseTaskMetadata(task);
-    const { ip, port = 22, credentials = {}, file, final = false } = metadata;
+    const { port = 22, credentials = {}, file, final = false } = metadata;
     const { onData } = task;
-    if (!ip || !file) {
-      return { success: false, error: 'ip and file are required in task metadata' };
+    if (!file) {
+      return { success: false, error: 'file is required in task metadata' };
+    }
+    // The chain may predate the provisioning lease — the document is the truth.
+    const ip = metadata.ip || (await readDocumentControlIP(zone_name));
+    if (!ip) {
+      return { success: false, error: NO_CONTROL_IP_ERROR };
     }
     const provisioningBasePath = await getProvisioningBasePath(zone_name);
     const username = credentials.username || 'root';
@@ -649,7 +683,7 @@ export const executeZoneKeyRotateTask = async task => {
   const { zone_name } = task;
   try {
     const metadata = await parseTaskMetadata(task);
-    const { ip, port = 22, credentials = {}, communicator = 'ssh' } = metadata;
+    const { port = 22, credentials = {}, communicator = 'ssh' } = metadata;
     const { onData } = task;
     const username = credentials.username || 'root';
 
@@ -660,8 +694,10 @@ export const executeZoneKeyRotateTask = async task => {
       });
       return { success: true, message: 'Key rotation skipped (winrm guest)' };
     }
+    // The chain may predate the provisioning lease — the document is the truth.
+    const ip = metadata.ip || (await readDocumentControlIP(zone_name));
     if (!ip) {
-      return { success: false, error: 'ip is required in task metadata' };
+      return { success: false, error: NO_CONTROL_IP_ERROR };
     }
 
     const zone = await Zones.findOne({ where: { name: zone_name } });
@@ -726,6 +762,69 @@ export const executeZoneKeyRotateTask = async task => {
 };
 
 /**
+ * Execute zone_transport_remove (Mark's execution ruling, 2026-07-18):
+ * remove the provisional NIC from the zone config + the document entry
+ * (is_control flips to the real NIC), narrated. The pipeline chains a
+ * stop + start after this task; the post-removal boot gates on nothing.
+ * @param {Object} task - Task object from TaskQueue
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeZoneTransportRemoveTask = async task => {
+  const { zone_name } = task;
+  try {
+    const { onData } = task;
+    const zone = await Zones.findOne({ where: { name: zone_name } });
+    if (!zone) {
+      return { success: false, error: `Zone '${zone_name}' not found` };
+    }
+    const { networks } = parseConfiguration(zone);
+    const index = Array.isArray(networks)
+      ? networks.findIndex(net => net?.provisional === true)
+      : -1;
+    if (index === -1) {
+      return {
+        success: true,
+        message: 'No provisional entry in the document — nothing to remove',
+      };
+    }
+
+    const liveConfig = await getZoneConfig(zone_name);
+    const nets = Array.isArray(liveConfig?.net) ? liveConfig.net : [];
+    const physical = nets[index]?.physical;
+    if (physical) {
+      const result = await executeCommand(
+        `pfexec zonecfg -z ${zone_name} "remove net physical=${physical}"`
+      );
+      if (!result.success) {
+        return {
+          success: false,
+          error: `Failed to remove transport NIC ${physical}: ${result.error}`,
+        };
+      }
+      onData?.({
+        stream: 'stdout',
+        data: `Provisioning transport NIC ${physical} removed from the zone configuration\n`,
+      });
+    } else {
+      onData?.({
+        stream: 'stdout',
+        data: 'No net resource pairs with the provisional entry — cleaning the document only\n',
+      });
+    }
+
+    await removeDocumentNetworkEntry(zone_name, index);
+    onData?.({
+      stream: 'stdout',
+      data: "Document entry removed; is_control rides the machine's real NIC now. The agent may lose direct reach after the power cycle — the run completes at boot, ungated.\n",
+    });
+    return { success: true, message: 'Provisioning transport removed — power cycle follows' };
+  } catch (error) {
+    log.task.error('Transport removal failed', { zone_name, error: error.message });
+    return { success: false, error: `Transport removal failed: ${error.message}` };
+  }
+};
+
+/**
  * Execute ONE sequence hook (§5): {script, target: host|guest, on_failure:
  * abort|continue, run} — pre[] before the first method, post[] after the
  * last (B10). on_failure: continue converts a failure into a LOUD success
@@ -740,7 +839,6 @@ export const executeZoneHookTask = async task => {
     const {
       hook,
       phase,
-      ip,
       port = 22,
       credentials = {},
       env = {},
@@ -751,6 +849,15 @@ export const executeZoneHookTask = async task => {
     const { onData } = task;
     if (!hook?.script) {
       return { success: false, error: 'hook.script is required in task metadata' };
+    }
+    // Host-target hooks need no guest transport; guest targets read the
+    // document when the chain predates the provisioning lease.
+    let { ip } = metadata;
+    if (hook.target !== 'host' && !ip) {
+      ip = await readDocumentControlIP(zone_name);
+      if (!ip) {
+        return { success: false, error: NO_CONTROL_IP_ERROR };
+      }
     }
 
     const provisioningBasePath = await getProvisioningBasePath(zone_name);

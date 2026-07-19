@@ -7,6 +7,7 @@ import {
   overlayDocumentSections,
   readZonecfgAttr,
 } from '../../lib/ZoneConfigUtils.js';
+import { effectiveRemoveOnCompletion } from '../../lib/ProvisioningNetwork.js';
 import { isGuestAgentEnabled, hasGuestAgentChannel } from '../../lib/QemuGuestAgent.js';
 import { errorResponse } from '../SystemHostController/utils/ResponseHelpers.js';
 import { log } from '../../lib/Logger.js';
@@ -83,16 +84,32 @@ const extractNetProps = net => {
  */
 const buildNicKnobCurrent = configuration => {
   const nets = Array.isArray(configuration?.net) ? configuration.net : [];
-  return nets.filter(Boolean).map(net => {
-    const entry = { physical: net.physical, props: extractNetProps(net) };
-    // The per-NIC netif overrides the zone-level netif attr; when neither is
-    // set the brand default applies (knob_defaults['zones.netif']).
-    const netif = net.netif || configuration?.netif;
-    if (netif) {
-      entry.netif = netif;
-    }
-    return entry;
-  });
+  // The overlaid document's networks[] pairs with the net resources BY INDEX
+  // (the declared pairing rule — the recipe variable builder's own mapping):
+  // the UI badges/locks the provisioning transport NIC off this marker.
+  const docNetworks = Array.isArray(configuration?.networks) ? configuration.networks : [];
+  return nets
+    .map((net, index) => {
+      if (!net) {
+        return null;
+      }
+      const entry = { physical: net.physical, props: extractNetProps(net) };
+      // The per-NIC netif overrides the zone-level netif attr; when neither is
+      // set the brand default applies (knob_defaults['zones.netif']).
+      const netif = net.netif || configuration?.netif;
+      if (netif) {
+        entry.netif = netif;
+      }
+      if (docNetworks[index]?.provisional === true) {
+        entry.provisional = true;
+        // The EFFECTIVE remove-on-completion beside the marker (converged
+        // wire for the UI's post-create toggle): the entry's own flag, else
+        // this agent's ruled default (remove).
+        entry.remove_on_completion = effectiveRemoveOnCompletion(docNetworks[index]);
+      }
+      return entry;
+    })
+    .filter(Boolean);
 };
 
 /**
@@ -248,7 +265,7 @@ export const listZones = async (req, res) => {
  *                       type: array
  *                       items:
  *                         type: string
- *                       description: The zonecfg bootorder attr parsed into device tokens (join with commas to rebuild the PUT string); key absent when the attr is unset — the UEFI bootrom then applies its own NVRAM order, which has no static token list
+ *                       description: The zonecfg bootorder attr parsed into device tokens (join with commas to rebuild the PUT string); key absent when the attr is unset — the brand then runs its documented default path0,bootdisk,cdrom0 (knob_defaults['zones.bootorder'], per bhyve(7) https://man.omnios.org/man7/bhyve)
  *                       example: ["cdrom0", "bootdisk"]
  *                     boot_priority:
  *                       type: integer
@@ -282,6 +299,12 @@ export const listZones = async (req, res) => {
  *                             type: string
  *                             description: Effective backend (per-NIC netif, else the zone-level netif attr); absent when neither is set — the brand default applies
  *                             example: "virtio-net-viona"
+ *                           provisional:
+ *                             type: boolean
+ *                             description: Present (true) when this NIC is the provisioning transport — the document's networks[] entry AT THE SAME INDEX carries provisional true (the declared pairing rule); the UI badges it and locks its dhcp4/is_control against hand-edits
+ *                           remove_on_completion:
+ *                             type: boolean
+ *                             description: Present on provisional rows only — the EFFECTIVE remove-on-completion (entry flag, else this agent's ruled default REMOVE). Flip it via PUT update_nics entries carrying remove_on_completion
  *                           props:
  *                             type: object
  *                             description: Brand props explicitly set on this NIC

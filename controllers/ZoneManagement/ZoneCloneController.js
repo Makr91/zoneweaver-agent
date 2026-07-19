@@ -4,8 +4,12 @@ import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import { validateZoneName } from '../../lib/ZoneValidation.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
-import config from '../../config/ConfigLoader.js';
-import { resolveZoneName, createZoneCreationSubTasks } from './ZoneCreationHelpers.js';
+import { buildDatasetPath } from '../TaskManager/ZoneCreationManager/utils/ConfigBuilders.js';
+import {
+  resolveZoneName,
+  createZoneCreationSubTasks,
+  prepareNetworkSections,
+} from './ZoneCreationHelpers.js';
 import { findExistingZoneConflict } from './ZoneCreationController.js';
 
 /**
@@ -37,106 +41,58 @@ const parseConfiguration = zone => {
 };
 
 /**
- * Batch-allocate provisioning IPs from the configured DHCP range.
- * Performs a single DB query to find all used IPs, then picks `count` unused ones.
- * @param {number} count - Number of IPs to allocate
- * @returns {Promise<string[]>} Array of allocated IP strings
- */
-const allocateProvisioningIPs = async count => {
-  if (count === 0) {
-    return [];
-  }
-
-  const provisioningConfig = config.get('provisioning') || {};
-  const networkConfig = provisioningConfig.network || {};
-
-  if (!networkConfig.dhcp_range_start || !networkConfig.dhcp_range_end) {
-    log.api.warn('Provisioning DHCP range not configured');
-    return [];
-  }
-
-  const ipToLong = ip =>
-    ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
-
-  const longToIp = long =>
-    [(long >>> 24) & 255, (long >>> 16) & 255, (long >>> 8) & 255, long & 255].join('.');
-
-  const start = ipToLong(networkConfig.dhcp_range_start);
-  const end = ipToLong(networkConfig.dhcp_range_end);
-
-  // Single DB query to get all used IPs
-  const zones = await Zones.findAll();
-  const usedIps = new Set();
-
-  zones.forEach(zone => {
-    let zoneConfig = zone.configuration;
-    if (typeof zoneConfig === 'string') {
-      try {
-        zoneConfig = JSON.parse(zoneConfig);
-      } catch {
-        return;
-      }
-    }
-
-    if (zoneConfig && zoneConfig.networks) {
-      zoneConfig.networks.forEach(net => {
-        if (net.provisional && net.address) {
-          usedIps.add(net.address);
-        }
-      });
-    }
-  });
-
-  // Allocate `count` IPs from range, marking each as used for subsequent picks
-  const allocated = [];
-  for (let i = start; i <= end && allocated.length < count; i++) {
-    const ip = longToIp(i);
-    if (!usedIps.has(ip)) {
-      allocated.push(ip);
-      usedIps.add(ip);
-    }
-  }
-
-  return allocated;
-};
-
-/**
- * List the source zone's clonable datasets.
+ * Enumerate every source dataset whose DATA the clone copies (Mark's
+ * ruling: a clone carries the source's data on every disk — nothing comes
+ * out empty). Boot resolves through the same typed defaults +
+ * server_id-prefixed path construction the create path materializes with
+ * (buildDatasetPath), zadm-format documents falling back to the bootdisk
+ * attr; each additional disk resolves via its typed path (blank) or its
+ * attached path (image — the foreign zvol whose data copies; the original
+ * is never modified beyond our snapshot).
  * @param {Object} zoneConfig - Parsed source configuration
- * @returns {{bootDataset: string|null, additional: string[]}}
+ * @param {string} zoneName - Source zone name
+ * @returns {{bootDataset: string|null, additional: Array<{index: number, dataset: string, entry: Object}>}}
  */
-const cloneDatasets = zoneConfig => {
+const cloneSourceDatasets = (zoneConfig, zoneName) => {
+  const serverId = zoneConfig.settings?.server_id ? String(zoneConfig.settings.server_id) : '';
+  const boot = zoneConfig.disks?.boot;
   let bootDataset = null;
-  if (zoneConfig.disks?.boot?.dataset) {
-    // Hosts.yml format
-    const disk = zoneConfig.disks.boot;
-    bootDataset = `${disk.pool}/${disk.dataset}/${disk.volume_name}`;
+  if (boot) {
+    const pool = boot.pool || 'rpool';
+    const dataset = boot.dataset || 'zones';
+    const volumeName = boot.volume_name || 'boot';
+    bootDataset = `${buildDatasetPath(`${pool}/${dataset}`, zoneName, serverId)}/${volumeName}`;
   } else if (zoneConfig.bootdisk) {
-    // zadm format
     bootDataset = zoneConfig.bootdisk.path;
   }
-  const additional = (zoneConfig.disks?.additional || []).map(
-    disk => `${disk.pool}/${disk.dataset}/${disk.volume_name}`
-  );
+  const additional = (zoneConfig.disks?.additional_disks || []).map((entry, index) => {
+    if (entry?.type === 'image') {
+      return { index, dataset: entry.path, entry };
+    }
+    const pool = entry.pool || 'rpool';
+    const dataset = entry.dataset || 'zones';
+    const volumeName = entry.volume_name || `disk${index}`;
+    return {
+      index,
+      dataset: `${buildDatasetPath(`${pool}/${dataset}`, zoneName, serverId)}/${volumeName}`,
+      entry,
+    };
+  });
   return { bootDataset, additional };
 };
 
 /**
- * Resolve a caller-named snapshot against every source dataset — a named
- * clone is one point in time, so a dataset missing the snapshot refuses the
- * whole clone instead of silently mixing states.
- * @param {Object} zoneConfig - Parsed source configuration
+ * Resolve a caller-named snapshot against EVERY source dataset — one point
+ * in time; a dataset missing the snapshot refuses the whole clone instead
+ * of silently mixing states.
+ * @param {Object} sources - cloneSourceDatasets result
  * @param {string} snapshot - Snapshot name to verify
- * @returns {Promise<Object>} Snapshot info or a refusal
+ * @returns {Promise<Object>} {success, snapshotName} or a refusal
  */
-const verifyNamedSnapshots = async (zoneConfig, snapshot) => {
-  const { bootDataset, additional } = cloneDatasets(zoneConfig);
-  if (!bootDataset) {
-    return { success: false, error: 'Could not determine boot dataset for source zone' };
-  }
-
+const verifyNamedSnapshots = async (sources, snapshot) => {
+  const datasets = [sources.bootDataset, ...sources.additional.map(a => a.dataset)];
   const checks = await Promise.all(
-    [bootDataset, ...additional].map(async dataset => ({
+    datasets.map(async dataset => ({
       dataset,
       exists: (await executeCommand(`pfexec zfs list -H -o name ${dataset}@${snapshot}`)).success,
     }))
@@ -149,136 +105,102 @@ const verifyNamedSnapshots = async (zoneConfig, snapshot) => {
       missing_datasets: missing,
     };
   }
-
-  return {
-    success: true,
-    bootDataset,
-    bootSnapshotName: snapshot,
-    additionalSnapshots: additional.map(dataset => ({ dataset, snapshotName: snapshot })),
-  };
+  return { success: true, snapshotName: snapshot };
 };
 
 /**
- * Create fresh ZFS snapshots of the source's current state for cloning.
- * @param {Object} zoneConfig - Parsed source configuration
- * @returns {Promise<{bootDataset: string, bootSnapshotName: string, additionalSnapshots: Array}>}
+ * Snapshot EVERY source dataset's current state under one name — one point
+ * in time. Any failure destroys the snapshots that did land (best effort)
+ * and refuses the clone; a partial set never survives.
+ * @param {Object} sources - cloneSourceDatasets result
+ * @returns {Promise<{snapshotName: string}>}
  */
-const createCloneSnapshots = async zoneConfig => {
-  const { bootDataset, additional } = cloneDatasets(zoneConfig);
-  if (!bootDataset) {
-    throw new Error('Could not determine boot dataset for source zone');
-  }
-
-  const timestamp = Date.now();
-  const snapshotName = `clone_${timestamp}`;
-  const additionalSnapshots = [];
-
-  // Snapshot boot disk
-  log.api.info(`Creating snapshot for clone: ${bootDataset}@${snapshotName}`);
-  const bootSnapResult = await executeCommand(`pfexec zfs snapshot ${bootDataset}@${snapshotName}`);
-  if (!bootSnapResult.success) {
-    throw new Error(`Failed to snapshot boot dataset: ${bootSnapResult.error}`);
-  }
-
-  // Handle additional disks in parallel
-  const snapResults = await Promise.all(
-    additional.map(async dataset => {
-      const snapResult = await executeCommand(`pfexec zfs snapshot ${dataset}@${snapshotName}`);
-      return { dataset, snapshotName, success: snapResult.success, error: snapResult.error };
-    })
+const createCloneSnapshots = async sources => {
+  const snapshotName = `clone_${Date.now()}`;
+  const datasets = [sources.bootDataset, ...sources.additional.map(a => a.dataset)];
+  log.api.info('Creating clone snapshots', { snapshot: snapshotName, datasets });
+  const results = await Promise.all(
+    datasets.map(async dataset => ({
+      dataset,
+      result: await executeCommand(`pfexec zfs snapshot ${dataset}@${snapshotName}`),
+    }))
   );
-
-  snapResults.forEach(result => {
-    if (result.success) {
-      additionalSnapshots.push({ dataset: result.dataset, snapshotName: result.snapshotName });
-    } else {
-      log.api.warn(`Failed to snapshot additional disk ${result.dataset}`, {
-        error: result.error,
-      });
-    }
-  });
-
-  return { bootDataset, bootSnapshotName: snapshotName, additionalSnapshots };
+  const failed = results.filter(({ result }) => !result.success);
+  if (failed.length > 0) {
+    await Promise.all(
+      results
+        .filter(({ result }) => result.success)
+        .map(({ dataset }) => executeCommand(`pfexec zfs destroy ${dataset}@${snapshotName}`))
+    );
+    throw new Error(
+      `Failed to snapshot ${failed.map(f => f.dataset).join(', ')}: ${failed[0].result.error}`
+    );
+  }
+  return { snapshotName };
 };
 
 /**
- * Build the clone's create-orchestration metadata (Hosts.yml structure).
- * Identity never copies: MACs, VNIC names, and non-provisional addressing
- * strip; provisional networks get a fresh provisioning-range address.
+ * Build the clone's create-orchestration metadata (Hosts.yml structure,
+ * Mark's ruling: a clone carries the source's DATA on EVERY disk). The
+ * networking SHAPE rides (bridge/vlan/type/netmask/gateway/dns), identity
+ * never copies — static addresses strip, MACs go auto, a provisional entry
+ * clones as dhcp4 with NO address (the agent's dhcpd leases fresh on first
+ * boot). Every disk enriches with the typed template keys the executors
+ * actually read: boot + blank-declared additional disks per the caller's
+ * clone_strategy; image-sourced disks ALWAYS full-copy (a thin clone would
+ * chain the new machine to a snapshot on a foreign dataset) and become the
+ * clone's OWN stamped zvol.
  * @param {Object} sourceConfig - Parsed source configuration
  * @param {Object} mergedSettings - Source settings with caller settings/overrides merged
- * @param {Object|null} snapshotInfo - Snapshot info for source "current", null for "template"
+ * @param {Object|null} snapshotInfo - {snapshotName, sources} for source "current", null for "template"
  * @param {string} cloneStrategy - 'clone' (thin) or 'copy' (full send/recv)
  * @param {string} metadataName - Base name the task executors read
- * @returns {Promise<Object>} Clone metadata
+ * @returns {Object} Clone metadata
  */
-const buildCloneMetadata = async (
+const buildCloneMetadata = (
   sourceConfig,
   mergedSettings,
   snapshotInfo,
   cloneStrategy,
   metadataName
 ) => {
-  // Disks: source "current" points every disk at its snapshot; source
-  // "template" rides the stored creation layout verbatim (fresh build).
   const disks = snapshotInfo
     ? {
+        ...sourceConfig.disks,
         boot: {
           ...sourceConfig.disks?.boot,
-          source: {
-            type: 'template',
-            template_dataset: snapshotInfo.bootDataset,
-            snapshot_name: snapshotInfo.bootSnapshotName,
-            clone_strategy: cloneStrategy,
-          },
+          type: 'template',
+          template_dataset: snapshotInfo.sources.bootDataset,
+          snapshot_name: snapshotInfo.snapshotName,
+          clone_strategy: cloneStrategy,
+          provenance: 'clone',
         },
-        additional: (sourceConfig.disks?.additional || []).map(disk => {
-          const dataset = `${disk.pool}/${disk.dataset}/${disk.volume_name}`;
-          const snap = snapshotInfo.additionalSnapshots.find(s => s.dataset === dataset);
-
-          if (snap) {
-            return {
-              ...disk,
-              source: {
-                type: 'template',
-                template_dataset: dataset,
-                snapshot_name: snap.snapshotName,
-                clone_strategy: cloneStrategy,
-              },
-            };
-          }
-          return { ...disk };
+        additional_disks: snapshotInfo.sources.additional.map(({ index, dataset, entry }) => {
+          const base = entry.type === 'image' ? { volume_name: `disk${index}` } : { ...entry };
+          delete base.path;
+          delete base.force;
+          return {
+            ...base,
+            type: 'template',
+            template_dataset: dataset,
+            snapshot_name: snapshotInfo.snapshotName,
+            clone_strategy: entry.type === 'image' ? 'copy' : cloneStrategy,
+            provenance: 'clone',
+          };
         }),
       }
     : sourceConfig.disks;
 
-  // Networks - batch-allocate provisioning IPs (no await-in-loop)
-  const sourceNetworks = sourceConfig.networks || [];
-  const provisionalCount = sourceNetworks.filter(net => net.provisional).length;
-  const allocatedIps = await allocateProvisioningIPs(provisionalCount);
-
-  let ipIndex = 0;
-  const networks = sourceNetworks.map(net => {
-    if (net.provisional) {
-      const ip = allocatedIps[ipIndex] || '';
-      ipIndex += 1;
-      return { ...net, address: ip };
-    }
-    // Strip IP info for non-provisional networks
+  const networks = (sourceConfig.networks || []).map(net => {
     const netCopy = { ...net };
     delete netCopy.address;
-    delete netCopy.gateway;
-    delete netCopy.dns;
-    delete netCopy.netmask;
+    if (netCopy.mac) {
+      netCopy.mac = 'auto';
+    }
+    if (netCopy.provisional === true) {
+      netCopy.dhcp4 = true;
+    }
     return netCopy;
-  });
-
-  // NICs - Strip physical names and MACs to force auto-generation
-  const nics = (sourceConfig.nics || []).map(nic => {
-    const nicCopy = { ...nic };
-    delete nicCopy.physical;
-    delete nicCopy.mac_addr;
-    return nicCopy;
   });
 
   return {
@@ -286,7 +208,6 @@ const buildCloneMetadata = async (
     zones: sourceConfig.zones,
     networks,
     disks,
-    nics,
     cloud_init: sourceConfig.cloud_init,
     provisioner: sourceConfig.provisioner,
     provisioner_ref: sourceConfig.provisioner_ref,
@@ -353,15 +274,16 @@ const resolveCloneName = async (explicitName, mergedSettings) => {
 };
 
 /**
- * Settle the clone's disk sources per flavor: source "current" snapshots (or
- * verifies the named snapshot on) every source dataset; source "template"
- * rides the stored creation layout.
+ * Settle the clone's disk sources per flavor: source "current" snapshots
+ * (or verifies the named snapshot on) EVERY source dataset — boot and
+ * additional alike; source "template" rides the stored creation layout.
  * @param {string} source - Clone flavor
  * @param {string} snapshot - Named snapshot ('' for fresh)
  * @param {Object} sourceConfig - Parsed source configuration
+ * @param {string} zoneName - Source zone name
  * @returns {Promise<{snapshotInfo?: Object|null, refusal?: Object}>}
  */
-const resolveCloneDiskSources = async (source, snapshot, sourceConfig) => {
+const resolveCloneDiskSources = async (source, snapshot, sourceConfig, zoneName) => {
   if (source !== 'current') {
     if (!sourceConfig.disks?.boot) {
       return {
@@ -373,10 +295,15 @@ const resolveCloneDiskSources = async (source, snapshot, sourceConfig) => {
     }
     return { snapshotInfo: null };
   }
-  if (!snapshot) {
-    return { snapshotInfo: await createCloneSnapshots(sourceConfig) };
+  const sources = cloneSourceDatasets(sourceConfig, zoneName);
+  if (!sources.bootDataset) {
+    return { refusal: { error: 'Could not determine boot dataset for source zone' } };
   }
-  const named = await verifyNamedSnapshots(sourceConfig, snapshot);
+  if (!snapshot) {
+    const created = await createCloneSnapshots(sources);
+    return { snapshotInfo: { snapshotName: created.snapshotName, sources } };
+  }
+  const named = await verifyNamedSnapshots(sources, snapshot);
   if (!named.success) {
     const refusal = { error: named.error };
     if (named.missing_datasets) {
@@ -384,7 +311,7 @@ const resolveCloneDiskSources = async (source, snapshot, sourceConfig) => {
     }
     return { refusal };
   }
-  return { snapshotInfo: named };
+  return { snapshotInfo: { snapshotName: named.snapshotName, sources } };
 };
 
 /**
@@ -394,14 +321,22 @@ const resolveCloneDiskSources = async (source, snapshot, sourceConfig) => {
  *     summary: Clone a machine
  *     description: |
  *       Clones a machine through the create orchestration (the Go agent's clone
- *       wire). `source` "current" (default) copies today's disk state: every
- *       source dataset is snapshotted — or the named `snapshot` is used — and
- *       the clone's disks build from those snapshots (`linked` true = thin ZFS
- *       CoW clone, false = full copy via zfs send/recv). `source` "template"
- *       rebuilds fresh disks from the stored creation config instead. Identity
- *       never copies: server_id, consoleport, MACs, VNIC names, and
- *       non-provisional addressing strip; provisional networks get a fresh
- *       provisioning-range address.
+ *       wire, the Proxmox model): a clone carries the source's DATA on EVERY
+ *       disk — nothing comes out empty. `source` "current" (default) snapshots
+ *       every source dataset under one name — or verifies the named
+ *       `snapshot_name` on every one — and each of the clone's disks builds
+ *       from its snapshot (`linked` true = thin ZFS CoW clone, false = full
+ *       copy via zfs send/recv). Image-attached disks (foreign zvols) ALWAYS
+ *       full-copy regardless of `linked` — the copy makes the clone independent
+ *       of the foreign original and becomes the clone's own stamped zvol; the
+ *       clone_<ts> snapshot our copy read from remains on the source datasets.
+ *       `source` "template" is the explicit opt-in REBUILD flavor — fresh disks
+ *       from the stored creation config, no data copy. The networking SHAPE
+ *       rides (bridge/vlan/type/netmask/gateway/dns; the zonecfg nic half
+ *       derives from it); identity never copies: server_id, consoleport, MACs
+ *       (fresh auto), VNIC names, and static addresses strip; a provisional
+ *       entry clones as dhcp4 with NO address — the agent's dhcpd leases fresh
+ *       on first boot.
  *     tags: [Zone Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -521,19 +456,21 @@ export const cloneZone = async (req, res) => {
     }
 
     // 5. Disk sources per clone flavor
-    const diskSources = await resolveCloneDiskSources(source, snapshot, sourceConfig);
+    const diskSources = await resolveCloneDiskSources(source, snapshot, sourceConfig, zoneName);
     if (diskSources.refusal) {
       return res.status(400).json(diskSources.refusal);
     }
 
-    // 6. Build metadata
-    const cloneMetadata = await buildCloneMetadata(
+    // 6. Build metadata, then the shared network preparation (transport
+    // attach when packaged + dns declare + the nic-half derivation).
+    const cloneMetadata = buildCloneMetadata(
       sourceConfig,
       mergedSettings,
       diskSources.snapshotInfo,
       linked ? 'clone' : 'copy',
       explicitName || `${mergedSettings.hostname}.${mergedSettings.domain}`
     );
+    prepareNetworkSections(cloneMetadata);
 
     // 7. Validate resources
     const resourceValidation = await validateZoneCreationResources(cloneMetadata);

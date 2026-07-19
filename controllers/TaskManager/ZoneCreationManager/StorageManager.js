@@ -136,7 +136,7 @@ export const importTemplate = async (metadata, zoneName, zfsCreated, onData = nu
   }
 
   zfsCreated.push(targetDataset);
-  await stampDataset(targetDataset, 'template');
+  await stampDataset(targetDataset, boot.provenance === 'clone' ? 'clone' : 'template');
 
   // Frozen rule: absent size = the template's own size stands.
   if (boot.size) {

@@ -8,7 +8,7 @@
 
 import { exec } from 'child_process';
 import util from 'util';
-import config from '../config/ConfigLoader.js';
+import { getProvisioningNetworkConfig } from '../lib/ProvisioningNetwork.js';
 import { log } from '../lib/Logger.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import NatRules from '../models/NatRuleModel.js';
@@ -37,25 +37,9 @@ const executeCommand = async command => {
   }
 };
 
-/**
- * Get provisioning network configuration from config.yaml
- * @returns {Object} Provisioning network config with defaults
- */
-const getProvNetConfig = () => {
-  const provConfig = config.get('provisioning') || {};
-  const netConfig = provConfig.network || {};
-  return {
-    enabled: netConfig.enabled !== false,
-    // Fallbacks match the settings schema + shipped config defaults exactly.
-    etherstub_name: netConfig.etherstub_name || 'estub_provision',
-    host_vnic_name: netConfig.host_vnic_name || 'provision_interconnect0',
-    subnet: netConfig.subnet || '10.190.190.0/24',
-    host_ip: netConfig.host_ip || '10.190.190.1',
-    netmask: netConfig.netmask || '255.255.255.0',
-    dhcp_range_start: netConfig.dhcp_range_start || '10.190.190.10',
-    dhcp_range_end: netConfig.dhcp_range_end || '10.190.190.254',
-  };
-};
+// The effective provisioning-network configuration — the ONE shared reader
+// (lib/ProvisioningNetwork.js; the packaged-create attach uses it too).
+const getProvNetConfig = getProvisioningNetworkConfig;
 
 /**
  * Check if a component exists

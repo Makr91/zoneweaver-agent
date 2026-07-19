@@ -55,7 +55,23 @@ export const executeZoneSetupTask = async task => {
     const zoneConfig = await getZoneConfig(zone_name);
     const nics = zoneConfig?.net || [];
 
-    // NIC type and VM type mapping (vagrant-zones convention)
+    // The document's networks[] pairs with the net resources BY INDEX (the
+    // declared pairing rule) — the CLASS is its declared `type` key, exactly
+    // as Hosts.rb derived it (nictype: network['type']); never inferred from
+    // link names.
+    let zoneConfigFromDB = zone.configuration;
+    if (typeof zoneConfigFromDB === 'string') {
+      try {
+        zoneConfigFromDB = JSON.parse(zoneConfigFromDB);
+      } catch (e) {
+        log.task.warn('Failed to parse zone configuration from DB', { error: e.message });
+        zoneConfigFromDB = {};
+      }
+    }
+    const networksArray = Array.isArray(zoneConfigFromDB?.networks)
+      ? zoneConfigFromDB.networks
+      : [];
+
     const nicTypeMap = { external: 'e', internal: 'i', carp: 'c', management: 'm', host: 'h' };
     const vmTypeMap = {
       template: '1',
@@ -67,12 +83,7 @@ export const executeZoneSetupTask = async task => {
 
     // Generate vnic_name for ALL NICs (deterministic from zone config)
     const nicData = nics.map((nic, index) => {
-      // Determine nic_type from global-nic
-      let nic_type = 'external'; // Default
-      if (nic['global-nic']?.includes('estub')) {
-        nic_type = 'internal';
-      }
-
+      const nic_type = networksArray[index]?.type === 'internal' ? 'internal' : 'external';
       const nicType = nicTypeMap[nic_type];
       const vmType = vmTypeMap[zone.vm_type] || '3';
       const serverId = zone.server_id.padStart(4, '0');
@@ -127,27 +138,17 @@ export const executeZoneSetupTask = async task => {
       }
     });
 
-    // Merge network metadata (IP, gateway, DNS) from zone configuration
-    let zoneConfigFromDB = zone.configuration;
-    if (typeof zoneConfigFromDB === 'string') {
-      try {
-        zoneConfigFromDB = JSON.parse(zoneConfigFromDB);
-      } catch (e) {
-        log.task.warn('Failed to parse zone configuration from DB', { error: e.message });
-        zoneConfigFromDB = {};
-      }
-    }
-
-    const networksArray = zoneConfigFromDB?.networks;
-
-    if (networksArray && Array.isArray(networksArray)) {
+    // Merge network metadata (IP, gateway, DNS, route) from the document —
+    // dns is the document contract's MAP shape [{nameserver: ip}]; route
+    // rides VERBATIM to the guest config (guest-owns-routes ruling), with
+    // the contract's own "default" when the entry carries none.
+    if (networksArray.length > 0) {
       networksArray.forEach((networkMeta, index) => {
         const prefix = `nic_${index}_`;
         if (networkMeta.address) {
           variables[`${prefix}ip`] = networkMeta.address;
         }
         if (networkMeta.netmask) {
-          // Convert netmask to prefix (e.g., 255.255.255.0 → 24)
           const prefixBits =
             networkMeta.netmask
               .split('.')
@@ -159,11 +160,13 @@ export const executeZoneSetupTask = async task => {
         if (networkMeta.gateway) {
           variables[`${prefix}gateway`] = networkMeta.gateway;
         }
-        if (networkMeta.dns) {
-          variables[`${prefix}dns`] = Array.isArray(networkMeta.dns)
-            ? networkMeta.dns.join(',')
-            : networkMeta.dns;
+        if (Array.isArray(networkMeta.dns)) {
+          variables[`${prefix}dns`] = networkMeta.dns
+            .map(entry => entry?.nameserver)
+            .filter(Boolean)
+            .join(',');
         }
+        variables[`${prefix}route`] = networkMeta.route || 'default';
         if (networkMeta.provisional !== undefined) {
           variables[`${prefix}provisional`] = networkMeta.provisional;
         }

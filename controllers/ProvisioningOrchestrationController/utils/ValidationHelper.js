@@ -48,12 +48,23 @@ export const validateProvisioningRequest = async (zoneName, zone, skipRecipe) =>
   // defaults the username to root (Hosts.rb's own default).
   const credentials = extractCredentialsFromSettings(zoneConfig.settings);
 
+  // Transport candidacy: a recorded address answers immediately; a
+  // provisional DHCP entry (the packaged-create attach — the agent's dhcpd
+  // allocates) passes with zoneIP null, and zone_wait_ssh records the lease
+  // into the document. A document with NEITHER has no transport — refuse.
   const zoneIP = extractControlIP(zoneConfig.networks);
   if (!zoneIP) {
-    return {
-      valid: false,
-      error: 'Zone IP address not found in networks array (set is_control: true on one network)',
-    };
+    const networks = Array.isArray(zoneConfig.networks) ? zoneConfig.networks : [];
+    const hasProvisionalDhcp = networks.some(
+      net => net?.provisional === true && net?.dhcp4 === true
+    );
+    if (!hasProvisionalDhcp) {
+      return {
+        valid: false,
+        error:
+          'Zone IP address not found in networks array (set is_control: true on one network, or attach the provisioning network)',
+      };
+    }
   }
 
   // Validate recipe if specified

@@ -73,6 +73,10 @@ const addNics = async (zoneName, nics, zoneRecord, onData = null) => {
     if (nic.allowed_address) {
       cmd += ` set allowed-address=${nic.allowed_address};`;
     }
+    // address/defrouter are SHARED-IP-only net properties — zonecfg refuses
+    // them on this agent's ip-type=exclusive zones ("the address and default
+    // router properties cannot be set", https://man.omnios.org/man8/zonecfg;
+    // https://man.omnios.org/man7/zones). Left on the wire per Mark 2026-07-18.
     if (nic.address) {
       cmd += ` set address=${nic.address};`;
     }
@@ -120,6 +124,8 @@ const updateNics = async (zoneName, nics, onData = null) => {
     }
     let cmd = `select net physical=${nic.physical};`;
     let sets = 0;
+    // address/defrouter: SHARED-IP-only — refused by zonecfg on exclusive-IP
+    // zones (https://man.omnios.org/man8/zonecfg). Left per Mark 2026-07-18.
     const setProps = [
       ['global-nic', nic.global_nic],
       ['vlan-id', nic.vlan_id],

@@ -231,8 +231,7 @@ export const getNetworkUsage = async (req, res) => {
             row => row.link
           )
         );
-        const results =
-          liveLinks.size > 0 ? latest.filter(row => liveLinks.has(row.link)) : latest;
+        const results = liveLinks.size > 0 ? latest.filter(row => liveLinks.has(row.link)) : latest;
         const activeInterfaces = results.filter(row => row.rx_mbps > 0 || row.tx_mbps > 0).length;
 
         return res.json(

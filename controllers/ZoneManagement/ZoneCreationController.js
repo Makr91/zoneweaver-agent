@@ -7,7 +7,14 @@ import {
   consoleportRangeError,
   vcpusCountError,
 } from '../../lib/ZoneValidation.js';
-import { normalizeDisks, validateDisksWire, validateDiskImages } from '../../lib/DiskSpec.js';
+import {
+  normalizeDisks,
+  validateDisksWire,
+  validateDiskImages,
+  cloneStrategyError,
+  getRootPool,
+  templateLandingPool,
+} from '../../lib/DiskSpec.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
 import { getPackageVersion } from '../../lib/ProvisionerRegistry.js';
 import { validateAnswers } from '../../lib/FieldDsl.js';
@@ -72,7 +79,7 @@ const buildMultiHostBody = (host, body, ref, pkg) => {
     sub.disks = infra.disks;
   }
   if (infra.zones) {
-    sub.zones = { ...(body.zones || {}), ...infra.zones };
+    sub.zones = { ...infra.zones, ...(body.zones || {}) };
   }
   if (infra.cloud_init) {
     sub.cloud_init = infra.cloud_init;
@@ -83,7 +90,9 @@ const buildMultiHostBody = (host, body, ref, pkg) => {
 /**
  * Fold ONE rendered host's infra sections back into the request body — the
  * single-host path's document-wins merge (the rendered document REPLACES the
- * request where it speaks; zones merges shallowly).
+ * request where it speaks) with ONE exception: zones merges REQUEST-wins —
+ * the wizard sends only user-touched keys, and an explicit user choice
+ * always overrides the template's hardcoded default.
  * @param {Object} body - Request body (mutated in place)
  * @param {Object} host - The rendered hosts[0] entry
  * @param {Object} ref - Provisioner reference
@@ -100,7 +109,7 @@ const applySingleHostDocument = (body, host, ref, pkg, settings) => {
     body.disks = infra.disks;
   }
   if (infra.zones) {
-    body.zones = { ...(body.zones || {}), ...infra.zones };
+    body.zones = { ...infra.zones, ...(body.zones || {}) };
   }
   if (infra.cloud_init) {
     body.cloud_init = infra.cloud_init;
@@ -246,6 +255,78 @@ const validateCreateBody = body => {
     return { status: 400, payload: { error: 'Invalid zone name' } };
   }
   return null;
+};
+
+/**
+ * Enrich the typed boot entry with the resolved template dataset (the wire's
+ * type stays the declaration, template_dataset the resolution).
+ * @param {Object} body - Create body (mutated)
+ * @param {Object} boxResolution - resolveBoxToTemplate result
+ */
+const enrichBootTemplate = (body, boxResolution) => {
+  if (boxResolution.success && boxResolution.template_dataset) {
+    body.disks.boot.template_dataset = boxResolution.template_dataset;
+  }
+};
+
+/**
+ * The one impossible firmware pairing: settings.firmware_type BIOS with a
+ * pure-UEFI boot ROM (no _CSM) cannot legacy boot — warned, never refused
+ * (the explicit bootrom is honored).
+ * @param {Object} body - Create body
+ * @returns {{resource: string, message: string}|null} Warning entry or null
+ */
+const firmwareConflictWarning = body => {
+  const bootrom = body.zones?.bootrom;
+  const firmware = String(body.settings?.firmware_type || '').toUpperCase();
+  if (!bootrom || firmware !== 'BIOS' || bootrom.includes('CSM')) {
+    return null;
+  }
+  return {
+    resource: 'firmware',
+    message: `settings.firmware_type BIOS but zones.bootrom ${bootrom} cannot legacy boot — CSM-capable ROMs carry the _CSM suffix`,
+  };
+};
+
+/**
+ * The boot entry's clone-strategy refusal — template pool from the resolved
+ * dataset when local, the deterministic landing pool when the box still
+ * downloads.
+ * @param {Object} body - Create body (post box-resolution)
+ * @returns {Promise<string|null>} Refusal string or null
+ */
+const bootStrategyProblem = async body => {
+  const boot = body.disks?.boot;
+  if (boot?.type !== 'template') {
+    return null;
+  }
+  const targetPool = boot.pool || (await getRootPool());
+  const templatePool = boot.template_dataset
+    ? boot.template_dataset.split('/')[0]
+    : templateLandingPool();
+  return cloneStrategyError(boot, templatePool, targetPool);
+};
+
+/**
+ * The create wire's disk preparation, shared by the single- and multi-host
+ * paths: the network sections (packaged transport + dns declare + nic
+ * derivation), the typed-disk normalize, the frozen wire refusals, and the
+ * host-truth image checks. First error answers; warnings ride through.
+ * @param {Object} body - Create body (mutated)
+ * @returns {Promise<{error?: string, warnings: Array}>}
+ */
+const prepareAndValidateDisks = async body => {
+  prepareNetworkSections(body);
+  normalizeDisks(body);
+  const diskValidation = validateDisksWire(body);
+  if (diskValidation.errors.length > 0) {
+    return { error: diskValidation.errors[0], warnings: [] };
+  }
+  const imageErrors = await validateDiskImages(body.disks);
+  if (imageErrors.length > 0) {
+    return { error: imageErrors[0], warnings: [] };
+  }
+  return { warnings: diskValidation.warnings };
 };
 
 export const findExistingZoneConflict = async finalZoneName => {
@@ -435,6 +516,17 @@ const queueCreateOrchestration = async (
  *                     type: string
  *                     description: Guest OS type
  *                     example: "Debian_64"
+ *                   firmware_type:
+ *                     type: string
+ *                     enum: [UEFI, BIOS]
+ *                     description: |
+ *                       Guest firmware style (the cross-hypervisor knob). When
+ *                       zones.bootrom is absent, BIOS maps the boot ROM to
+ *                       BHYVE_RELEASE_CSM and UEFI (the default) to BHYVE_RELEASE.
+ *                       An explicit zones.bootrom always wins; BIOS paired with a
+ *                       non-CSM ROM answers a resource_warnings entry (that pairing
+ *                       cannot legacy boot, and the VNC framebuffer needs UEFI boot).
+ *                     example: "UEFI"
  *                   consoleport:
  *                     type: integer
  *                     description: "Static VNC console port (1025-65535). If specified, this port will be reserved for this zone's VNC console. If omitted, a dynamic port is assigned."
@@ -631,11 +723,12 @@ const queueCreateOrchestration = async (
  *                         type: string
  *                         enum: [template, image, blank, none]
  *                         description: |
- *                           template = clone from settings.box (size = grow-to; absent
- *                           size keeps the template's size; clone_strategy clone|copy) ·
- *                           image = attach an EXISTING zvol by path (never created or
- *                           deleted by the agent) · blank = create a fresh zvol (size
- *                           REQUIRED) · none = diskless (takes no other keys)
+ *                           template = materialize from settings.box (size = grow-to;
+ *                           absent size keeps the template's size; clone_strategy
+ *                           clone|copy|localize, default copy) · image = attach an
+ *                           EXISTING zvol by path (never created or deleted by the
+ *                           agent) · blank = create a fresh zvol (size REQUIRED) ·
+ *                           none = diskless (takes no other keys)
  *                       size:
  *                         type: string
  *                         description: blank REQUIRES it; template grows to it
@@ -656,8 +749,14 @@ const queueCreateOrchestration = async (
  *                         description: image only — attach even when another machine references the zvol
  *                       clone_strategy:
  *                         type: string
- *                         enum: [clone, copy]
- *                         default: "clone"
+ *                         enum: [clone, copy, localize]
+ *                         default: "copy"
+ *                         description: |
+ *                           copy (default) = full send|recv, legal on every pool ·
+ *                           clone = thin ZFS clone, SAME pool as the template only ·
+ *                           localize = one-time template replica onto the target pool
+ *                           (GUID-verified, reused thereafter), then thin clone.
+ *                           Illegal combinations refuse at the POST with the reason.
  *                       pool:
  *                         type: string
  *                         default: "rpool"
@@ -1076,21 +1175,10 @@ const prepareMultiHostEntry = async (hostBody, index) => {
       problem: { status: 400, payload: { error: `${label}: ${preflightProblem}` } },
     };
   }
-  // Packaged transport + the DRY nic derivation (sync-converged 2026-07-18).
-  prepareNetworkSections(hostBody);
-
-  // Typed disk wire — frozen strings, entry-prefixed.
-  normalizeDisks(hostBody);
-  const diskValidation = validateDisksWire(hostBody);
-  if (diskValidation.errors.length > 0) {
+  const diskPrep = await prepareAndValidateDisks(hostBody);
+  if (diskPrep.error) {
     return {
-      problem: { status: 400, payload: { error: `${label}: ${diskValidation.errors[0]}` } },
-    };
-  }
-  const imageErrors = await validateDiskImages(hostBody.disks);
-  if (imageErrors.length > 0) {
-    return {
-      problem: { status: 400, payload: { error: `${label}: ${imageErrors[0]}` } },
+      problem: { status: 400, payload: { error: `${label}: ${diskPrep.error}` } },
     };
   }
   const nameResult = await resolveZoneName(baseName, settings);
@@ -1114,8 +1202,12 @@ const prepareMultiHostEntry = async (hostBody, index) => {
     };
   }
   hostBody.name = baseName;
-  if (boxResolution.template_dataset) {
-    hostBody.disks.boot.template_dataset = boxResolution.template_dataset;
+  enrichBootTemplate(hostBody, boxResolution);
+  const strategyProblem = await bootStrategyProblem(hostBody);
+  if (strategyProblem) {
+    return {
+      problem: { status: 400, payload: { error: `${label}: ${strategyProblem}` } },
+    };
   }
   const resourceValidation = await validateZoneCreationResources(hostBody);
   if (!resourceValidation.valid) {
@@ -1137,10 +1229,15 @@ const prepareMultiHostEntry = async (hostBody, index) => {
       },
     };
   }
+  const warnings = [...resourceValidation.warnings, ...diskPrep.warnings];
+  const firmwareWarning = firmwareConflictWarning(hostBody);
+  if (firmwareWarning) {
+    warnings.push(firmwareWarning);
+  }
   return {
     finalZoneName: nameResult.finalZoneName,
     hostBody,
-    warnings: [...resourceValidation.warnings, ...diskValidation.warnings],
+    warnings,
   };
 };
 
@@ -1274,19 +1371,9 @@ export const createZone = async (req, res) => {
       return res.status(bodyProblem.status).json(bodyProblem.payload);
     }
 
-    // Packaged transport + the DRY nic derivation (sync-converged 2026-07-18).
-    prepareNetworkSections(req.body);
-
-    // Typed disk wire (frozen disk spec): normalize the documented default,
-    // refuse with the frozen strings, then verify image paths on the host.
-    normalizeDisks(req.body);
-    const diskValidation = validateDisksWire(req.body);
-    if (diskValidation.errors.length > 0) {
-      return res.status(400).json({ error: diskValidation.errors[0] });
-    }
-    const imageErrors = await validateDiskImages(req.body.disks);
-    if (imageErrors.length > 0) {
-      return res.status(400).json({ error: imageErrors[0] });
+    const diskPrep = await prepareAndValidateDisks(req.body);
+    if (diskPrep.error) {
+      return res.status(400).json({ error: diskPrep.error });
     }
 
     // Build base FQDN: hostname.domain
@@ -1310,10 +1397,11 @@ export const createZone = async (req, res) => {
     // Ensure metadata.name is set for task executor (base name, not prefixed)
     req.body.name = baseName;
 
-    // Template found locally — enrich the TYPED boot entry (internal key;
-    // the wire's type stays the declaration, template_dataset the resolution)
-    if (boxResolution.success && boxResolution.template_dataset) {
-      req.body.disks.boot.template_dataset = boxResolution.template_dataset;
+    enrichBootTemplate(req.body, boxResolution);
+
+    const strategyProblem = await bootStrategyProblem(req.body);
+    if (strategyProblem) {
+      return res.status(400).json({ error: strategyProblem });
     }
 
     // Validate resource availability (storage space) before creating any tasks
@@ -1324,7 +1412,11 @@ export const createZone = async (req, res) => {
         details: resourceValidation.errors,
       });
     }
-    const allWarnings = [...resourceValidation.warnings, ...diskValidation.warnings];
+    const allWarnings = [...resourceValidation.warnings, ...diskPrep.warnings];
+    const firmwareWarning = firmwareConflictWarning(req.body);
+    if (firmwareWarning) {
+      allWarnings.push(firmwareWarning);
+    }
 
     // The packaged-provisioning ensure hook: a create that names a
     // provisioner makes sure the provisioning network exists FIRST — the

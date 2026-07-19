@@ -6,6 +6,7 @@ import { log } from '../../lib/Logger.js';
 import config from '../../config/ConfigLoader.js';
 import { findSourceConfig, queryLatestBoxVersion } from '../../lib/TemplateRegistryUtils.js';
 import { buildDatasetPath } from '../TaskManager/ZoneCreationManager/utils/ConfigBuilders.js';
+import { getRootPool } from '../../lib/DiskSpec.js';
 import { attachProvisioningNetwork } from '../../lib/ProvisioningNetwork.js';
 
 /**
@@ -292,7 +293,7 @@ export const createZoneCreationSubTasks = async (
   // reads the STORED document, so it chains after finalize (which stores it).
   const ref = requestBody.provisioner_ref;
   if (ref?.name && ref?.version) {
-    const pool = requestBody.disks?.boot?.pool || 'rpool';
+    const pool = requestBody.disks?.boot?.pool || (await getRootPool());
     const dataset = requestBody.disks?.boot?.dataset || 'zones';
     const datasetPath = buildDatasetPath(
       `${pool}/${dataset}`,

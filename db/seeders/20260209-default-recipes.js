@@ -13,11 +13,16 @@ import Recipes from '../../models/RecipeModel.js';
  * Each recipe includes step-by-step automation for network setup via zlogin console
  */
 const defaultRecipes = [
-  // 1. Debian 12+ / Ubuntu 18+ (netplan-based)
+  // 1. Debian 12+ / Ubuntu 18+ (netplan-based). The agent SYNTHESIZES the
+  // complete netplan document for every NIC (dhcp4 vs static per the zone's
+  // declared networks[], MAC-matched) into {{netplan_yaml}} — the recipe
+  // just writes and applies it. The filename must never be
+  // 50-cloud-init.yaml: the networking role's cleanup deletes exactly that.
   {
     id: uuidv4(),
     name: 'debian-netplan',
-    description: 'Debian 12+ / Ubuntu 18+ network configuration via netplan',
+    description:
+      'Debian 12+ / Ubuntu 18+ network configuration via netplan (agent-synthesized document for all NICs)',
     os_family: 'linux',
     brand: 'bhyve',
     is_default: true,
@@ -28,13 +33,8 @@ const defaultRecipes = [
     variables: {
       username: 'root',
       password: 'changeme',
-      nic_0_vnic_name: 'enp0s3',
-      nic_0_mac: '02:08:20:00:00:01',
-      nic_0_ip: '10.190.190.10',
-      nic_0_prefix: '24',
-      nic_0_gateway: '10.190.190.1',
-      nic_0_route: 'default',
-      nic_0_dns: '8.8.8.8',
+      netplan_dest: '/etc/netplan/60-zoneweaver.yaml',
+      netplan_yaml: 'network:\n  version: 2',
     },
     steps: [
       { type: 'wait', pattern: '{{login_prompt}}', timeout: 60 },
@@ -43,18 +43,16 @@ const defaultRecipes = [
       { type: 'send', value: '{{password}}\r\n' },
       { type: 'wait', pattern: '{{shell_prompt}}', timeout: 30 },
       { type: 'command', value: 'sudo su -', expect_prompt: '#', check_exit_code: false },
-      { type: 'command', value: 'rm -rf /etc/netplan/*.yaml' },
       {
         type: 'template',
-        dest: '/etc/netplan/{{nic_0_vnic_name}}.yaml',
+        dest: '{{netplan_dest}}',
         method: 'heredoc',
-        content:
-          'network:\n  version: 2\n  ethernets:\n    {{nic_0_vnic_name}}:\n      match:\n        macaddress: "{{nic_0_mac}}"\n      set-name: {{nic_0_vnic_name}}\n      addresses: [{{nic_0_ip}}/{{nic_0_prefix}}]\n      routes:\n        - to: {{nic_0_route}}\n          via: {{nic_0_gateway}}\n      nameservers:\n        addresses: [{{nic_0_dns}}]',
+        content: '{{netplan_yaml}}',
       },
-      { type: 'command', value: 'chmod 600 /etc/netplan/{{nic_0_vnic_name}}.yaml' },
+      { type: 'command', value: 'chmod 600 {{netplan_dest}}' },
       { type: 'command', value: 'netplan apply' },
       { type: 'delay', seconds: 5 },
-      { type: 'command', value: 'ip addr show {{nic_0_vnic_name}}' },
+      { type: 'command', value: 'ip addr show' },
     ],
     created_by: 'system',
     created_at: new Date(),

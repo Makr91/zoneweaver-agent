@@ -1,6 +1,6 @@
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { QGA_EXTRA_VALUE, isGuestAgentEnabled } from '../../../lib/QemuGuestAgent.js';
-import { stampDataset } from '../../../lib/DiskSpec.js';
+import { stampDataset, getRootPool } from '../../../lib/DiskSpec.js';
 import config from '../../../config/ConfigLoader.js';
 import Artifact from '../../../models/ArtifactModel.js';
 import {
@@ -78,7 +78,7 @@ const buildExtraAttrCommand = (metadata, brand) => {
  * @param {Object} metadata - Zone creation metadata
  */
 export const applyZoneConfig = async (zoneName, metadata, onData = null) => {
-  const pool = metadata.disks?.boot?.pool || 'rpool';
+  const pool = metadata.disks?.boot?.pool || (await getRootPool());
   const dataset = metadata.disks?.boot?.dataset || 'zones';
   const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
   const zonepath = metadata.zonepath || `/${datasetPath}/path`;
@@ -152,13 +152,14 @@ export const configureAdditionalDisks = async (
 ) => {
   const zfsPromises = [];
   const zonecfgCmds = [];
+  const rootPool = await getRootPool();
 
   for (let i = 0; i < disks.length; i++) {
     const disk = disks[i];
     let diskPath = null;
 
     if (disk.type === 'blank') {
-      const pool = disk.pool || 'rpool';
+      const pool = disk.pool || rootPool;
       const dset = disk.dataset || 'zones';
       const volName = disk.volume_name || `disk${i}`;
       const datasetPath = buildDatasetPath(`${pool}/${dset}`, zoneName, metadata.server_id);
@@ -178,7 +179,7 @@ export const configureAdditionalDisks = async (
         )
       );
     } else if (disk.type === 'template') {
-      const pool = disk.pool || 'rpool';
+      const pool = disk.pool || rootPool;
       const dset = disk.dataset || 'zones';
       const volName = disk.volume_name || `disk${i}`;
       const datasetPath = buildDatasetPath(`${pool}/${dset}`, zoneName, metadata.server_id);
@@ -186,9 +187,9 @@ export const configureAdditionalDisks = async (
 
       const snapshotSource = `${disk.template_dataset}@${disk.snapshot_name}`;
       const materialize =
-        disk.clone_strategy === 'copy'
-          ? `pfexec zfs send ${snapshotSource} | pfexec zfs recv -F ${diskPath}`
-          : `pfexec zfs clone ${snapshotSource} ${diskPath}`;
+        disk.clone_strategy === 'clone'
+          ? `pfexec zfs clone ${snapshotSource} ${diskPath}`
+          : `pfexec zfs send ${snapshotSource} | pfexec zfs recv -F ${diskPath}`;
       zfsPromises.push(
         executeCommand(materialize, 3600 * 1000, onData).then(async res => {
           if (!res.success) {

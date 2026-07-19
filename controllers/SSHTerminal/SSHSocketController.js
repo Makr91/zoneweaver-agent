@@ -11,11 +11,11 @@ import SSHSessions from '../../models/SSHSessionModel.js';
 import Zones from '../../models/ZoneModel.js';
 import { log } from '../../lib/Logger.js';
 import { extractCredentialsFromSettings } from '../../lib/ProvisionerConfigBuilder.js';
+import { provisioningPathFromZonepath } from '../../lib/ZoneConfigUtils.js';
 import {
   activeConnections,
   buildSSHConnectionOptions,
   parseZoneConfig,
-  getProvisioningBasePath,
   setupSSHPiping,
 } from './utils/SSHHelpers.js';
 
@@ -50,7 +50,7 @@ export const handleSSHConnection = async (ws, sessionId) => {
       ? extractCredentialsFromSettings(zoneConfig.settings)
       : {};
 
-    const provisioningBasePath = getProvisioningBasePath(zone_name);
+    const provisioningBasePath = provisioningPathFromZonepath(zoneConfig.zonepath);
 
     let connOptions;
     try {

@@ -32,6 +32,21 @@ export const buildDatasetPath = (basePath, zoneName, serverId) => {
 };
 
 /**
+ * The applied boot ROM when zones.bootrom is absent: settings.firmware_type
+ * BIOS maps to the CSM ROM (genuine legacy guests); everything else gets the
+ * UEFI firmware — modern templates boot UEFI, and the VNC framebuffer only
+ * works on UEFI-booted guests (CSM boots give a black console). The bhyve
+ * brand's own unset-attr default (BHYVE_RELEASE_CSM) is deliberately not
+ * inherited.
+ * @param {Object} settings - Document settings section
+ * @returns {string} Boot ROM name
+ */
+const bhyveBootromDefault = settings =>
+  String(settings.firmware_type || '').toUpperCase() === 'BIOS'
+    ? 'BHYVE_RELEASE_CSM'
+    : 'BHYVE_RELEASE';
+
+/**
  * Build zone attribute map from metadata (supports both old and new structures)
  * @param {Object} metadata - Zone creation metadata
  * @returns {Object} Attribute map
@@ -49,11 +64,10 @@ export const buildZoneAttributeMap = metadata => {
       zones.complex_cpu_conf,
       settings.vcpus || metadata.vcpus
     ),
-    // The bhyve brand's own unset-attr default is BHYVE_RELEASE_CSM — legacy
-    // BIOS boot, wrong for modern UEFI templates — so an omitted bootrom
-    // writes the UEFI firmware explicitly; CSM is explicit opt-in.
     bootrom:
-      zones.bootrom || metadata.bootrom || (brand === 'bhyve' ? 'BHYVE_RELEASE' : undefined),
+      zones.bootrom ||
+      metadata.bootrom ||
+      (brand === 'bhyve' ? bhyveBootromDefault(settings) : undefined),
     hostbridge: zones.hostbridge || metadata.hostbridge,
     diskif: zones.diskif || metadata.diskif,
     netif: zones.netif || metadata.netif,

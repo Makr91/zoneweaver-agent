@@ -1,4 +1,5 @@
 import { executeCommand } from '../../../lib/CommandManager.js';
+import { getRootPool } from '../../../lib/DiskSpec.js';
 import { syncZoneToDatabase } from '../../../lib/ZoneConfigUtils.js';
 import Zones from '../../../models/ZoneModel.js';
 import Template from '../../../models/TemplateModel.js';
@@ -215,7 +216,7 @@ export const executeZoneCreateInstallTask = async task => {
     // traversal to the provisioning sub-dataset — NEVER the zonepath itself:
     // zoneadm requires it root-owned 0700 (zonecfg(8)) and re-tightens it
     // every boot.
-    const pool = metadata.disks?.boot?.pool || 'rpool';
+    const pool = metadata.disks?.boot?.pool || (await getRootPool());
     const dataset = metadata.disks?.boot?.dataset || 'zones';
     const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
     const zoneDir = metadata.zonepath

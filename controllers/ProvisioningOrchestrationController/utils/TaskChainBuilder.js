@@ -35,6 +35,7 @@ import {
   hasZoneProvisionedBefore,
 } from './TaskCreationHelper.js';
 import { winrmDefaults } from '../../TaskManager/ZoneEngineManager.js';
+import { getRootPool } from '../../../lib/DiskSpec.js';
 import { parseConfiguration } from '../../../lib/ZoneConfigUtils.js';
 import { effectiveRemoveOnCompletion } from '../../../lib/ProvisioningNetwork.js';
 
@@ -543,7 +544,7 @@ export const buildProvisioningTaskChain = async params => {
   const zoneConfig = parseConfiguration(ctx.zone);
   const zoneDataset = zoneConfig.zonepath
     ? zoneConfig.zonepath.replace('/path', '')
-    : `/rpool/zones/${ctx.zoneName}`;
+    : `/${await getRootPool()}/zones/${ctx.zoneName}`;
   const cleanZoneDataset = zoneDataset.startsWith('/') ? zoneDataset.substring(1) : zoneDataset;
   const provisioningDatasetPath = `/${cleanZoneDataset}/provisioning`;
 

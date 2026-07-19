@@ -93,13 +93,6 @@ export const parseZoneConfig = zone => {
 };
 
 /**
- * Get the provisioning dataset base path for a zone
- * @param {string} zoneName - Zone name
- * @returns {string} Provisioning base path
- */
-export const getProvisioningBasePath = zoneName => `/rpool/zones/${zoneName}/provisioning`;
-
-/**
  * Close an active SSH connection and remove from tracking
  * @param {string} sessionId - Session ID to clean up
  */

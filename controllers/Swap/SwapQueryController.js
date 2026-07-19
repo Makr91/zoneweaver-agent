@@ -9,6 +9,7 @@ import os from 'os';
 import { Op } from 'sequelize';
 import SwapArea from '../../models/SwapAreaModel.js';
 import MemoryStats from '../../models/MemoryStatsModel.js';
+import { getRootPool } from '../../lib/DiskSpec.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -214,8 +215,9 @@ export const getSwapSummary = async (req, res) => {
     const overallUtilization = totalSwapBytes > 0 ? (usedSwapBytes / totalSwapBytes) * 100 : 0;
 
     // Pool distribution analysis (pool derived from the zvol path)
+    const rootPool = await getRootPool();
     const poolDistribution = {};
-    const rpoolAreas = [];
+    const rootPoolAreas = [];
     swapAreas.forEach(area => {
       const pool = poolFromSwapfile(area.swapfile) || 'unknown';
       if (!poolDistribution[pool]) {
@@ -231,21 +233,21 @@ export const getSwapSummary = async (req, res) => {
       poolDistribution[pool].usedSizeGB += Number(area.used_bytes) / 1024 ** 3;
       poolDistribution[pool].areas.push(area.swapfile);
 
-      if (pool === 'rpool') {
-        rpoolAreas.push(area);
+      if (pool === rootPool) {
+        rootPoolAreas.push(area);
       }
     });
 
     // Generate recommendations
     const recommendations = [];
 
-    // Check for multiple rpool swap areas (against best practice)
-    if (rpoolAreas.length > 1) {
+    // Multiple root-pool swap areas run against best practice
+    if (rootPoolAreas.length > 1) {
       recommendations.push({
         type: 'warning',
         category: 'best_practice',
-        message: `Found ${rpoolAreas.length} swap areas on rpool. Consider consolidating to one small swap area on rpool and moving larger swap to arrays.`,
-        affected_areas: rpoolAreas.map(area => area.swapfile),
+        message: `Found ${rootPoolAreas.length} swap areas on ${rootPool}. Consider consolidating to one small swap area on ${rootPool} and moving larger swap to arrays.`,
+        affected_areas: rootPoolAreas.map(area => area.swapfile),
       });
     }
 
@@ -259,14 +261,14 @@ export const getSwapSummary = async (req, res) => {
       });
     }
 
-    // Check for very large rpool swap areas
-    rpoolAreas.forEach(area => {
+    // Check for very large root-pool swap areas
+    rootPoolAreas.forEach(area => {
       const sizeGB = Number(area.size_bytes) / 1024 ** 3;
       if (sizeGB > 10) {
         recommendations.push({
           type: 'suggestion',
           category: 'optimization',
-          message: `Swap area ${area.swapfile} is ${sizeGB.toFixed(1)}GB on rpool. Consider moving large swap to an array.`,
+          message: `Swap area ${area.swapfile} is ${sizeGB.toFixed(1)}GB on ${rootPool}. Consider moving large swap to an array.`,
           affected_areas: [area.swapfile],
         });
       }

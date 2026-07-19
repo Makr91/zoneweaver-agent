@@ -9,6 +9,7 @@ import { exec } from 'child_process';
 import util from 'util';
 import os from 'os';
 import SwapArea from '../../models/SwapAreaModel.js';
+import { getRootPool } from '../../lib/DiskSpec.js';
 import { log } from '../../lib/Logger.js';
 
 const execProm = util.promisify(exec);
@@ -93,12 +94,13 @@ export const addSwapArea = async (req, res) => {
     const poolMatch = path.match(/\/dev\/zvol\/dsk\/(?<pool>[^/]+)/);
     poolAssignment = poolMatch ? poolMatch.groups.pool : null;
 
-    // Safety checks for rpool operations
-    if (poolAssignment === 'rpool') {
+    // Safety checks for root-pool operations
+    const rootPool = await getRootPool();
+    if (poolAssignment === rootPool) {
       // Check available space with 5% buffer
       try {
         const { stdout: zpoolOutput } = await execProm(
-          'pfexec zpool list -H -o name,size,free rpool',
+          `pfexec zpool list -H -o name,size,free ${rootPool}`,
           { timeout: 10000 }
         );
         const zpoolData = zpoolOutput.trim().split('\t');
@@ -110,15 +112,15 @@ export const addSwapArea = async (req, res) => {
 
           if (requestedBytes > 0 && freeBytes - bufferBytes < requestedBytes) {
             return res.status(400).json({
-              error: 'Insufficient space on rpool',
+              error: `Insufficient space on ${rootPool}`,
               details: `Requested ${(requestedBytes / 1024 ** 3).toFixed(2)}GB but only ${((freeBytes - bufferBytes) / 1024 ** 3).toFixed(2)}GB available (with 5% buffer)`,
             });
           }
         }
       } catch (error) {
-        log.monitoring.warn('Could not verify rpool space', {
+        log.monitoring.warn('Could not verify root-pool space', {
           error: error.message,
-          pool: 'rpool',
+          pool: rootPool,
           path,
         });
       }

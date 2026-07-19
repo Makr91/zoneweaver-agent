@@ -67,12 +67,25 @@ export const validateProvisioningRequest = async (zoneName, zone, skipRecipe) =>
     }
   }
 
-  // Validate recipe if specified
-  const recipeId = config.recipe_id;
+  // Validate recipe if specified; a document naming NO recipe falls back to
+  // the os_family's default (is_default per family+brand) — on bhyve the
+  // recipe is the SOLE per-interface config writer (the networking role's
+  // bhyve tree is housekeeping only), so setup must be reachable without an
+  // explicit recipe_id.
+  let recipeId = config.recipe_id;
   if (recipeId && !skipRecipe) {
     const recipe = await Recipes.findByPk(recipeId);
     if (!recipe) {
       return { valid: false, error: `Recipe '${recipeId}' not found` };
+    }
+  }
+  if (!recipeId && !skipRecipe) {
+    const osFamily = /win/iu.test(String(zoneConfig.settings?.os_type || '')) ? 'windows' : 'linux';
+    const defaultRecipe = await Recipes.findOne({
+      where: { os_family: osFamily, brand: 'bhyve', is_default: true },
+    });
+    if (defaultRecipe) {
+      recipeId = defaultRecipe.id;
     }
   }
 

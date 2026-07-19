@@ -15,7 +15,7 @@ import {
   appendDocumentDisks,
   removeDocumentDisks,
 } from '../../../lib/ZoneConfigUtils.js';
-import { stampDataset } from '../../../lib/DiskSpec.js';
+import { stampDataset, getRootPool } from '../../../lib/DiskSpec.js';
 import { updateTaskProgress } from '../../../lib/TaskProgressHelper.js';
 
 /**
@@ -89,6 +89,7 @@ const addDisks = async (zoneName, zoneConfig, disks, onData = null) => {
   const zfsPromises = [];
   const zonecfgCmds = [];
   const documentEntries = [];
+  const rootPool = await getRootPool();
 
   for (const [index, disk] of disks.entries()) {
     let diskPath = null;
@@ -97,7 +98,7 @@ const addDisks = async (zoneName, zoneConfig, disks, onData = null) => {
       if (!disk.size) {
         throw new Error(`add_disks[${index + 1}].type blank requires size`);
       }
-      const pool = disk.pool || 'rpool';
+      const pool = disk.pool || rootPool;
       const dset = disk.dataset || 'zones';
       const volName = disk.volume_name || `disk${nextNum}`;
       diskPath = `${pool}/${dset}/${zoneName}/${volName}`;

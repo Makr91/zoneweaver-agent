@@ -1,6 +1,6 @@
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
-import { stampDataset } from '../../../lib/DiskSpec.js';
+import { stampDataset, getRootPool, snapshotGuid } from '../../../lib/DiskSpec.js';
 import { buildDatasetPath } from './utils/ConfigBuilders.js';
 import { updateTaskProgress } from '../../../lib/TaskProgressHelper.js';
 
@@ -60,7 +60,7 @@ export const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData =
 
   // type: blank — create a fresh zvol and stamp it ours. size is REQUIRED by
   // the wire (validated pre-flight); no silent default.
-  const pool = boot.pool || 'rpool';
+  const pool = boot.pool || (await getRootPool());
   const dataset = boot.dataset || 'zones';
   const volumeName = boot.volume_name || 'boot';
   const { size } = boot;
@@ -85,8 +85,56 @@ export const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData =
 };
 
 /**
- * Materialize a type: template boot disk — ZFS clone (default) or full copy,
- * stamped "template". Frozen size rule: absent boot.size KEEPS the template's
+ * Ensure the template's REPLICA on the target pool (the localize strategy):
+ * present + GUID-matched → reuse; absent → one send|recv of the template's
+ * snapshot, stamped. A replica whose snapshot GUID mismatches the origin
+ * refuses — drift is resolved by a human, never papered over.
+ * @param {string} templateDataset - Origin template dataset
+ * @param {string} snapshot - Snapshot name (ready)
+ * @param {string} pool - Target pool
+ * @param {Function|null} onData - Output sink
+ * @returns {Promise<string>} The replica dataset
+ */
+const ensureLocalizedTemplate = async (templateDataset, snapshot, pool, onData) => {
+  const suffix = templateDataset.split('/').slice(1).join('/');
+  const replica = `${pool}/${suffix}`;
+  const originGuid = await snapshotGuid(`${templateDataset}@${snapshot}`);
+  if (!originGuid) {
+    throw new Error(`localize: template snapshot ${templateDataset}@${snapshot} is unreadable`);
+  }
+  const existingGuid = await snapshotGuid(`${replica}@${snapshot}`);
+  if (existingGuid) {
+    if (existingGuid !== originGuid) {
+      throw new Error(
+        `localize: ${replica} exists but its @${snapshot} does not match the template (guid mismatch) — resolve it manually or use copy`
+      );
+    }
+    log.task.info('Localized template replica reused', { replica });
+    return replica;
+  }
+  const parent = replica.split('/').slice(0, -1).join('/');
+  const parentResult = await executeCommand(`pfexec zfs create -p ${parent}`, undefined, onData);
+  if (!parentResult.success) {
+    throw new Error(`localize: failed to create ${parent}: ${parentResult.error}`);
+  }
+  const recvResult = await executeCommand(
+    `pfexec zfs send ${templateDataset}@${snapshot} | pfexec zfs recv ${replica}`,
+    3600 * 1000,
+    onData
+  );
+  if (!recvResult.success) {
+    throw new Error(`localize: template replication to ${replica} failed: ${recvResult.error}`);
+  }
+  await stampDataset(replica, 'template');
+  await executeCommand(`pfexec zfs set zoneweaver:origin_guid=${originGuid} ${replica}`);
+  log.task.info('Template localized onto pool', { replica, origin: templateDataset });
+  return replica;
+};
+
+/**
+ * Materialize a type: template boot disk — full copy (the default), thin
+ * clone (same-pool opt-in), or localize (replica on the target pool, then
+ * thin clone). Stamped "template". Absent boot.size KEEPS the template's
  * size; present = grow-to.
  * @param {Object} metadata - Zone creation metadata (typed disks wire)
  * @param {string} zoneName - Zone name
@@ -106,8 +154,8 @@ export const importTemplate = async (metadata, zoneName, zfsCreated, onData = nu
     );
   }
   const snapshot = boot.snapshot_name || 'ready';
-  const cloneStrategy = boot.clone_strategy || 'clone';
-  const pool = boot.pool || 'rpool';
+  const cloneStrategy = boot.clone_strategy || 'copy';
+  const pool = boot.pool || (await getRootPool());
   const dataset = boot.dataset || 'zones';
   const volumeName = boot.volume_name || 'boot';
   const parentDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
@@ -115,7 +163,20 @@ export const importTemplate = async (metadata, zoneName, zfsCreated, onData = nu
 
   await createZoneRootDataset(parentDataset, zfsCreated, onData);
 
-  if (cloneStrategy === 'copy') {
+  if (cloneStrategy === 'clone' || cloneStrategy === 'localize') {
+    const cloneSource =
+      cloneStrategy === 'localize'
+        ? await ensureLocalizedTemplate(templateDataset, snapshot, pool, onData)
+        : templateDataset;
+    const cloneResult = await executeCommand(
+      `pfexec zfs clone ${cloneSource}@${snapshot} ${targetDataset}`,
+      undefined,
+      onData
+    );
+    if (!cloneResult.success) {
+      throw new Error(`Template clone failed: ${cloneResult.error}`);
+    }
+  } else {
     const sendRecvResult = await executeCommand(
       `pfexec zfs send ${templateDataset}@${snapshot} | pfexec zfs recv -F ${targetDataset}`,
       3600 * 1000,
@@ -123,15 +184,6 @@ export const importTemplate = async (metadata, zoneName, zfsCreated, onData = nu
     );
     if (!sendRecvResult.success) {
       throw new Error(`Template import failed: ${sendRecvResult.error}`);
-    }
-  } else {
-    const cloneResult = await executeCommand(
-      `pfexec zfs clone ${templateDataset}@${snapshot} ${targetDataset}`,
-      undefined,
-      onData
-    );
-    if (!cloneResult.success) {
-      throw new Error(`Template clone failed: ${cloneResult.error}`);
     }
   }
 

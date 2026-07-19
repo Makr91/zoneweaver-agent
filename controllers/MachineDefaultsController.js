@@ -1,6 +1,12 @@
 import { readdir, readFile } from 'fs/promises';
 import config from '../config/ConfigLoader.js';
 import { isGuestAgentEnabled } from '../lib/QemuGuestAgent.js';
+import {
+  BOOT_DISK_TYPES,
+  CLONE_STRATEGIES,
+  getRootPool,
+  templateLandingPool,
+} from '../lib/DiskSpec.js';
 
 /**
  * @fileoverview Machine create-time defaults + guest OS type vocabulary
@@ -38,11 +44,12 @@ const KNOB_VALUES = {
   'zones.xhci': ['on', 'off'],
   'zones.cpu_configuration': ['simple', 'complex'],
   'settings.os_type': ['generic', 'windows', 'openbsd'],
+  'settings.firmware_type': ['UEFI', 'BIOS'],
   'settings.sync_method': ['rsync', 'scp'],
   'networks.type': ['internal', 'external'],
   'nics.nic_type': ['external', 'internal', 'carp', 'management', 'host'],
-  'disks.boot.source.type': ['template', 'scratch'],
-  'disks.boot.source.clone_strategy': ['clone', 'copy'],
+  'disks.boot.type': BOOT_DISK_TYPES,
+  'disks.boot.clone_strategy': CLONE_STRATEGIES,
   // NIC brand-props (the zonecfg net-resource properties consumed by bhyve's
   // network backends — NOT dladm link properties; MAC/IP spoofing is the dladm
   // `protection` prop, see GET /network/vnics/{vnic}/properties).
@@ -193,10 +200,13 @@ const readZadmSchemaVocab = async () => {
 const KNOB_DEFAULTS = {
   'zones.acpi': 'on',
   'zones.bootorder': 'path0,bootdisk,cdrom0',
-  // AGENT-APPLIED, not the brand's: an omitted bootrom writes BHYVE_RELEASE
-  // explicitly at create — the brand's own unset default is BHYVE_RELEASE_CSM
-  // (legacy BIOS boot), wrong for modern UEFI templates.
+  // AGENT-APPLIED, not the brand's: an omitted bootrom maps
+  // settings.firmware_type (BIOS → BHYVE_RELEASE_CSM) and otherwise writes
+  // BHYVE_RELEASE — the brand's own unset default is BHYVE_RELEASE_CSM
+  // (legacy BIOS boot), wrong for modern UEFI templates and the VNC
+  // framebuffer (UEFI-boot only).
   'zones.bootrom': 'BHYVE_RELEASE',
+  'settings.firmware_type': 'UEFI',
   'zones.cloud_init': 'off',
   'zones.diskif': 'virtio-blk',
   'zones.hostbridge': 'i440fx',
@@ -288,10 +298,11 @@ const BHYVE_OS_TYPES = [
 export const getMachineDefaults = async (req, res) => {
   void req;
   const zonesConfig = config.getZones() || {};
-  const [bootroms, zadmVocab, brandDefaults] = await Promise.all([
+  const [bootroms, zadmVocab, brandDefaults, rootPool] = await Promise.all([
     enumerateBootroms(),
     readZadmSchemaVocab(),
     readBrandBootDefaults(),
+    getRootPool(),
   ]);
   return res.json({
     settings: {
@@ -312,12 +323,12 @@ export const getMachineDefaults = async (req, res) => {
     },
     disks: {
       boot: {
-        pool: 'rpool',
+        pool: rootPool,
         dataset: 'zones',
         volume_name: 'boot',
         size: '48G',
         sparse: true,
-        clone_strategy: 'clone',
+        clone_strategy: 'copy',
       },
       sparse: true,
     },
@@ -329,6 +340,7 @@ export const getMachineDefaults = async (req, res) => {
       prefix_datasets: zonesConfig.prefix_datasets !== false,
       server_id_start: zonesConfig.server_id_start || 1,
       guest_agent_enabled: isGuestAgentEnabled(),
+      template_pool: templateLandingPool(),
     },
     knob_values: { ...KNOB_VALUES, ...zadmVocab, 'zones.bootrom': bootroms },
     knob_defaults: { ...KNOB_DEFAULTS, ...brandDefaults, ...NIC_PROP_DEFAULTS },
@@ -339,13 +351,13 @@ export const getMachineDefaults = async (req, res) => {
       zones:
         'brand is REQUIRED (no default). Attr knobs omitted at create write NO attr — the zone runs on the brand defaults listed in knob_defaults. guest_agent (boolean, default false) opts the machine into the QEMU guest-agent virtio-console channel — per-machine, under the guest_agent.enabled master gate (the Proxmox model, shared with the Go agent).',
       disks:
-        'Omit disks entirely for diskless zones (PXE/netboot). Boot volume defaults: rpool/zones, name boot, 48G, sparse, thin ZFS clone from the template. Dataset paths gain the NNNN-- server_id prefix when config.prefix_datasets is on.',
+        'Omit disks entirely for diskless zones (PXE/netboot). Boot volume defaults: the LIVE-DISCOVERED root pool (disks.boot.pool here — never assume rpool) + zones, name boot, 48G, sparse. clone_strategy default is copy (full send|recv, works on every pool); clone = thin same-pool opt-in; localize = one-time template replica on the target pool, then thin clones. config.template_pool is where a downloaded template lands (template_sources.local_storage_path). Dataset paths gain the NNNN-- server_id prefix when config.prefix_datasets is on.',
       config:
         'Live agent-config values: zone names gain the NNNN-- prefix when prefix_zone_names is on (settings.server_id then required); guest_agent_enabled is the master gate for the per-machine zones.guest_agent toggle.',
       knob_values:
         "Value vocabularies for enum knobs, keyed like the wire (flat dotted keys). A knob present here is a dropdown; a knob absent is free-form or numeric. Values pass to zonecfg unvalidated — unknown values stay legal (the brand answers). LIVE-sourced: zones.bootrom enumerates /usr/share/bhyve/firmware (BHYVE_VARS excluded); zones.diskif + zones.netif parse the host's own zadm Schema/Bhyve.pm. hostbridge additionally accepts vendor=N,device=N. bootorder/bootnext take comma-separated device tokens — UEFI: shell, path[N], bootdisk, disk[N], cdrom[N], net[N][=pxe|http]; CSM: bootdisk, cdrom; plus the DEPRECATED legacy aliases cd and dc (each character one device: c=cdrom, d=disk) — per bhyve(7), https://man.omnios.org/man7/bhyve.",
       knob_defaults:
-        'The value an UNSET attr effectively runs with, flat dotted keys — parsed LIVE from the brand boot program (/usr/lib/brand/bhyve/boot defaults dict; statics as off-platform fallback). NOT zadm schema defaults, which differ on bootrom/diskif/netif and apply only to zadm-materialized configs. zones.bootrom is the exception — AGENT-applied: an omitted bootrom writes BHYVE_RELEASE (UEFI) explicitly at create; the brand’s own BHYVE_RELEASE_CSM default (legacy BIOS boot) is deliberately not inherited. zones.bootorder absent runs bhyve(7)’s documented default path0,bootdisk,cdrom0. memreserve alone has no fixed default and is absent. The nics.props.* entries come from bhyve(8) and are NOT guessable: promiscphys defaults FALSE, but promiscsap/promiscmulti/promiscrxonly all default TRUE.',
+        'The value an UNSET attr effectively runs with, flat dotted keys — parsed LIVE from the brand boot program (/usr/lib/brand/bhyve/boot defaults dict; statics as off-platform fallback). NOT zadm schema defaults, which differ on bootrom/diskif/netif and apply only to zadm-materialized configs. zones.bootrom is the exception — AGENT-applied: an omitted bootrom maps settings.firmware_type (BIOS → BHYVE_RELEASE_CSM, UEFI/absent → BHYVE_RELEASE); an explicit zones.bootrom always wins, and BIOS with a non-CSM ROM answers a resource_warnings entry (that pairing cannot legacy boot). The brand’s own BHYVE_RELEASE_CSM default is deliberately not inherited. zones.bootorder absent runs bhyve(7)’s documented default path0,bootdisk,cdrom0. memreserve alone has no fixed default and is absent. The nics.props.* entries come from bhyve(8) and are NOT guessable: promiscphys defaults FALSE, but promiscsap/promiscmulti/promiscrxonly all default TRUE.',
       nic_props_by_netif:
         "Which brand-props each network backend actually consumes (bhyve(8)). The accelerated viona backend takes the ring/queue knobs (feature_mask, vqsize, txvqsize, rxvqsize, qpair, speed); the legacy virtio and e1000 backends take the promiscuous-mode knobs. Offer only the props that apply to a NIC's effective netif — bhyve ignores the rest. NOTE: `mtu` and `backend` are legal zonecfg net properties (zadm's schema accepts them and the brand passes them through verbatim), but bhyve(8) does NOT document them as network-backend options — only the four promisc flags are listed. So no default is served for them, and they may be no-ops; label them as undocumented rather than showing an invented default. MAC/IP spoofing is NOT among these: it is the dladm `protection` LINK property (GET/PUT /network/vnics/{vnic}/properties). WARN before enabling promiscphys — it is known to break host→VM traffic on this platform (illumos-omnios#1039, open).",
     },

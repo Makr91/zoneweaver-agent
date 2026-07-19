@@ -5,6 +5,7 @@ import { log } from '../../lib/Logger.js';
 import { validateZoneName } from '../../lib/ZoneValidation.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
 import { buildDatasetPath } from '../TaskManager/ZoneCreationManager/utils/ConfigBuilders.js';
+import { getRootPool } from '../../lib/DiskSpec.js';
 import { ensureProvisioningNetwork } from '../ProvisioningNetworkController.js';
 import {
   resolveZoneName,
@@ -54,12 +55,13 @@ const parseConfiguration = zone => {
  * @param {string} zoneName - Source zone name
  * @returns {{bootDataset: string|null, additional: Array<{index: number, dataset: string, entry: Object}>}}
  */
-const cloneSourceDatasets = (zoneConfig, zoneName) => {
+const cloneSourceDatasets = async (zoneConfig, zoneName) => {
+  const rootPool = await getRootPool();
   const serverId = zoneConfig.settings?.server_id ? String(zoneConfig.settings.server_id) : '';
   const boot = zoneConfig.disks?.boot;
   let bootDataset = null;
   if (boot) {
-    const pool = boot.pool || 'rpool';
+    const pool = boot.pool || rootPool;
     const dataset = boot.dataset || 'zones';
     const volumeName = boot.volume_name || 'boot';
     bootDataset = `${buildDatasetPath(`${pool}/${dataset}`, zoneName, serverId)}/${volumeName}`;
@@ -70,7 +72,7 @@ const cloneSourceDatasets = (zoneConfig, zoneName) => {
     if (entry?.type === 'image') {
       return { index, dataset: entry.path, entry };
     }
-    const pool = entry.pool || 'rpool';
+    const pool = entry.pool || rootPool;
     const dataset = entry.dataset || 'zones';
     const volumeName = entry.volume_name || `disk${index}`;
     return {
@@ -296,7 +298,7 @@ const resolveCloneDiskSources = async (source, snapshot, sourceConfig, zoneName)
     }
     return { snapshotInfo: null };
   }
-  const sources = cloneSourceDatasets(sourceConfig, zoneName);
+  const sources = await cloneSourceDatasets(sourceConfig, zoneName);
   if (!sources.bootDataset) {
     return { refusal: { error: 'Could not determine boot dataset for source zone' } };
   }

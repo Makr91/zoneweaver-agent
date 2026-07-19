@@ -128,7 +128,11 @@ export const getNetworkInterfaces = async (req, res) => {
  * /monitoring/network/usage:
  *   get:
  *     summary: Get network usage accounting data
- *     description: Returns network interface usage data from network accounting
+ *     description: |
+ *       Returns network interface usage data from network accounting. The
+ *       per_interface latest-snapshot form is scoped to links that currently
+ *       exist on the host — destroyed links never resurrect there; historical
+ *       `since=` queries keep their rows for the retention window.
  *     tags: [Host Monitoring]
  *     parameters:
  *       - in: query
@@ -221,7 +225,14 @@ export const getNetworkUsage = async (req, res) => {
           return res.json(createEmptyResponse(startTime, 'latest-per-interface-fast'));
         }
 
-        const results = getLatestPerEntity(recentRecords, 'link');
+        const latest = getLatestPerEntity(recentRecords, 'link');
+        const liveLinks = new Set(
+          (await NetworkInterfaces.findAll({ attributes: ['link'], raw: true })).map(
+            row => row.link
+          )
+        );
+        const results =
+          liveLinks.size > 0 ? latest.filter(row => liveLinks.has(row.link)) : latest;
         const activeInterfaces = results.filter(row => row.rx_mbps > 0 || row.tx_mbps > 0).length;
 
         return res.json(

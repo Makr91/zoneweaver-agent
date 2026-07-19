@@ -318,20 +318,21 @@ export class NetworkConfigController {
   }
 
   /**
-   * Store interfaces in database with batch processing
+   * Store interfaces in database with batch processing. The scan REPLACES the
+   * host's whole row set, so links destroyed since the last scan leave no
+   * ghost rows behind (a non-empty scan is required — a failed dladd sweep
+   * never wipes the table).
    * @param {Array} interfaces - Interface data to store
    */
   async storeInterfacesInDatabase(interfaces) {
-    // Remove existing records for interfaces we're about to update to prevent duplicates
-    if (interfaces.length > 0) {
-      const interfaceLinks = interfaces.map(iface => iface.link);
-      await NetworkInterfaces.destroy({
-        where: {
-          host: this.parser.hostname,
-          link: interfaceLinks,
-        },
-      });
+    if (interfaces.length === 0) {
+      return;
     }
+    await NetworkInterfaces.destroy({
+      where: {
+        host: this.parser.hostname,
+      },
+    });
 
     // Store in database in batches (process batches in parallel for better performance)
     const batchSize = this.hostMonitoringConfig.performance.batch_size;

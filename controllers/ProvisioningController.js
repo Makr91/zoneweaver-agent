@@ -11,7 +11,6 @@ const packages = {
   dtrace: 'dtrace',
   git: 'git',
   mtr: 'mtr',
-  fping: 'fping',
   lsof: 'lsof',
   sysstat: 'sysstat',
   tree: 'tree',
@@ -19,7 +18,6 @@ const packages = {
   'ooce/library/libarchive': 'bsdtar', // libarchive provides bsdtar
   htop: 'htop',
   ncdu: 'ncdu',
-  smartmontools: 'smartctl',
   zadm: 'zadm',
   rsync: 'rsync',
   nano: 'nano',

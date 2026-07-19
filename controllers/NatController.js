@@ -442,7 +442,7 @@ export const getForwardingStatus = async (req, res) => {
  *                 items:
  *                   type: string
  *                 description: Interfaces to enable/disable forwarding on
- *                 example: ["igb0", "provision_interconnect0"]
+ *                 example: ["igb0", "provisioning_0"]
  *     responses:
  *       202:
  *         description: Forwarding configuration task queued

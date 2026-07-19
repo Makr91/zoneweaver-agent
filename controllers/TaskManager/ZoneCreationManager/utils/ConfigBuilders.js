@@ -39,6 +39,7 @@ export const buildDatasetPath = (basePath, zoneName, serverId) => {
 export const buildZoneAttributeMap = metadata => {
   const zones = metadata.zones || {};
   const settings = metadata.settings || {};
+  const brand = zones.brand || metadata.brand;
   return {
     ram: settings.memory || metadata.ram,
     // Create wire spelling: zones.cpu_configuration / zones.complex_cpu_conf
@@ -48,7 +49,11 @@ export const buildZoneAttributeMap = metadata => {
       zones.complex_cpu_conf,
       settings.vcpus || metadata.vcpus
     ),
-    bootrom: zones.bootrom || metadata.bootrom,
+    // The bhyve brand's own unset-attr default is BHYVE_RELEASE_CSM — legacy
+    // BIOS boot, wrong for modern UEFI templates — so an omitted bootrom
+    // writes the UEFI firmware explicitly; CSM is explicit opt-in.
+    bootrom:
+      zones.bootrom || metadata.bootrom || (brand === 'bhyve' ? 'BHYVE_RELEASE' : undefined),
     hostbridge: zones.hostbridge || metadata.hostbridge,
     diskif: zones.diskif || metadata.diskif,
     netif: zones.netif || metadata.netif,

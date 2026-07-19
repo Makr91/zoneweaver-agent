@@ -193,7 +193,10 @@ const readZadmSchemaVocab = async () => {
 const KNOB_DEFAULTS = {
   'zones.acpi': 'on',
   'zones.bootorder': 'path0,bootdisk,cdrom0',
-  'zones.bootrom': 'BHYVE_RELEASE_CSM',
+  // AGENT-APPLIED, not the brand's: an omitted bootrom writes BHYVE_RELEASE
+  // explicitly at create — the brand's own unset default is BHYVE_RELEASE_CSM
+  // (legacy BIOS boot), wrong for modern UEFI templates.
+  'zones.bootrom': 'BHYVE_RELEASE',
   'zones.cloud_init': 'off',
   'zones.diskif': 'virtio-blk',
   'zones.hostbridge': 'i440fx',
@@ -211,11 +214,15 @@ const KNOB_DEFAULTS = {
 
 const BRAND_BOOT_PATH = '/usr/lib/brand/bhyve/boot';
 
-/** Keys in the boot program's defaults dict, mapped to wire knob keys. */
+/**
+ * Keys in the boot program's defaults dict, mapped to wire knob keys.
+ * bootrom is ABSENT deliberately: the agent writes it explicitly at create
+ * (BHYVE_RELEASE), so the brand's CSM default never applies to agent zones
+ * and must not override the feed.
+ */
 const BRAND_DEFAULT_KEYS = {
   'zones.acpi': 'acpi',
   'zones.bootorder': 'bootorder',
-  'zones.bootrom': 'bootrom',
   'zones.diskif': 'diskif',
   'zones.hostbridge': 'hostbridge',
   'zones.netif': 'netif',
@@ -338,7 +345,7 @@ export const getMachineDefaults = async (req, res) => {
       knob_values:
         "Value vocabularies for enum knobs, keyed like the wire (flat dotted keys). A knob present here is a dropdown; a knob absent is free-form or numeric. Values pass to zonecfg unvalidated — unknown values stay legal (the brand answers). LIVE-sourced: zones.bootrom enumerates /usr/share/bhyve/firmware (BHYVE_VARS excluded); zones.diskif + zones.netif parse the host's own zadm Schema/Bhyve.pm. hostbridge additionally accepts vendor=N,device=N. bootorder/bootnext take comma-separated device tokens — UEFI: shell, path[N], bootdisk, disk[N], cdrom[N], net[N][=pxe|http]; CSM: bootdisk, cdrom; plus the DEPRECATED legacy aliases cd and dc (each character one device: c=cdrom, d=disk) — per bhyve(7), https://man.omnios.org/man7/bhyve.",
       knob_defaults:
-        'The value an UNSET attr effectively runs with, flat dotted keys — parsed LIVE from the brand boot program (/usr/lib/brand/bhyve/boot defaults dict; statics as off-platform fallback). NOT zadm schema defaults, which differ on bootrom/diskif/netif and apply only to zadm-materialized configs. zones.bootorder absent runs bhyve(7)’s documented default path0,bootdisk,cdrom0. memreserve alone has no fixed default and is absent. The nics.props.* entries come from bhyve(8) and are NOT guessable: promiscphys defaults FALSE, but promiscsap/promiscmulti/promiscrxonly all default TRUE.',
+        'The value an UNSET attr effectively runs with, flat dotted keys — parsed LIVE from the brand boot program (/usr/lib/brand/bhyve/boot defaults dict; statics as off-platform fallback). NOT zadm schema defaults, which differ on bootrom/diskif/netif and apply only to zadm-materialized configs. zones.bootrom is the exception — AGENT-applied: an omitted bootrom writes BHYVE_RELEASE (UEFI) explicitly at create; the brand’s own BHYVE_RELEASE_CSM default (legacy BIOS boot) is deliberately not inherited. zones.bootorder absent runs bhyve(7)’s documented default path0,bootdisk,cdrom0. memreserve alone has no fixed default and is absent. The nics.props.* entries come from bhyve(8) and are NOT guessable: promiscphys defaults FALSE, but promiscsap/promiscmulti/promiscrxonly all default TRUE.',
       nic_props_by_netif:
         "Which brand-props each network backend actually consumes (bhyve(8)). The accelerated viona backend takes the ring/queue knobs (feature_mask, vqsize, txvqsize, rxvqsize, qpair, speed); the legacy virtio and e1000 backends take the promiscuous-mode knobs. Offer only the props that apply to a NIC's effective netif — bhyve ignores the rest. NOTE: `mtu` and `backend` are legal zonecfg net properties (zadm's schema accepts them and the brand passes them through verbatim), but bhyve(8) does NOT document them as network-backend options — only the four promisc flags are listed. So no default is served for them, and they may be no-ops; label them as undocumented rather than showing an invented default. MAC/IP spoofing is NOT among these: it is the dladm `protection` LINK property (GET/PUT /network/vnics/{vnic}/properties). WARN before enabling promiscphys — it is known to break host→VM traffic on this platform (illumos-omnios#1039, open).",
     },

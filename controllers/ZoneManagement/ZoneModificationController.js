@@ -571,8 +571,8 @@ const queueInfrastructureChanges = async (req, res, zoneName, ctx) => {
  *                 example: "4"
  *               bootrom:
  *                 type: string
- *                 description: Boot ROM firmware
- *                 example: "BHYVE_RELEASE_CSM"
+ *                 description: Boot ROM firmware (agent creates default to BHYVE_RELEASE — UEFI; the _CSM builds are legacy BIOS boot)
+ *                 example: "BHYVE_RELEASE"
  *               hostbridge:
  *                 type: string
  *                 description: Host bridge emulation

@@ -209,7 +209,12 @@ export const updateParentTaskProgress = async parentTaskId => {
 
   const total = subTasks.length;
   const completed = subTasks.filter(t => t.status === 'completed').length;
-  const failed = subTasks.filter(t => t.status === 'failed' || t.status === 'cancelled').length;
+  // completed_with_errors is TERMINAL — a nested anchor (sync/provision
+  // bracket) lands there when its own children mixed; leaving it uncounted
+  // wedges the parent at N-1/N running forever.
+  const failed = subTasks.filter(t =>
+    ['failed', 'cancelled', 'completed_with_errors'].includes(t.status)
+  ).length;
   const done = completed + failed;
 
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;

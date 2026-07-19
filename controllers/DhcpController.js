@@ -211,7 +211,7 @@ export const getDhcpConfig = async (req, res) => {
  *               listen_interface:
  *                 type: string
  *                 description: Interface for DHCP to listen on
- *                 example: "provision_interconnect0"
+ *                 example: "provisioning_0"
  *     responses:
  *       202:
  *         description: DHCP config update task queued

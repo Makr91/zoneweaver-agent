@@ -28,7 +28,16 @@ import { validateDisksWire } from '../../lib/DiskSpec.js';
  * configuration, so any other top-level key would silently vanish at the
  * next tick: unknown top-level keys refuse instead.
  */
-const EDITABLE_SECTIONS = ['settings', 'zones', 'networks', 'disks', 'provisioner', 'metadata'];
+const EDITABLE_SECTIONS = [
+  'settings',
+  'zones',
+  'vbox',
+  'utm',
+  'networks',
+  'disks',
+  'provisioner',
+  'metadata',
+];
 
 /** Agent bookkeeping — never in the YAML view, always survives a PUT. */
 const RESERVED_SECTIONS = [
@@ -39,7 +48,7 @@ const RESERVED_SECTIONS = [
   'snapshots',
 ];
 
-const MAP_SECTIONS = ['settings', 'zones', 'disks', 'provisioner', 'metadata'];
+const MAP_SECTIONS = ['settings', 'zones', 'vbox', 'utm', 'disks', 'provisioner', 'metadata'];
 
 const isMap = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 

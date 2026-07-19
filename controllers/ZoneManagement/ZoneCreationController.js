@@ -81,6 +81,12 @@ const buildMultiHostBody = (host, body, ref, pkg) => {
   if (infra.zones) {
     sub.zones = { ...infra.zones, ...(body.zones || {}) };
   }
+  if (infra.vbox) {
+    sub.vbox = infra.vbox;
+  }
+  if (infra.utm) {
+    sub.utm = infra.utm;
+  }
   if (infra.cloud_init) {
     sub.cloud_init = infra.cloud_init;
   }
@@ -110,6 +116,12 @@ const applySingleHostDocument = (body, host, ref, pkg, settings) => {
   }
   if (infra.zones) {
     body.zones = { ...infra.zones, ...(body.zones || {}) };
+  }
+  if (infra.vbox) {
+    body.vbox = infra.vbox;
+  }
+  if (infra.utm) {
+    body.utm = infra.utm;
   }
   if (infra.cloud_init) {
     body.cloud_init = infra.cloud_init;

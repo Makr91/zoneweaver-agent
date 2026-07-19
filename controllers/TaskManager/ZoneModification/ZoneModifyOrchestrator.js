@@ -20,6 +20,7 @@ import {
 } from './ZoneAttributeModifier.js';
 import { handleNetworkModifications } from './ZoneNetworkModifier.js';
 import { handleStorageModifications } from './ZoneStorageModifier.js';
+import { applyResourceControlChanges } from './ZoneResourceControlModifier.js';
 
 /**
  * Parse modification metadata
@@ -87,6 +88,12 @@ export const executeZoneModifyTask = async task => {
       await updateTaskProgress(task, 40, { status: 'modifying_autoboot' });
       await applyAutobootChange(zoneName, metadata.autoboot, onData);
       changes.push('autoboot');
+      await syncZoneToDatabase(zoneName);
+    }
+
+    const beforeResourceControls = changes.length;
+    await applyResourceControlChanges(zoneName, zoneConfig, metadata, task, changes, onData);
+    if (changes.length > beforeResourceControls) {
       await syncZoneToDatabase(zoneName);
     }
 

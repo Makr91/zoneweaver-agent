@@ -47,6 +47,17 @@ const { DataTypes } = Sequelize;
  *           format: float
  *           description: I/O wait CPU time percentage
  *           example: 4.8
+ *         io_delay_pct:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: >-
+ *             IO delay (cross-agent field, consensus 2026-07-19): share of the sample
+ *             interval spent with I/O WAITING — on this platform the MAX ZFS pool %w
+ *             over the interval (CPU iowait is hardwired 0 on illumos; the pool queue
+ *             is where delay truthfully surfaces), device %w on pool-less hosts. Null
+ *             when nothing could be measured.
+ *           example: 4.0
  *         load_avg_1min:
  *           type: number
  *           format: float
@@ -153,6 +164,11 @@ const CPUStats = db.define(
       type: DataTypes.DECIMAL(5, 2),
       allowNull: true,
       comment: 'I/O wait CPU time percentage',
+    },
+    io_delay_pct: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'IO delay: max ZFS pool %w over the sample interval (device %w fallback)',
     },
     load_avg_1min: {
       type: DataTypes.DECIMAL(8, 2),

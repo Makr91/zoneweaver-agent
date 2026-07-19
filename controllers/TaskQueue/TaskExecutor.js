@@ -47,9 +47,19 @@ const executeTask = async task => {
 
     // Zone operations
     if (
-      ['start', 'stop', 'restart', 'reset', 'suspend', 'resume', 'delete', 'discover'].includes(
-        operation
-      )
+      [
+        'start',
+        'stop',
+        'restart',
+        'reset',
+        'suspend',
+        'resume',
+        'delete',
+        'discover',
+        'zone_attach',
+        'zone_detach',
+        'zone_move',
+      ].includes(operation)
     ) {
       return await executeZoneTask(operation, zone_name, task.metadata);
     }

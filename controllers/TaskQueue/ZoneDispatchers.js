@@ -9,6 +9,11 @@ import {
   executeDiscoverTask,
 } from '../TaskManager/ZoneManager.js';
 import {
+  executeZoneAttachTask,
+  executeZoneDetachTask,
+  executeZoneMoveTask,
+} from '../TaskManager/Zone/ZoneAdminTasks.js';
+import {
   enableService,
   disableService,
   restartService,
@@ -110,6 +115,12 @@ export const executeZoneTask = (operation, zoneName, metadata) => {
       return executeResumeTask(zoneName);
     case 'delete':
       return executeDeleteTask(zoneName, metadata);
+    case 'zone_attach':
+      return executeZoneAttachTask(zoneName, metadata);
+    case 'zone_detach':
+      return executeZoneDetachTask(zoneName);
+    case 'zone_move':
+      return executeZoneMoveTask(zoneName, metadata);
     case 'discover':
       return executeDiscoverTask();
     default:

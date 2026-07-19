@@ -27,6 +27,14 @@ export {
 export { deleteZone } from './ZoneDeletionController.js';
 export { getZoneHostsYaml, updateZoneHostsYaml } from './ZoneHostsYamlController.js';
 export {
+  readyZone,
+  verifyZone,
+  markZoneIncomplete,
+  attachZone,
+  detachZone,
+  moveZone,
+} from './ZoneAdminController.js';
+export {
   getZoneNotes,
   updateZoneNotes,
   getZoneTags,

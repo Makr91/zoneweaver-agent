@@ -288,6 +288,57 @@ class SystemMetricsCollector {
   }
 
   /**
+   * The frozen io_delay_pct sample (cross-agent consensus 2026-07-19): the
+   * MAX ZFS pool %w over a 2s iostat interval — the share of the interval
+   * with I/O WAITING in the bottleneck pool's queue. CPU iowait is hardwired
+   * 0 on illumos; the pool queue is where delay truthfully surfaces
+   * (host-verified: a pool read %w 4 while its member disks read 0). Device
+   * %w is the pool-less fallback; null when nothing measures.
+   * @param {number} timeout - Base command timeout (ms)
+   * @returns {Promise<number|null>} io_delay_pct or null
+   */
+  async collectIoDelay(timeout) {
+    try {
+      const [poolsResult, iostatResult] = await Promise.all([
+        execProm('zpool list -H -o name', { timeout }),
+        execProm('iostat -xn 2 2', { timeout: timeout + 10000 }),
+      ]);
+      const poolNames = new Set(
+        poolsResult.stdout
+          .split('\n')
+          .map(line => line.trim())
+          .filter(Boolean)
+      );
+      const blocks = iostatResult.stdout.split('extended device statistics');
+      const lastBlock = blocks[blocks.length - 1] || '';
+      let poolMax = null;
+      let deviceMax = null;
+      for (const line of lastBlock.split('\n')) {
+        const fields = line.trim().split(/\s+/u);
+        if (fields.length < 11 || fields[0] === 'r/s') {
+          continue;
+        }
+        const waitPct = Number(fields[8]);
+        if (!Number.isFinite(waitPct)) {
+          continue;
+        }
+        if (poolNames.has(fields[10])) {
+          poolMax = Math.max(poolMax ?? 0, waitPct);
+        } else {
+          deviceMax = Math.max(deviceMax ?? 0, waitPct);
+        }
+      }
+      return poolMax ?? deviceMax;
+    } catch (error) {
+      log.monitoring.warn('io_delay collection failed', {
+        error: error.message,
+        hostname: this.hostname,
+      });
+      return null;
+    }
+  }
+
+  /**
    * Collect CPU statistics with per-core data
    * @returns {Promise<boolean>} Success status
    */
@@ -301,8 +352,12 @@ class SystemMetricsCollector {
     try {
       const timeout = this.hostMonitoringConfig.performance.command_timeout * 1000;
 
-      // Get vmstat data (2 samples, 1 second apart for accurate CPU usage)
-      const { stdout: vmstatOutput } = await execProm('vmstat 1 2', { timeout });
+      // vmstat (2 samples, 1s apart) and the io_delay iostat interval run
+      // CONCURRENTLY — the sample costs no extra wall clock.
+      const [{ stdout: vmstatOutput }, ioDelayPct] = await Promise.all([
+        execProm('vmstat 1 2', { timeout }),
+        this.collectIoDelay(timeout),
+      ]);
       const vmstatStats = this.parseVmstatOutput(vmstatOutput);
 
       // Get per-core CPU data using os.cpus()
@@ -374,6 +429,7 @@ class SystemMetricsCollector {
         system_pct: vmstatStats.cpu.system_pct,
         idle_pct: vmstatStats.cpu.idle_pct,
         iowait_pct: null, // OmniOS vmstat doesn't directly show iowait
+        io_delay_pct: ioDelayPct,
         load_avg_1min: loadStats.load_avg_1min,
         load_avg_5min: loadStats.load_avg_5min,
         load_avg_15min: loadStats.load_avg_15min,

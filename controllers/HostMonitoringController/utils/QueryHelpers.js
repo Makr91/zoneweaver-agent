@@ -266,6 +266,7 @@ export const CPU_STATS_ATTRIBUTES = [
   'system_pct',
   'idle_pct',
   'iowait_pct',
+  'io_delay_pct',
   'context_switches',
   'interrupts',
   'system_calls',

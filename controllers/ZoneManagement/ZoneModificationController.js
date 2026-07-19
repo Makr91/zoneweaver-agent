@@ -905,6 +905,101 @@ const queueInfrastructureChanges = async (req, res, zoneName, ctx) => {
  *                 items:
  *                   type: string
  *                   example: "/data/wipelogs"
+ *               capped_cpu:
+ *                 type: object
+ *                 nullable: true
+ *                 description: CPU cap (zonecfg capped-cpu) — object REPLACES the resource, null REMOVES it
+ *                 properties:
+ *                   ncpus:
+ *                     type: number
+ *                     example: 2.5
+ *               capped_memory:
+ *                 type: object
+ *                 nullable: true
+ *                 description: Memory caps (zonecfg capped-memory) — provided keys set; object replaces, null removes
+ *                 properties:
+ *                   physical: { type: string, example: "4g" }
+ *                   swap: { type: string, example: "8g" }
+ *                   locked: { type: string, example: "1g" }
+ *               dedicated_cpu:
+ *                 type: object
+ *                 nullable: true
+ *                 description: Dedicated CPU set (zonecfg dedicated-cpu) — object replaces, null removes
+ *                 properties:
+ *                   ncpus: { type: string, example: "2-4" }
+ *                   importance: { type: integer, example: 10 }
+ *               rctls:
+ *                 type: array
+ *                 description: Resource controls to set (replace-by-name) — priv defaults privileged, action defaults deny
+ *                 items:
+ *                   type: object
+ *                   required: [name, limit]
+ *                   properties:
+ *                     name: { type: string, example: "zone.max-lwps" }
+ *                     limit: { type: integer, example: 5000 }
+ *                     priv: { type: string, example: "privileged" }
+ *                     action: { type: string, example: "deny" }
+ *               remove_rctls:
+ *                 type: array
+ *                 description: Resource-control names to remove
+ *                 items:
+ *                   type: string
+ *                   example: "zone.max-lwps"
+ *               security_flags:
+ *                 type: object
+ *                 nullable: true
+ *                 description: Process security flags (zonecfg security-flags) — object replaces, null removes
+ *                 properties:
+ *                   default: { type: string, example: "aslr" }
+ *                   lower: { type: string, example: "none" }
+ *                   upper: { type: string, example: "all" }
+ *               admins:
+ *                 type: array
+ *                 description: Delegated administration entries (zonecfg admin, replace-by-user)
+ *                 items:
+ *                   type: object
+ *                   required: [user, auths]
+ *                   properties:
+ *                     user: { type: string, example: "jdoe" }
+ *                     auths: { type: string, example: "login,manage" }
+ *               remove_admins:
+ *                 type: array
+ *                 description: Delegated-admin users to remove
+ *                 items:
+ *                   type: string
+ *                   example: "jdoe"
+ *               fs_allowed:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Comma-separated filesystem types the zone may mount (zonecfg fs-allowed); null/'' clears
+ *                 example: "ufs,pcfs"
+ *               virtfs:
+ *                 type: array
+ *                 description: |
+ *                   VirtFS (Virtio 9p) shares — the array REPLACES the whole set
+ *                   (numbered virtfsN attrs, list order; [] clears). The shared
+ *                   path must also be mapped into the zone (delegated dataset or
+ *                   lofs mount — bhyve(7) EXAMPLES).
+ *                 items:
+ *                   type: object
+ *                   required: [name, path]
+ *                   properties:
+ *                     name: { type: string, example: "datavol" }
+ *                     path: { type: string, example: "/datavol" }
+ *                     ro: { type: boolean, default: false }
+ *               ppt:
+ *                 type: array
+ *                 description: |
+ *                   PCI pass-through devices — the array REPLACES the whole set
+ *                   ([] clears): each entry writes the pptN attr plus its
+ *                   /dev/pptN device block. Devices must already be bound to the
+ *                   ppt driver (pptadm list -a).
+ *                 items:
+ *                   type: object
+ *                   required: [device]
+ *                   properties:
+ *                     device: { type: string, example: "ppt0" }
+ *                     state: { type: string, default: "on", example: "slot3", description: "on | off | slot0-7" }
  *               notes:
  *                 type: string
  *                 nullable: true
@@ -1059,6 +1154,17 @@ export const modifyZone = async (req, res) => {
       'remove_cdroms',
       'add_filesystems',
       'remove_filesystems',
+      'capped_cpu',
+      'capped_memory',
+      'dedicated_cpu',
+      'rctls',
+      'remove_rctls',
+      'security_flags',
+      'admins',
+      'remove_admins',
+      'fs_allowed',
+      'virtfs',
+      'ppt',
       'cloud_init',
       'provisioner',
       'notes',

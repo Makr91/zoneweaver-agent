@@ -16,6 +16,12 @@ import {
   suspendZone,
   resumeZone,
   injectNmi,
+  readyZone,
+  verifyZone,
+  markZoneIncomplete,
+  attachZone,
+  detachZone,
+  moveZone,
   deleteZone,
   createZone,
   modifyZone,
@@ -181,6 +187,19 @@ const registerLifecycleRoutes = router => {
 };
 
 /**
+ * Register the zoneadm administration verbs (the surveyed family, 2026-07-19).
+ * @param {import('express').Router} router - Application router
+ */
+const registerZoneAdminRoutes = router => {
+  router.post('/machines/:machineName/ready', verifyApiKey, readyZone); // zoneadm ready (synchronous)
+  router.post('/machines/:machineName/verify', verifyApiKey, verifyZone); // zoneadm verify verdict (synchronous)
+  router.post('/machines/:machineName/mark-incomplete', verifyApiKey, markZoneIncomplete); // zoneadm mark incomplete (synchronous)
+  router.post('/machines/:machineName/attach', verifyApiKey, attachZone); // zoneadm attach task (migration target half)
+  router.post('/machines/:machineName/detach', verifyApiKey, detachZone); // zoneadm detach task (migration source half)
+  router.post('/machines/:machineName/move', verifyApiKey, moveZone); // zoneadm move task (halted zonepath relocation)
+};
+
+/**
  * Register the task queue routes.
  * @param {import('express').Router} router - Application router
  */
@@ -231,6 +250,7 @@ const registerConsoleRoutes = router => {
  */
 export const registerMachineRoutes = router => {
   registerLifecycleRoutes(router);
+  registerZoneAdminRoutes(router);
   registerTaskRoutes(router);
   registerConsoleRoutes(router);
 };

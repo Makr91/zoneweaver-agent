@@ -202,13 +202,15 @@ export const PROVISIONING_SCHEMA = {
           },
           etherstub_name: {
             type: 'string',
-            description: 'Etherstub name for the provisioning network',
-            default: 'estub_provision',
+            description:
+              'Etherstub name for the provisioning network — dladm(8) link names must start with a letter and end with a number',
+            default: 'zwestub_0',
           },
           host_vnic_name: {
             type: 'string',
-            description: 'Host-side VNIC name on the provisioning network',
-            default: 'provision_interconnect0',
+            description:
+              'Host-side VNIC name on the provisioning network — dladm(8) link names must start with a letter and end with a number',
+            default: 'provisioning_0',
           },
           subnet: {
             type: 'string',

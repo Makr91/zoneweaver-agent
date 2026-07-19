@@ -211,15 +211,23 @@ export const executeZoneCreateInstallTask = async task => {
 
     await updateTaskProgress(task, 90, { status: 'setting_permissions' });
 
-    // Fix zonepath permissions
+    // Open the ZONE DIRECTORY (the zonepath's PARENT) for service-user
+    // traversal to the provisioning sub-dataset — NEVER the zonepath itself:
+    // zoneadm requires it root-owned 0700 (zonecfg(8)) and re-tightens it
+    // every boot.
     const pool = metadata.disks?.boot?.pool || 'rpool';
     const dataset = metadata.disks?.boot?.dataset || 'zones';
     const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
-    const zonepath = metadata.zonepath || `/${datasetPath}/path`;
+    const zoneDir = metadata.zonepath
+      ? metadata.zonepath.replace(/\/path$/u, '')
+      : `/${datasetPath}`;
 
-    const chmodResult = await executeCommand(`pfexec chmod 755 ${zonepath}`);
+    const chmodResult = await executeCommand(`pfexec chmod 755 ${zoneDir}`);
     if (!chmodResult.success) {
-      log.task.warn('Failed to set zonepath permissions', { zonepath, error: chmodResult.error });
+      log.task.warn('Failed to open zone directory for service user', {
+        zone_dir: zoneDir,
+        error: chmodResult.error,
+      });
     }
 
     await updateTaskProgress(task, 100, { status: 'completed' });

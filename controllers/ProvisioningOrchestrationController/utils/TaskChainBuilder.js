@@ -40,7 +40,8 @@ import { effectiveRemoveOnCompletion } from '../../../lib/ProvisioningNetwork.js
 
 /**
  * Step 0: land the provisioning content — uploaded artifact, or the
- * referenced registry package (create-from-package zones).
+ * referenced registry package (create-from-package zones). The chain's
+ * first task gates on ctx.firstDependsOn (the ensure hook's setup chain).
  * @param {Object} ctx - Chain context
  * @param {Object} zoneConfig - Parsed zone configuration
  * @param {string} provisioningDatasetPath - Provisioning dataset mountpoint
@@ -55,7 +56,7 @@ const queueContentStep = async (ctx, zoneConfig, provisioningDatasetPath) => {
         artifact_id: ctx.artifactId,
         dataset_path: provisioningDatasetPath,
       },
-      depends_on: null,
+      depends_on: ctx.firstDependsOn ?? null,
       parent_task_id: ctx.parentTaskId,
       created_by: ctx.createdBy,
     });
@@ -71,7 +72,7 @@ const queueContentStep = async (ctx, zoneConfig, provisioningDatasetPath) => {
         provisioner_version: zoneConfig.provisioner_ref.version,
         dataset_path: provisioningDatasetPath,
       },
-      depends_on: null,
+      depends_on: ctx.firstDependsOn ?? null,
       parent_task_id: ctx.parentTaskId,
       created_by: ctx.createdBy,
     });
@@ -548,7 +549,10 @@ export const buildProvisioningTaskChain = async params => {
 
   applyWalkSettings(ctx, zoneConfig);
 
-  let previousTaskId = await queueContentStep(ctx, zoneConfig, provisioningDatasetPath);
+  let previousTaskId =
+    (await queueContentStep(ctx, zoneConfig, provisioningDatasetPath)) ??
+    ctx.firstDependsOn ??
+    null;
   previousTaskId = await queueBootAndSetupSteps(ctx, previousTaskId);
 
   // Wait for the guest (ssh, or win_ping over winrm)

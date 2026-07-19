@@ -19,6 +19,7 @@ import {
   buildShowIfRoleFlags,
   versionConfiguration,
 } from '../../lib/HostsTemplateRenderer.js';
+import { ensureProvisioningNetwork } from '../ProvisioningNetworkController.js';
 import { getSystemZoneStatus } from './ZoneQueryController.js';
 import {
   resolveBoxToTemplate,
@@ -263,6 +264,67 @@ export const findExistingZoneConflict = async finalZoneName => {
 };
 
 /**
+ * Queue the single-host create orchestration — the parent anchor + sub-task
+ * chain — and shape the wire response. The orchestration parent is a pure
+ * anchor: born running, never dispatched (the queue picks only pending
+ * rows); the child rollup drives its state (the Go queue's model).
+ * @param {string} finalZoneName - Resolved zone name
+ * @param {Object} body - Post-render create body
+ * @param {Object|null} networkSetup - The ensure hook's queued chain (null when ready)
+ * @param {boolean} startAfterCreate - Whether to chain a start task
+ * @param {string} createdBy - Task creator
+ * @param {Array} allWarnings - Resource + disk warnings
+ * @returns {Promise<Object>} The create response body
+ */
+const queueCreateOrchestration = async (
+  finalZoneName,
+  body,
+  networkSetup,
+  startAfterCreate,
+  createdBy,
+  allWarnings
+) => {
+  const parentTask = await Tasks.create({
+    zone_name: finalZoneName,
+    operation: 'zone_create_orchestration',
+    priority: TaskPriority.MEDIUM,
+    created_by: createdBy,
+    metadata: JSON.stringify(body),
+    status: 'running',
+    started_at: new Date(),
+  });
+
+  const { subTasks } = await createZoneCreationSubTasks(
+    finalZoneName,
+    body,
+    parentTask.id,
+    networkSetup?.lastTaskId ?? null,
+    startAfterCreate,
+    createdBy
+  );
+  if (networkSetup) {
+    subTasks.network_setup = networkSetup.parentTaskId;
+  }
+
+  // Wire status describes the QUEUED WORK (the children) — Go answers the
+  // same way; the parent row itself is a running anchor from birth.
+  const createResponse = {
+    success: true,
+    parent_task_id: parentTask.id,
+    machine_name: finalZoneName,
+    operation: 'zone_create_orchestration',
+    status: 'pending',
+    message: 'Zone creation queued',
+    requires_download: false,
+    sub_tasks: subTasks,
+  };
+  if (allWarnings.length > 0) {
+    createResponse.resource_warnings = allWarnings;
+  }
+  return createResponse;
+};
+
+/**
  * @fileoverview Zone creation controller
  */
 
@@ -289,11 +351,11 @@ export const findExistingZoneConflict = async finalZoneName => {
  *           default: false
  *         description: Force deletion even if zone is running
  *       - in: query
- *         name: cleanup_datasets
+ *         name: cleanup_disks
  *         schema:
  *           type: boolean
  *           default: false
- *         description: Also destroy ZFS datasets (boot volume, zone root dataset) after zone deletion. External datasets not in the zone hierarchy are skipped for safety.
+ *         description: Also destroy the machine's ZFS datasets (boot volume, zone root dataset) after zone deletion — the converged cross-agent key. Only agent-stamped datasets die; external/user-attached datasets are always preserved.
  *     responses:
  *       200:
  *         description: Delete tasks queued successfully
@@ -961,6 +1023,10 @@ export const findExistingZoneConflict = async finalZoneName => {
  *                       type: string
  *                       format: uuid
  *                       description: Create-time package staging (only when the create names a provisioner) — lands the working copy the moment the machine exists
+ *                     network_setup:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Provisioning-network setup parent task (only when a packaged create found the network missing — the ensure hook queues the idempotent setup chain and the zone's first task gates on it)
  *                     start:
  *                       type: string
  *                       format: uuid
@@ -1126,6 +1192,11 @@ const createMultiHostMachines = async (req, res, hostBodies) => {
       return res.status(phase1.problem.status).json(phase1.problem.payload);
     }
 
+    // The packaged-provisioning ensure hook — multi-host bodies exist only
+    // via the package render, so every one is packaged: queue the setup
+    // chain once and the FIRST machine's chain gates on its last task.
+    const networkSetup = await ensureProvisioningNetwork(req.entity.name);
+
     // Phase 2 — creation chains in DECLARATION ORDER: machine k+1's first
     // task gates on machine k's last.
     const machines = [];
@@ -1160,7 +1231,7 @@ const createMultiHostMachines = async (req, res, hostBodies) => {
           }
           return subTasks.start || subTasks.stage || subTasks.finalize;
         }),
-      Promise.resolve(null)
+      Promise.resolve(networkSetup?.lastTaskId ?? null)
     );
 
     const response = {
@@ -1170,6 +1241,9 @@ const createMultiHostMachines = async (req, res, hostBodies) => {
       message: `Multi-host creation queued — ${machines.length} machines in document order`,
       machines,
     };
+    if (networkSetup) {
+      response.network_setup = networkSetup.parentTaskId;
+    }
     if (Object.keys(warnings).length > 0) {
       response.resource_warnings = warnings;
     }
@@ -1252,6 +1326,14 @@ export const createZone = async (req, res) => {
     }
     const allWarnings = [...resourceValidation.warnings, ...diskValidation.warnings];
 
+    // The packaged-provisioning ensure hook: a create that names a
+    // provisioner makes sure the provisioning network exists FIRST — the
+    // zone's chain gates on the setup chain's last task when anything was
+    // missing (fully-ready = null, zero extra tasks).
+    const networkSetup = req.body.provisioner_ref
+      ? await ensureProvisioningNetwork(req.entity.name)
+      : null;
+
     // Handle missing template with auto-download (typed gate: only a
     // type: template boot entry ever resolves a box, so a 404 here IS the
     // download case)
@@ -1261,8 +1343,12 @@ export const createZone = async (req, res) => {
         req.body,
         settings,
         start_after_create,
-        req.entity.name
+        req.entity.name,
+        networkSetup?.lastTaskId ?? null
       );
+      if (networkSetup) {
+        response.sub_tasks.network_setup = networkSetup.parentTaskId;
+      }
       if (allWarnings.length > 0) {
         response.resource_warnings = allWarnings;
       }
@@ -1275,44 +1361,14 @@ export const createZone = async (req, res) => {
     }
 
     // Template available - create orchestration with sub-tasks (no download).
-    // The orchestration parent is a pure anchor: born running, never
-    // dispatched (the queue picks only pending rows); the child rollup
-    // drives its state (the Go queue's model).
-    const parentTask = await Tasks.create({
-      zone_name: finalZoneName,
-      operation: 'zone_create_orchestration',
-      priority: TaskPriority.MEDIUM,
-      created_by: req.entity.name,
-      metadata: JSON.stringify(req.body),
-      status: 'running',
-      started_at: new Date(),
-    });
-
-    // Create zone creation sub-tasks (no download dependency)
-    const { subTasks } = await createZoneCreationSubTasks(
+    const createResponse = await queueCreateOrchestration(
       finalZoneName,
       req.body,
-      parentTask.id,
-      null,
+      networkSetup,
       start_after_create,
-      req.entity.name
+      req.entity.name,
+      allWarnings
     );
-
-    // Wire status describes the QUEUED WORK (the children) — Go answers the
-    // same way; the parent row itself is a running anchor from birth.
-    const createResponse = {
-      success: true,
-      parent_task_id: parentTask.id,
-      machine_name: finalZoneName,
-      operation: 'zone_create_orchestration',
-      status: 'pending',
-      message: 'Zone creation queued',
-      requires_download: false,
-      sub_tasks: subTasks,
-    };
-    if (allWarnings.length > 0) {
-      createResponse.resource_warnings = allWarnings;
-    }
     return res.json(createResponse);
   } catch (error) {
     log.database.error('Database error creating zone task', {

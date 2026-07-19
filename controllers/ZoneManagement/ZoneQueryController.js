@@ -113,6 +113,32 @@ const buildNicKnobCurrent = configuration => {
 };
 
 /**
+ * Parse the zone's vcpus attr into structured CPU topology (the
+ * structured-JSON ruling — the UI never regex-parses raw attr strings).
+ * bhyve(7) grammar: [cpus=]numcpus[,sockets=s][,cores=c][,threads=t];
+ * unspecified topology parameters run as 1. A plain count (no topology
+ * tokens) answers null.
+ * @param {string|number|undefined} vcpus - The zadm view's vcpus value
+ * @returns {{sockets: number, cores: number, threads: number}|null}
+ */
+const parseCpuTopology = vcpus => {
+  if (typeof vcpus !== 'string' || !vcpus.includes('=')) {
+    return null;
+  }
+  const read = key => {
+    const match = new RegExp(`(?:^|,)${key}=(\\d+)`, 'u').exec(vcpus);
+    return match ? Number(match[1]) : null;
+  };
+  const sockets = read('sockets');
+  const cores = read('cores');
+  const threads = read('threads');
+  if (sockets === null && cores === null && threads === null) {
+    return null;
+  }
+  return { sockets: sockets ?? 1, cores: cores ?? 1, threads: threads ?? 1 };
+};
+
+/**
  * Get current zone status from system using CommandManager
  * @param {string} zoneName - Name of the zone
  * @returns {Promise<string>} Zone status
@@ -279,6 +305,21 @@ export const listZones = async (req, res) => {
  *                       type: string
  *                       description: noVNC web-console bind address (custom zonecfg attr); key absent when unset — 0.0.0.0 applies
  *                       example: "127.0.0.1"
+ *                     cpu_topology:
+ *                       type: object
+ *                       nullable: true
+ *                       description: |
+ *                         Structured CPU topology parsed from the zone's vcpus attr
+ *                         (bhyve(7) grammar; unspecified parameters run as 1) — null
+ *                         when vcpus is a plain count. The UI renders this, never the
+ *                         raw sockets=,cores=,threads= string.
+ *                       properties:
+ *                         sockets:
+ *                           type: integer
+ *                         cores:
+ *                           type: integer
+ *                         threads:
+ *                           type: integer
  *                     nics:
  *                       type: array
  *                       description: |
@@ -459,6 +500,7 @@ export const getZoneDetails = async (req, res) => {
       detail.knob_current.consolehost = consolehostAttr.value;
     }
     detail.knob_current.nics = buildNicKnobCurrent(configuration);
+    detail.knob_current.cpu_topology = parseCpuTopology(configuration?.vcpus);
     return res.json(detail);
   } catch (error) {
     log.database.error('Database error getting zone details', {

@@ -64,6 +64,47 @@ const componentExists = async (type, name) => {
 };
 
 /**
+ * Check every provisioning-network component's presence — THE one readiness
+ * read (the status endpoint and the packaged-create ensure hook share it).
+ * @param {Object} netConfig - Effective provisioning network config
+ * @returns {Promise<Object>} Per-component flags + overall ready
+ */
+const checkProvisioningNetworkReady = async netConfig => {
+  const etherstubExists = await componentExists('etherstub', netConfig.etherstub_name);
+  const vnicExists = await componentExists('vnic', netConfig.host_vnic_name);
+  const ipExists = await componentExists('ip', `${netConfig.host_vnic_name}/v4static`);
+
+  const natResult = await executeCommand('cat /etc/ipf/ipnat.conf 2>/dev/null');
+  const [subnetBase] = netConfig.subnet.split('/');
+  const natConfigured = natResult.success && natResult.output.includes(subnetBase);
+
+  const fwdResult = await executeCommand('pfexec routeadm -p 2>/dev/null');
+  const forwardingEnabled =
+    fwdResult.success &&
+    fwdResult.output.includes('ipv4-forwarding') &&
+    fwdResult.output.includes('current=enabled');
+
+  const dhcpResult = await executeCommand('svcs -H -o state network/service/dhcp:ipv4 2>/dev/null');
+  const dhcpRunning = dhcpResult.success && dhcpResult.output.trim() === 'online';
+
+  return {
+    etherstubExists,
+    vnicExists,
+    ipExists,
+    natConfigured,
+    forwardingEnabled,
+    dhcpRunning,
+    ready:
+      etherstubExists &&
+      vnicExists &&
+      ipExists &&
+      natConfigured &&
+      forwardingEnabled &&
+      dhcpRunning,
+  };
+};
+
+/**
  * Detect the active external interface for NAT bridge
  * @returns {Promise<string|null>}
  */
@@ -251,47 +292,18 @@ export const getProvisioningNetworkStatus = async (req, res) => {
       });
     }
 
-    // Check each component
-    const etherstubExists = await componentExists('etherstub', netConfig.etherstub_name);
-    const vnicExists = await componentExists('vnic', netConfig.host_vnic_name);
-    const ipExists = await componentExists('ip', `${netConfig.host_vnic_name}/v4static`);
-
-    // Check NAT rule
-    const natResult = await executeCommand('cat /etc/ipf/ipnat.conf 2>/dev/null');
-    const [subnetBase] = netConfig.subnet.split('/');
-    const natConfigured = natResult.success && natResult.output.includes(subnetBase);
-
-    // Check IP forwarding
-    const fwdResult = await executeCommand('pfexec routeadm -p 2>/dev/null');
-    const forwardingEnabled =
-      fwdResult.success &&
-      fwdResult.output.includes('ipv4-forwarding') &&
-      fwdResult.output.includes('current=enabled');
-
-    // Check DHCP
-    const dhcpResult = await executeCommand(
-      'svcs -H -o state network/service/dhcp:ipv4 2>/dev/null'
-    );
-    const dhcpRunning = dhcpResult.success && dhcpResult.output.trim() === 'online';
-
-    const allReady =
-      etherstubExists &&
-      vnicExists &&
-      ipExists &&
-      natConfigured &&
-      forwardingEnabled &&
-      dhcpRunning;
+    const readiness = await checkProvisioningNetworkReady(netConfig);
 
     return res.json({
       enabled: true,
-      ready: allReady,
+      ready: readiness.ready,
       components: {
-        etherstub: { name: netConfig.etherstub_name, exists: etherstubExists },
-        vnic: { name: netConfig.host_vnic_name, exists: vnicExists },
-        ip_address: { address: `${netConfig.host_ip}/24`, configured: ipExists },
-        nat: { configured: natConfigured },
-        ip_forwarding: { enabled: forwardingEnabled },
-        dhcp: { running: dhcpRunning },
+        etherstub: { name: netConfig.etherstub_name, exists: readiness.etherstubExists },
+        vnic: { name: netConfig.host_vnic_name, exists: readiness.vnicExists },
+        ip_address: { address: `${netConfig.host_ip}/24`, configured: readiness.ipExists },
+        nat: { configured: readiness.natConfigured },
+        ip_forwarding: { enabled: readiness.forwardingEnabled },
+        dhcp: { running: readiness.dhcpRunning },
       },
       config: netConfig,
     });
@@ -340,111 +352,135 @@ export const getProvisioningNetworkStatus = async (req, res) => {
  *       500:
  *         description: Provisioning network setup failed
  */
+const queueProvisioningNetworkSetup = async createdBy => {
+  const netConfig = getProvNetConfig();
+  const taskIds = [];
+  let lastTaskId = null;
+
+  const parentTask = await Tasks.create({
+    zone_name: 'system',
+    operation: 'provisioning_network_setup',
+    priority: TaskPriority.NORMAL,
+    created_by: createdBy,
+    status: 'running',
+    metadata: JSON.stringify(netConfig),
+  });
+
+  const queueTask = async (operation, metadata) => {
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation,
+      priority: TaskPriority.HIGH,
+      created_by: createdBy,
+      status: 'pending',
+      parent_task_id: parentTask.id,
+      depends_on: lastTaskId,
+      metadata: await new Promise(resolve => {
+        yj.stringifyAsync(metadata, (err, result) => {
+          void err;
+          resolve(result);
+        });
+      }),
+    });
+    lastTaskId = task.id;
+    taskIds.push(task.id);
+    return task;
+  };
+
+  if (!(await componentExists('etherstub', netConfig.etherstub_name))) {
+    await queueTask('create_etherstub', { name: netConfig.etherstub_name });
+  }
+
+  if (!(await componentExists('vnic', netConfig.host_vnic_name))) {
+    await queueTask('create_vnic', {
+      name: netConfig.host_vnic_name,
+      link: netConfig.etherstub_name,
+    });
+  }
+
+  const addrobj = `${netConfig.host_vnic_name}/v4static`;
+  if (!(await componentExists('ip', addrobj))) {
+    const prefixLen = netConfig.subnet.split('/')[1] || '24';
+    await queueTask('create_ip_address', {
+      interface: netConfig.host_vnic_name,
+      type: 'static',
+      addrobj,
+      address: `${netConfig.host_ip}/${prefixLen}`,
+    });
+  }
+
+  const bridge = await detectActiveInterface();
+  if (bridge) {
+    await queueTask('create_nat_rule', {
+      bridge,
+      subnet: netConfig.subnet,
+      target: '0/32',
+      protocol: 'tcp/udp',
+      type: 'portmap',
+      created_by: createdBy,
+    });
+
+    await queueTask('configure_forwarding', {
+      enabled: true,
+      interfaces: [bridge, netConfig.host_vnic_name],
+    });
+  } else {
+    log.api.warn('Could not detect active interface for NAT, skipping NAT/Forwarding tasks');
+  }
+
+  const [subnetBase] = netConfig.subnet.split('/');
+  await queueTask('dhcp_update_config', {
+    subnet: subnetBase,
+    netmask: netConfig.netmask,
+    router: netConfig.host_ip,
+    range_start: netConfig.dhcp_range_start,
+    range_end: netConfig.dhcp_range_end,
+    listen_interface: netConfig.host_vnic_name,
+  });
+
+  await queueTask('dhcp_service_control', { action: 'restart' });
+
+  return { parentTaskId: parentTask.id, taskIds, lastTaskId, config: netConfig };
+};
+
+/**
+ * The packaged-provisioning ensure hook (Mark's ruling: a VM spun via a
+ * provisioner makes sure the provisioning network was set up in the first
+ * place). Enabled + fully ready = null, zero tasks; anything missing queues
+ * the idempotent setup chain and the caller gates its first task on
+ * lastTaskId.
+ * @param {string} createdBy - Task creator
+ * @returns {Promise<{parentTaskId: string, taskIds: string[], lastTaskId: string}|null>}
+ */
+export const ensureProvisioningNetwork = async createdBy => {
+  const netConfig = getProvNetConfig();
+  if (!netConfig.enabled) {
+    return null;
+  }
+  const readiness = await checkProvisioningNetworkReady(netConfig);
+  if (readiness.ready) {
+    return null;
+  }
+  log.api.info('Provisioning network not ready — queueing setup chain', {
+    etherstub: readiness.etherstubExists,
+    vnic: readiness.vnicExists,
+    ip: readiness.ipExists,
+    nat: readiness.natConfigured,
+    forwarding: readiness.forwardingEnabled,
+    dhcp: readiness.dhcpRunning,
+  });
+  return queueProvisioningNetworkSetup(createdBy);
+};
+
 export const setupProvisioningNetwork = async (req, res) => {
   try {
-    const netConfig = getProvNetConfig();
-    const createdBy = req.entity.name;
-    const taskIds = [];
-    let lastTaskId = null;
-
-    // Create Parent Task
-    const parentTask = await Tasks.create({
-      zone_name: 'system',
-      operation: 'provisioning_network_setup',
-      priority: TaskPriority.NORMAL,
-      created_by: createdBy,
-      status: 'running', // Start immediately as a container
-      metadata: JSON.stringify(netConfig),
-    });
-
-    // Helper to create chained tasks
-    const queueTask = async (operation, metadata) => {
-      const task = await Tasks.create({
-        zone_name: 'system',
-        operation,
-        priority: TaskPriority.HIGH, // Subtasks run at higher priority to finish quickly
-        created_by: createdBy,
-        status: 'pending',
-        parent_task_id: parentTask.id,
-        depends_on: lastTaskId,
-        metadata: await new Promise(resolve => {
-          yj.stringifyAsync(metadata, (err, result) => {
-            void err;
-            resolve(result);
-          });
-        }),
-      });
-      lastTaskId = task.id;
-      taskIds.push(task.id);
-      return task;
-    };
-
-    // 1. Create Etherstub
-    if (!(await componentExists('etherstub', netConfig.etherstub_name))) {
-      await queueTask('create_etherstub', { name: netConfig.etherstub_name });
-    }
-
-    // 2. Create Host VNIC
-    if (!(await componentExists('vnic', netConfig.host_vnic_name))) {
-      await queueTask('create_vnic', {
-        name: netConfig.host_vnic_name,
-        link: netConfig.etherstub_name,
-      });
-    }
-
-    // 3. Create IP Address
-    const addrobj = `${netConfig.host_vnic_name}/v4static`;
-    if (!(await componentExists('ip', addrobj))) {
-      const prefixLen = netConfig.subnet.split('/')[1] || '24';
-      await queueTask('create_ip_address', {
-        interface: netConfig.host_vnic_name,
-        type: 'static',
-        addrobj,
-        address: `${netConfig.host_ip}/${prefixLen}`,
-      });
-    }
-
-    // 4. Configure NAT Rule
-    const bridge = await detectActiveInterface();
-    if (bridge) {
-      await queueTask('create_nat_rule', {
-        bridge,
-        subnet: netConfig.subnet,
-        target: '0/32',
-        protocol: 'tcp/udp',
-        type: 'portmap',
-        created_by: createdBy,
-      });
-
-      // 5. Enable IP Forwarding
-      await queueTask('configure_forwarding', {
-        enabled: true,
-        interfaces: [bridge, netConfig.host_vnic_name],
-      });
-    } else {
-      log.api.warn('Could not detect active interface for NAT, skipping NAT/Forwarding tasks');
-    }
-
-    // 6. Configure DHCP
-    const [subnetBase] = netConfig.subnet.split('/');
-    await queueTask('dhcp_update_config', {
-      subnet: subnetBase,
-      netmask: netConfig.netmask,
-      router: netConfig.host_ip,
-      range_start: netConfig.dhcp_range_start,
-      range_end: netConfig.dhcp_range_end,
-      listen_interface: netConfig.host_vnic_name,
-    });
-
-    // 7. Start/Refresh DHCP Service
-    await queueTask('dhcp_service_control', { action: 'restart' });
-
+    const result = await queueProvisioningNetworkSetup(req.entity.name);
     return res.status(202).json({
       success: true,
-      message: `Provisioning network setup tasks queued (${taskIds.length} tasks)`,
-      parent_task_id: parentTask.id,
-      task_ids: taskIds,
-      config: netConfig,
+      message: `Provisioning network setup tasks queued (${result.taskIds.length} tasks)`,
+      parent_task_id: result.parentTaskId,
+      task_ids: result.taskIds,
+      config: result.config,
     });
   } catch (error) {
     log.api.error('Provisioning network setup failed', { error: error.message });

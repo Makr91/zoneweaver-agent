@@ -35,7 +35,7 @@ const parseDeleteMetadata = async metadataJson => {
           }
         });
       });
-      cleanupDatasets = metadata.cleanup_datasets === true;
+      cleanupDatasets = metadata.cleanup_disks === true;
       cleanupNetworking = metadata.cleanup_networking === true;
     } catch {
       // Ignore metadata parse errors - proceed without cleanup

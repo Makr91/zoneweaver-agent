@@ -8,6 +8,7 @@ import config from '../../config/ConfigLoader.js';
 import { log } from '../../lib/Logger.js';
 import { parseConfiguration } from '../../lib/ZoneConfigUtils.js';
 import { extractHooks } from '../../lib/ProvisionerConfigBuilder.js';
+import { ensureProvisioningNetwork } from '../ProvisioningNetworkController.js';
 import { validateProvisioningRequest } from './utils/ValidationHelper.js';
 import { buildProvisioningTaskChain } from './utils/TaskChainBuilder.js';
 
@@ -164,6 +165,11 @@ export const provisionZone = async (req, res) => {
       return res.status(hookRefusal.status).json(hookRefusal.payload);
     }
 
+    // The packaged-provisioning ensure hook — the pipeline boots the zone
+    // and rides its transport, so the provisioning network must exist; the
+    // chain's first task gates on the setup chain when anything was missing.
+    const networkSetup = await ensureProvisioningNetwork(req.entity.name);
+
     // Create Parent Task
     const parentTask = await Tasks.create({
       zone_name: zoneName,
@@ -187,6 +193,7 @@ export const provisionZone = async (req, res) => {
       artifactId: provisioning.artifact_id,
       parentTaskId: parentTask.id,
       createdBy: req.entity.name,
+      firstDependsOn: networkSetup?.lastTaskId ?? null,
     });
 
     log.api.info('Provisioning pipeline started', {
@@ -196,14 +203,18 @@ export const provisionZone = async (req, res) => {
       last_task: taskChain[taskChain.length - 1]?.task_id,
     });
 
-    return res.json({
+    const provisionResponse = {
       success: true,
       message: `Provisioning pipeline started for ${zoneName}`,
       machine_name: zoneName,
       parent_task_id: parentTask.id,
       steps: taskChain.length,
       task_chain: taskChain,
-    });
+    };
+    if (networkSetup) {
+      provisionResponse.network_setup = networkSetup.parentTaskId;
+    }
+    return res.json(provisionResponse);
   } catch (error) {
     log.api.error('Failed to start provisioning pipeline', { error: error.message });
     return res.status(500).json({

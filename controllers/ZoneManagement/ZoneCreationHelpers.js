@@ -407,6 +407,7 @@ export const resolveZoneName = async (baseName, settings) => {
  * @param {Object} settings - Settings object
  * @param {boolean} startAfterCreate - Start after create flag
  * @param {string} createdBy - Created by identifier
+ * @param {string|null} [firstDependency] - Task the download gates on (the ensure hook's last setup task)
  * @returns {Promise<Object>} Response object
  */
 export const handleAutoDownload = async (
@@ -414,7 +415,8 @@ export const handleAutoDownload = async (
   requestBody,
   settings,
   startAfterCreate,
-  createdBy
+  createdBy,
+  firstDependency = null
 ) => {
   const sourceResult = determineSourceFromBoxUrl(settings.box_url);
   if (!sourceResult.success) {
@@ -458,6 +460,7 @@ export const handleAutoDownload = async (
     priority: TaskPriority.MEDIUM,
     created_by: createdBy,
     parent_task_id: parentTask.id,
+    depends_on: firstDependency,
     metadata: JSON.stringify({
       source_name: sourceResult.source_name,
       organization: org,

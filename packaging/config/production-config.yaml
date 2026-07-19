@@ -125,8 +125,8 @@ provisioning:
     poll_interval_seconds: 10
   network:
     enabled: true
-    etherstub_name: estub_provision
-    host_vnic_name: provision_interconnect0
+    etherstub_name: zwestub_0
+    host_vnic_name: provisioning_0
     subnet: 10.190.190.0/24
     host_ip: 10.190.190.1
     netmask: 255.255.255.0

@@ -5,6 +5,7 @@ import { log } from '../../lib/Logger.js';
 import { validateZoneName } from '../../lib/ZoneValidation.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
 import { buildDatasetPath } from '../TaskManager/ZoneCreationManager/utils/ConfigBuilders.js';
+import { ensureProvisioningNetwork } from '../ProvisioningNetworkController.js';
 import {
   resolveZoneName,
   createZoneCreationSubTasks,
@@ -481,6 +482,12 @@ export const cloneZone = async (req, res) => {
       });
     }
 
+    // The packaged-provisioning ensure hook — a packaged clone carries the
+    // transport, so the provisioning network must exist before its chain.
+    const networkSetup = cloneMetadata.provisioner_ref
+      ? await ensureProvisioningNetwork(req.entity.name)
+      : null;
+
     // 8. Create orchestration tasks. The clone parent is a pure anchor:
     // born running, never dispatched; the child rollup drives its state.
     const parentTask = await Tasks.create({
@@ -497,10 +504,13 @@ export const cloneZone = async (req, res) => {
       finalZoneName,
       cloneMetadata,
       parentTask.id,
-      null,
+      networkSetup?.lastTaskId ?? null,
       start_after_create,
       req.entity.name
     );
+    if (networkSetup) {
+      subTasks.network_setup = networkSetup.parentTaskId;
+    }
 
     log.api.info('Zone clone queued', {
       source_machine: zoneName,

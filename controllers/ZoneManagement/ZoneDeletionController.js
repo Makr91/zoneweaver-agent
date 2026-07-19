@@ -11,7 +11,7 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
 export const deleteZone = async (req, res) => {
   try {
     const { machineName: zoneName } = req.params;
-    const { force = false, cleanup_datasets = false, cleanup_networking = false } = req.query;
+    const { force = false, cleanup_disks = false, cleanup_networking = false } = req.query;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -36,7 +36,7 @@ export const deleteZone = async (req, res) => {
 
     // Build delete task metadata
     const deleteMetadata = JSON.stringify({
-      cleanup_datasets: cleanup_datasets === 'true' || cleanup_datasets === true,
+      cleanup_disks: cleanup_disks === 'true' || cleanup_disks === true,
       cleanup_networking: cleanup_networking === 'true' || cleanup_networking === true,
     });
 

@@ -70,7 +70,11 @@ const buildNetplanYaml = (nicData, networksArray) => {
         .split(':')
         .map(octet => octet.padStart(2, '0'))
         .join(':');
-      lines.push('      match:', `        macaddress: "${mac}"`, `      set-name: ${nic.vnic_name}`);
+      lines.push(
+        '      match:',
+        `        macaddress: "${mac}"`,
+        `      set-name: ${nic.vnic_name}`
+      );
     }
     if (meta.dhcp4 === true || !meta.address) {
       lines.push('      dhcp4: true');
@@ -79,7 +83,11 @@ const buildNetplanYaml = (nicData, networksArray) => {
     const prefix = meta.netmask ? netmaskToPrefix(meta.netmask) : '24';
     lines.push(`      addresses: [${meta.address}/${prefix}]`);
     if (meta.gateway) {
-      lines.push('      routes:', `        - to: ${meta.route || 'default'}`, `          via: ${meta.gateway}`);
+      lines.push(
+        '      routes:',
+        `        - to: ${meta.route || 'default'}`,
+        `          via: ${meta.gateway}`
+      );
     }
     const dns = Array.isArray(meta.dns)
       ? meta.dns.map(entry => entry?.nameserver).filter(Boolean)
@@ -130,6 +138,134 @@ const runQgaStep = async (socketPath, recipe, step, index, variables, outputs) =
       `step ${index} (${commandLine}) exited ${result.exitcode}: ${result.stderr || result.stdout}`
     );
   }
+};
+
+/**
+ * Enumerate the zone's NICs and populate the recipe variable map: per-NIC
+ * vnic names/MACs/types, the document's per-entry network metadata
+ * (address/prefix/gateway/dns/route), and the synthesized netplan document
+ * ({{netplan_yaml}} / {{netplan_dest}}).
+ * @param {Object} zone - Zone DB record (server_id, vm_type)
+ * @param {string} zoneName - Zone name
+ * @param {Array} networksArray - The document's networks[]
+ * @param {Object} variables - Recipe variable map (mutated)
+ * @returns {Promise<void>}
+ */
+const populateNetworkVariables = async (zone, zoneName, networksArray, variables) => {
+  const zoneConfig = await getZoneConfig(zoneName);
+  const nics = zoneConfig?.net || [];
+
+  const nicTypeMap = { external: 'e', internal: 'i', carp: 'c', management: 'm', host: 'h' };
+  const vmTypeMap = {
+    template: '1',
+    development: '2',
+    production: '3',
+    firewall: '4',
+    other: '5',
+  };
+
+  // The document's networks[] pairs with the net resources BY INDEX (the
+  // declared pairing rule) — the CLASS is its declared `type` key, exactly
+  // as Hosts.rb derived it (nictype: network['type']); never inferred from
+  // link names.
+  const nicData = nics.map((nic, index) => {
+    const nic_type = networksArray[index]?.type === 'internal' ? 'internal' : 'external';
+    const nicType = nicTypeMap[nic_type];
+    const vmType = vmTypeMap[zone.vm_type] || '3';
+    const serverId = zone.server_id.padStart(4, '0');
+    const vnic_name = `vnic${nicType}${vmType}_${serverId}_${index}`;
+
+    return {
+      index,
+      vnic_name,
+      nic_type,
+      global_nic: nic['global-nic'],
+      vlan_id: nic['vlan-id'],
+      physical: nic.physical,
+    };
+  });
+
+  // Trigger network scan to populate NetworkInterfaces table with current VNICs and MACs
+  const networkCollector = new NetworkCollector();
+  await networkCollector.collectNetworkConfig();
+
+  // Query database for ALL VNICs belonging to this zone
+  const vnicRecords = await NetworkInterfaces.findAll({
+    where: { zone: zoneName },
+    order: [['scan_timestamp', 'DESC']],
+  });
+
+  // Match MACs from database to our nicData by vnic_name
+  nicData.forEach(nic => {
+    const vnicRecord = vnicRecords.find(v => v.link === nic.vnic_name);
+    nic.mac = vnicRecord?.macaddress || null;
+  });
+
+  // Build indexed variables for all NICs (for recipe to use)
+  nicData.forEach(nic => {
+    const prefix = `nic_${nic.index}_`;
+    variables[`${prefix}vnic_name`] = nic.vnic_name;
+
+    // Normalize MAC address format (pad octets to 2 digits for netplan compatibility)
+    if (nic.mac) {
+      const normalizedMac = nic.mac
+        .split(':')
+        .map(octet => octet.padStart(2, '0'))
+        .join(':');
+      variables[`${prefix}mac`] = normalizedMac;
+    } else {
+      variables[`${prefix}mac`] = null;
+    }
+
+    variables[`${prefix}nic_type`] = nic.nic_type;
+    variables[`${prefix}global_nic`] = nic.global_nic;
+    if (nic.vlan_id) {
+      variables[`${prefix}vlan_id`] = nic.vlan_id;
+    }
+  });
+
+  // Merge network metadata (IP, gateway, DNS, route) from the document —
+  // dns is the document contract's MAP shape [{nameserver: ip}]; route
+  // rides VERBATIM to the guest config (guest-owns-routes ruling), with
+  // the contract's own "default" when the entry carries none.
+  if (networksArray.length > 0) {
+    networksArray.forEach((networkMeta, index) => {
+      const prefix = `nic_${index}_`;
+      if (networkMeta.address) {
+        variables[`${prefix}ip`] = networkMeta.address;
+      }
+      if (networkMeta.netmask) {
+        variables[`${prefix}prefix`] = netmaskToPrefix(networkMeta.netmask);
+      }
+      if (networkMeta.gateway) {
+        variables[`${prefix}gateway`] = networkMeta.gateway;
+      }
+      if (Array.isArray(networkMeta.dns)) {
+        variables[`${prefix}dns`] = networkMeta.dns
+          .map(entry => entry?.nameserver)
+          .filter(Boolean)
+          .join(',');
+      }
+      variables[`${prefix}route`] = networkMeta.route || 'default';
+      if (networkMeta.provisional !== undefined) {
+        variables[`${prefix}provisional`] = networkMeta.provisional;
+      }
+    });
+
+    log.task.info('Merged network metadata from zone configuration', {
+      zone_name: zoneName,
+      network_count: networksArray.length,
+    });
+  }
+
+  variables.netplan_dest = variables.netplan_dest || '/etc/netplan/60-zoneweaver.yaml';
+  variables.netplan_yaml = buildNetplanYaml(nicData, networksArray);
+
+  log.task.info('Auto-populated network variables for all NICs', {
+    zone_name: zoneName,
+    nic_count: nicData.length,
+    nics: nicData.map(n => ({ vnic_name: n.vnic_name, mac: n.mac })),
+  });
 };
 
 /**
@@ -219,14 +355,9 @@ export const executeZoneSetupTask = async task => {
       return { success: false, error: `Zone '${zone_name}' not found` };
     }
 
-    // Get zone configuration to enumerate all NICs
-    const zoneConfig = await getZoneConfig(zone_name);
-    const nics = zoneConfig?.net || [];
-
-    // The document's networks[] pairs with the net resources BY INDEX (the
-    // declared pairing rule) — the CLASS is its declared `type` key, exactly
-    // as Hosts.rb derived it (nictype: network['type']); never inferred from
-    // link names.
+    // The document's networks[] (from the stored configuration) pairs with
+    // the net resources BY INDEX — parsed here, consumed by the variable
+    // population and the qga rung's zonepath lookup.
     let zoneConfigFromDB = zone.configuration;
     if (typeof zoneConfigFromDB === 'string') {
       try {
@@ -240,120 +371,7 @@ export const executeZoneSetupTask = async task => {
       ? zoneConfigFromDB.networks
       : [];
 
-    const nicTypeMap = { external: 'e', internal: 'i', carp: 'c', management: 'm', host: 'h' };
-    const vmTypeMap = {
-      template: '1',
-      development: '2',
-      production: '3',
-      firewall: '4',
-      other: '5',
-    };
-
-    // Generate vnic_name for ALL NICs (deterministic from zone config)
-    const nicData = nics.map((nic, index) => {
-      const nic_type = networksArray[index]?.type === 'internal' ? 'internal' : 'external';
-      const nicType = nicTypeMap[nic_type];
-      const vmType = vmTypeMap[zone.vm_type] || '3';
-      const serverId = zone.server_id.padStart(4, '0');
-      const vnic_name = `vnic${nicType}${vmType}_${serverId}_${index}`;
-
-      return {
-        index,
-        vnic_name,
-        nic_type,
-        global_nic: nic['global-nic'],
-        vlan_id: nic['vlan-id'],
-        physical: nic.physical,
-      };
-    });
-
-    // Trigger network scan to populate NetworkInterfaces table with current VNICs and MACs
-    const networkCollector = new NetworkCollector();
-    await networkCollector.collectNetworkConfig();
-
-    // Query database for ALL VNICs belonging to this zone
-    const vnicRecords = await NetworkInterfaces.findAll({
-      where: { zone: zone_name },
-      order: [['scan_timestamp', 'DESC']],
-    });
-
-    // Match MACs from database to our nicData by vnic_name
-    nicData.forEach(nic => {
-      const vnicRecord = vnicRecords.find(v => v.link === nic.vnic_name);
-      nic.mac = vnicRecord?.macaddress || null;
-    });
-
-    // Build indexed variables for all NICs (for recipe to use)
-    nicData.forEach(nic => {
-      const prefix = `nic_${nic.index}_`;
-      variables[`${prefix}vnic_name`] = nic.vnic_name;
-
-      // Normalize MAC address format (pad octets to 2 digits for netplan compatibility)
-      if (nic.mac) {
-        const normalizedMac = nic.mac
-          .split(':')
-          .map(octet => octet.padStart(2, '0'))
-          .join(':');
-        variables[`${prefix}mac`] = normalizedMac;
-      } else {
-        variables[`${prefix}mac`] = null;
-      }
-
-      variables[`${prefix}nic_type`] = nic.nic_type;
-      variables[`${prefix}global_nic`] = nic.global_nic;
-      if (nic.vlan_id) {
-        variables[`${prefix}vlan_id`] = nic.vlan_id;
-      }
-    });
-
-    // Merge network metadata (IP, gateway, DNS, route) from the document —
-    // dns is the document contract's MAP shape [{nameserver: ip}]; route
-    // rides VERBATIM to the guest config (guest-owns-routes ruling), with
-    // the contract's own "default" when the entry carries none.
-    if (networksArray.length > 0) {
-      networksArray.forEach((networkMeta, index) => {
-        const prefix = `nic_${index}_`;
-        if (networkMeta.address) {
-          variables[`${prefix}ip`] = networkMeta.address;
-        }
-        if (networkMeta.netmask) {
-          const prefixBits =
-            networkMeta.netmask
-              .split('.')
-              .map(octet => parseInt(octet).toString(2).padStart(8, '0'))
-              .join('')
-              .split('1').length - 1;
-          variables[`${prefix}prefix`] = prefixBits.toString();
-        }
-        if (networkMeta.gateway) {
-          variables[`${prefix}gateway`] = networkMeta.gateway;
-        }
-        if (Array.isArray(networkMeta.dns)) {
-          variables[`${prefix}dns`] = networkMeta.dns
-            .map(entry => entry?.nameserver)
-            .filter(Boolean)
-            .join(',');
-        }
-        variables[`${prefix}route`] = networkMeta.route || 'default';
-        if (networkMeta.provisional !== undefined) {
-          variables[`${prefix}provisional`] = networkMeta.provisional;
-        }
-      });
-
-      log.task.info('Merged network metadata from zone configuration', {
-        zone_name,
-        network_count: networksArray.length,
-      });
-    }
-
-    variables.netplan_dest = variables.netplan_dest || '/etc/netplan/60-zoneweaver.yaml';
-    variables.netplan_yaml = buildNetplanYaml(nicData, networksArray);
-
-    log.task.info('Auto-populated network variables for all NICs', {
-      zone_name,
-      nic_count: nicData.length,
-      nics: nicData.map(n => ({ vnic_name: n.vnic_name, mac: n.mac })),
-    });
+    await populateNetworkVariables(zone, zone_name, networksArray, variables);
 
     const qgaResult = await tryQgaSetup(zone_name, zoneConfigFromDB, recipe, variables);
     if (qgaResult) {

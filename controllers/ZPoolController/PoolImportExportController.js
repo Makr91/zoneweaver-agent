@@ -200,9 +200,13 @@ export const importPool = async (req, res) => {
  *               properties:
  *                 pools:
  *                   type: array
+ *                   description: Pools available for import, structured (parsed from `zpool import`)
  *                   items:
- *                     type: string
- *                   description: Names of pools available for import (parsed from `zpool import`)
+ *                     type: object
+ *                     properties:
+ *                       name: { type: string, example: "tank" }
+ *                       id: { type: string, nullable: true, example: "1234567890123456789" }
+ *                       state: { type: string, nullable: true, example: "ONLINE" }
  *                 total:
  *                   type: integer
  *                 output:
@@ -218,9 +222,21 @@ export const listImportablePools = async (req, res) => {
     const result = await executeCommand('pfexec zpool import');
     const output = result.output || '';
 
-    // Every `zpool import` block begins with "pool: <name>" — parse the names so the
-    // response always carries a structured pools[] regardless of whether any exist.
-    const pools = [...output.matchAll(/^\s*pool:\s*(?<name>\S+)/gm)].map(m => m.groups.name);
+    // Every `zpool import` block starts with a "pool: <name>" line, with its
+    // "id:" and "state:" on the following lines — walked line by line into
+    // structured entries (the raw output rides only as a supplement).
+    const pools = [];
+    for (const line of output.split('\n')) {
+      const match = line.trim().match(/^(?<key>pool|id|state):\s*(?<value>\S+)$/u);
+      if (!match) {
+        continue;
+      }
+      if (match.groups.key === 'pool') {
+        pools.push({ name: match.groups.value, id: null, state: null });
+      } else if (pools.length > 0) {
+        pools[pools.length - 1][match.groups.key] = match.groups.value;
+      }
+    }
 
     if (!result.success && !output) {
       return res.json({

@@ -1,45 +1,10 @@
 import Entities from '../models/EntityModel.js';
 import bcrypt from 'bcrypt';
-import crypto from 'crypto';
-import { Op } from 'sequelize';
 import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';
 import { verifySetupToken } from '../lib/SetupToken.js';
 import { purgeApiKeyCacheEntry } from '../middleware/VerifyApiKey.js';
-
-// Agent API v1 direct-mode role model (enforced in middleware/VerifyApiKey.js)
-const VALID_ROLES = ['admin', 'operator', 'viewer'];
-
-/**
- * Guard against locking the agent out of administration: true when the given
- * entity is the last ACTIVE admin key.
- * @param {import('sequelize').Model} entity - Entity being deleted/revoked
- * @returns {Promise<boolean>} True if no other active admin key exists
- */
-const isLastActiveAdmin = async entity => {
-  if ((entity.role || 'admin') !== 'admin' || !entity.is_active) {
-    return false;
-  }
-  const otherAdmins = await Entities.count({
-    where: {
-      is_active: true,
-      role: 'admin',
-      id: { [Op.ne]: entity.id },
-    },
-  });
-  return otherAdmins === 0;
-};
-
-// Generate secure API key credentials: hw_<key_id>.<secret>. The key_id (16
-// base64url chars, stored plaintext) lets verifyApiKey select the entity row
-// directly and run exactly ONE bcrypt compare; the bcrypt hash covers the full
-// key string.
-const generateApiKeyCredentials = () => {
-  const apiKeyConfig = config.get('api_keys') || { key_length: 64 };
-  const keyId = crypto.randomBytes(12).toString('base64url');
-  const secret = crypto.randomBytes(apiKeyConfig.key_length || 64).toString('base64url');
-  return { keyId, apiKey: `hw_${keyId}.${secret}` };
-};
+import { VALID_ROLES, isLastActiveAdmin, generateApiKeyCredentials } from './ApiKeysUtils.js';
 
 /**
  * @swagger
@@ -95,21 +60,15 @@ export const bootstrapFirstApiKey = async (req, res) => {
   try {
     const apiKeyConfig = config.get('api_keys') || {};
 
-    // Check if bootstrap is enabled in config
     if (!apiKeyConfig.bootstrap_enabled) {
       return res.status(403).json({ msg: 'Bootstrap endpoint is disabled' });
     }
 
-    // Check if any entities already exist
     const entityCount = await Entities.count();
     if (entityCount > 0 && apiKeyConfig.bootstrap_auto_disable !== false) {
       return res.status(403).json({ msg: 'Bootstrap endpoint auto-disabled after first use' });
     }
 
-    // Proof-of-ownership: require the setup (claim) token unless explicitly disabled.
-    // The token is written to a root-readable file at boot (config.getSetupTokenPath())
-    // and logged at startup, so only someone with host access can create the first key.
-    // Closes the install→first-key race that a public bootstrap endpoint otherwise leaves open.
     if (apiKeyConfig.bootstrap_require_claim_token !== false) {
       if (!verifySetupToken(req.body?.setupToken)) {
         return res.status(403).json({
@@ -118,7 +77,6 @@ export const bootstrapFirstApiKey = async (req, res) => {
       }
     }
 
-    // Generate bootstrap API key
     const { keyId, apiKey } = generateApiKeyCredentials();
     const hashRounds = apiKeyConfig.hash_rounds || 12;
     const hashedKey = await bcrypt.hash(apiKey, hashRounds);
@@ -128,7 +86,7 @@ export const bootstrapFirstApiKey = async (req, res) => {
       key_id: keyId,
       api_key_hash: hashedKey,
       description: req.body.description || 'Initial bootstrap API key',
-      role: 'admin', // First key is always the admin key (Agent API v1 role model)
+      role: 'admin',
       is_active: true,
       created_at: new Date(),
       last_used: new Date(),
@@ -226,13 +184,11 @@ export const generateApiKey = async (req, res) => {
       return res.status(400).json({ msg: 'Name is required' });
     }
 
-    // Role defaults to admin (the pre-v1 behavior every existing caller expects)
     const entityRole = role || 'admin';
     if (!VALID_ROLES.includes(entityRole)) {
       return res.status(400).json({ msg: `role must be one of: ${VALID_ROLES.join(', ')}` });
     }
 
-    // Generate new API key
     const { keyId, apiKey } = generateApiKeyCredentials();
     const apiKeyConfig = config.get('api_keys') || {};
     const hashRounds = apiKeyConfig.hash_rounds || 12;
@@ -377,7 +333,6 @@ export const deleteApiKey = async (req, res) => {
       return res.status(404).json({ msg: 'API key not found' });
     }
 
-    // Lockout guard: never delete the last active admin key
     if (await isLastActiveAdmin(entity)) {
       return res.status(409).json({
         msg: 'Cannot delete the last active admin API key — create another admin key first',
@@ -438,7 +393,6 @@ export const revokeApiKey = async (req, res) => {
       return res.status(404).json({ msg: 'API key not found' });
     }
 
-    // Lockout guard: never revoke the last active admin key
     if (await isLastActiveAdmin(entity)) {
       return res.status(409).json({
         msg: 'Cannot revoke the last active admin API key — create another admin key first',
@@ -506,7 +460,6 @@ export const revokeApiKey = async (req, res) => {
  */
 export const getApiKeyInfo = async (req, res) => {
   try {
-    // Return info about the current API key being used
     const entity = await Entities.findByPk(req.entity.id, {
       attributes: ['id', 'name', 'description', 'role', 'created_at', 'last_used'],
     });

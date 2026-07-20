@@ -64,16 +64,13 @@ export const startZone = async (req, res) => {
       return res.status(400).json({ error: 'Invalid zone name' });
     }
 
-    // Check if zone exists in database
     const zone = await Zones.findOne({ where: { name: zoneName } });
     if (!zone) {
       return res.status(404).json({ error: 'Zone not found' });
     }
 
-    // Get current system status
     const currentStatus = await getSystemZoneStatus(zoneName);
 
-    // If already running, no need to start
     if (currentStatus === 'running') {
       return res.json({
         success: true,
@@ -84,7 +81,6 @@ export const startZone = async (req, res) => {
       });
     }
 
-    // Check for existing pending/running start tasks
     const existingTask = await Tasks.findOne({
       where: {
         zone_name: zoneName,
@@ -104,9 +100,6 @@ export const startZone = async (req, res) => {
       });
     }
 
-    // Accrued pending changes apply FIRST (modify → start chain): a bad
-    // pending value fails the boot honestly instead of booting and pretending
-    // the changes applied.
     const applyTask = await queuePendingApply(zone, req.entity.name);
 
     const task = await Tasks.create({
@@ -186,7 +179,6 @@ export const stopZone = async (req, res) => {
 
     const currentStatus = await getSystemZoneStatus(zoneName);
 
-    // If already stopped, no need to stop
     if (currentStatus === 'configured' || currentStatus === 'installed') {
       return res.json({
         success: true,
@@ -197,7 +189,6 @@ export const stopZone = async (req, res) => {
       });
     }
 
-    // Cancel any pending start tasks for this zone
     await Tasks.update(
       { status: 'cancelled' },
       {
@@ -209,7 +200,6 @@ export const stopZone = async (req, res) => {
       }
     );
 
-    // Check for existing stop task
     const existingTask = await Tasks.findOne({
       where: {
         zone_name: zoneName,
@@ -237,7 +227,6 @@ export const stopZone = async (req, res) => {
       status: 'pending',
     });
 
-    // Accrued pending changes apply right after the power-off.
     const applyTask = await queuePendingApply(zone, req.entity.name);
     if (applyTask) {
       await applyTask.update({ depends_on: task.id });
@@ -303,10 +292,6 @@ export const restartZone = async (req, res) => {
       return res.status(404).json({ error: 'Zone not found' });
     }
 
-    // Double-POST dedup (the reuse check start/stop already have): an
-    // unfinished stop with a pending start chained behind it — directly or
-    // through the pending-changes apply hop — IS a queued restart. Answer
-    // that pair instead of queueing a second power cycle.
     const existingStop = await Tasks.findOne({
       where: { zone_name: zoneName, operation: 'stop', status: ['pending', 'running'] },
       order: [['created_at', 'DESC']],
@@ -347,7 +332,6 @@ export const restartZone = async (req, res) => {
       }
     }
 
-    // Create stop task
     const stopTask = await Tasks.create({
       zone_name: zoneName,
       operation: 'stop',
@@ -356,7 +340,6 @@ export const restartZone = async (req, res) => {
       status: 'pending',
     });
 
-    // Accrued pending changes slot between stop and start.
     let startDependsOn = stopTask.id;
     const applyTask = await queuePendingApply(zone, req.entity.name);
     if (applyTask) {
@@ -364,7 +347,6 @@ export const restartZone = async (req, res) => {
       startDependsOn = applyTask.id;
     }
 
-    // Create start task that depends on stop task
     const startTask = await Tasks.create({
       zone_name: zoneName,
       operation: 'start',
@@ -463,7 +445,6 @@ export const resetZone = async (req, res) => {
       });
     }
 
-    // Double-POST dedup (start/stop parity)
     const existingTask = await Tasks.findOne({
       where: {
         zone_name: zoneName,
@@ -595,7 +576,6 @@ export const suspendZone = async (req, res) => {
       });
     }
 
-    // Double-POST dedup (start/stop parity)
     const existingTask = await Tasks.findOne({
       where: {
         zone_name: zoneName,
@@ -724,7 +704,6 @@ export const resumeZone = async (req, res) => {
       });
     }
 
-    // Double-POST dedup (start/stop parity)
     const existingTask = await Tasks.findOne({
       where: {
         zone_name: zoneName,

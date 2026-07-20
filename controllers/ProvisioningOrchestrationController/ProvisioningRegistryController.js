@@ -5,8 +5,6 @@
  * references. Wire shapes shared with the Go agent.
  */
 
-import Zones from '../../models/ZoneModel.js';
-import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
 import {
   listCollections,
@@ -23,42 +21,8 @@ import {
   fetchCatalog,
   catalogSourceError,
 } from '../../lib/ProvisionerCatalog.js';
-import { parseConfiguration } from '../../lib/ZoneConfigUtils.js';
 import { TOKEN_NAME_PATTERN } from '../TaskManager/ProvisionerImportManager.js';
-
-const provisionerReferences = async (name, version = '') => {
-  const zones = await Zones.findAll();
-  const references = [];
-  for (const zone of zones) {
-    const ref = parseConfiguration(zone).provisioner_ref;
-    if (!ref || ref.name !== name) {
-      continue;
-    }
-    if (version && ref.version !== version) {
-      continue;
-    }
-    references.push(zone.name);
-  }
-  return references;
-};
-
-/**
- * Queue one system-scoped registry task (import/export/catalog-install/
- * refresh all share this exact row shape).
- * @param {Object} req - Request (created_by rides req.entity.name)
- * @param {string} operation - Task operation
- * @param {Object} metadata - Task metadata
- * @returns {Promise<Object>} Created task
- */
-const queueRegistryTask = (req, operation, metadata) =>
-  Tasks.create({
-    zone_name: 'system',
-    operation,
-    priority: TaskPriority.MEDIUM,
-    created_by: req.entity.name,
-    status: 'pending',
-    metadata: JSON.stringify(metadata),
-  });
+import { provisionerReferences, queueRegistryTask } from './utils/RegistryTaskHelper.js';
 
 /**
  * @swagger
@@ -529,9 +493,6 @@ export const getCatalog = async (req, res) => {
     return res.status(404).json({ error: catalogSourceError(req.query.source) });
   }
   try {
-    // Parsed relay, the shared wire: the catalog document IS the response —
-    // the UI reads data.provisioners directly. The resolved source rides
-    // /provisioning/catalog/sources, never an envelope here.
     const catalog = await fetchCatalog(source);
     return res.json(catalog);
   } catch (error) {

@@ -506,7 +506,6 @@ export const getProcessStatsController = async (req, res) => {
       count: req.query.count ? parseInt(req.query.count) : 1,
     };
 
-    // Validate parameters
     if (options.interval < 1 || options.interval > 60) {
       return res.status(400).json({ error: 'Interval must be between 1 and 60 seconds' });
     }

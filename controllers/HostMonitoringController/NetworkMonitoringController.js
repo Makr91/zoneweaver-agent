@@ -212,7 +212,6 @@ export const getNetworkUsage = async (req, res) => {
 
     if (per_interface === 'true') {
       if (!since) {
-        // Latest per interface using optimized sampling
         const whereClause = buildNetworkWhereClause({ link });
 
         const recentRecords = await NetworkUsage.findAll({
@@ -255,9 +254,7 @@ export const getNetworkUsage = async (req, res) => {
           )
         );
       }
-      // OPTIMIZED: Historical sampling using database window functions
       try {
-        // Step 1: Get dataset metadata in parallel with interface list
         const [metadata, activeInterfaces] = await Promise.all([
           getDatasetMetadata(link, since),
           link ? [link] : getActiveInterfacesList(link),
@@ -267,17 +264,14 @@ export const getNetworkUsage = async (req, res) => {
           return res.json(createEmptyResponse(startTime, 'sql-ntile-optimized'));
         }
 
-        // Step 2: Use optimized SQL sampling instead of JavaScript processing
         let sampledData;
         try {
-          // Try window function approach first (works on all modern databases)
           sampledData = await getTimeSeriesSampledData(
             Array.isArray(activeInterfaces) ? activeInterfaces : metadata.interfaces,
             since,
             requestedLimit
           );
         } catch (windowError) {
-          // Fallback to Sequelize-based sampling for older database versions
           log.database.warn('Window function query failed, using fallback method', {
             error: windowError.message,
             database_dialect: db.getDialect(),
@@ -290,21 +284,18 @@ export const getNetworkUsage = async (req, res) => {
           );
         }
 
-        // Step 3: Create optimized response with performance metrics
         return res.json(createOptimizedResponse(sampledData, metadata, requestedLimit, startTime));
       } catch (optimizationError) {
-        // Ultimate fallback: Log error and use original method if optimization fails
         log.database.error('Optimization failed, using original method', {
           error: optimizationError.message,
           stack: optimizationError.stack,
         });
 
-        // Original fallback method (should rarely be used)
         const whereClause = buildNetworkWhereClause({ link, since });
         const { count, rows } = await NetworkUsage.findAndCountAll({
           where: whereClause,
           attributes: NETWORK_USAGE_ATTRIBUTES,
-          limit: Math.min(requestedLimit * 10, 1000), // Limit fallback to prevent memory issues
+          limit: Math.min(requestedLimit * 10, 1000),
           order: [['scan_timestamp', 'DESC']],
         });
 
@@ -326,7 +317,6 @@ export const getNetworkUsage = async (req, res) => {
       }
     }
 
-    // Simple query without per-interface logic
     const whereClause = buildNetworkWhereClause({ link, since });
 
     const { count, rows } = await NetworkUsage.findAndCountAll({

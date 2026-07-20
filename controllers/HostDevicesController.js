@@ -9,49 +9,7 @@ import PCIDevices from '../models/PCIDeviceModel.js';
 import { Op } from 'sequelize';
 import os from 'os';
 import { log } from '../lib/Logger.js';
-
-/**
- * Determine if a device is capable of PCI passthrough
- * @param {Object} device - PCI device object
- * @returns {boolean} True if device is PPT-capable
- */
-const isPPTCapable = device => {
-  // Exclude devices already assigned to zones
-  if (
-    device.assigned_to_zones &&
-    Array.isArray(device.assigned_to_zones) &&
-    device.assigned_to_zones.length > 0
-  ) {
-    return false;
-  }
-
-  // Intel devices (vendor_id 8086) - allow ONLY network cards
-  // All other Intel devices are system-critical (chipset, I/O hub, etc.)
-  if (device.vendor_id === '8086') {
-    return device.device_category === 'network';
-  }
-
-  // AMD devices (vendor_id 1022) - exclude system critical components
-  // TODO: Expand this list as we get more AMD system data
-  if (device.vendor_id === '1022') {
-    // For now, be conservative and exclude AMD devices until we have test data
-    // Exception: allow discrete GPUs and add-in cards
-    return (
-      device.device_category === 'display' ||
-      device.device_category === 'network' ||
-      device.device_category === 'storage'
-    );
-  }
-
-  // All other vendors (non-Intel, non-AMD) are generally PPT-capable
-  // This includes add-in cards from vendors like:
-  // - Broadcom/LSI storage controllers
-  // - NVIDIA GPUs
-  // - Renesas USB controllers
-  // - Matrox display controllers
-  // - Other specialty PCI cards
-  return true;
-};
+import { isPPTCapable } from './HostDevices/HostDevicesUtils.js';
 
 /**
  * @swagger
@@ -131,7 +89,6 @@ export const listDevices = async (req, res) => {
   try {
     const whereClause = { host: hostname };
 
-    // Apply filters
     if (category) {
       whereClause.device_category = category;
     }
@@ -149,7 +106,6 @@ export const listDevices = async (req, res) => {
     }
 
     if (available === 'true') {
-      // Show only devices not assigned to zones
       whereClause.assigned_to_zones = { [Op.or]: [null, []] };
     }
 
@@ -163,7 +119,6 @@ export const listDevices = async (req, res) => {
       limit: parseInt(limit),
     });
 
-    // Calculate summary statistics
     const allDevices = await PCIDevices.findAll({
       where: { host: hostname },
       attributes: ['device_category', 'vendor_id', 'ppt_enabled', 'assigned_to_zones'],
@@ -180,18 +135,14 @@ export const listDevices = async (req, res) => {
     const zonesSet = new Set();
 
     allDevices.forEach(device => {
-      // Count by category
       const deviceCategory = device.device_category || 'other';
       summary.by_category[deviceCategory] = (summary.by_category[deviceCategory] || 0) + 1;
 
-      // Count PPT-capable devices (using new logic)
       if (isPPTCapable(device)) {
         summary.ppt_capable++;
       }
 
-      // Count PPT-configured devices (actually enabled in pptadm)
       if (device.ppt_enabled) {
-        // Check if assigned to zones
         if (
           device.assigned_to_zones &&
           Array.isArray(device.assigned_to_zones) &&
@@ -283,7 +234,7 @@ export const listAvailableDevices = async (req, res) => {
       where: whereClause,
       order: [
         ['device_category', 'ASC'],
-        ['ppt_enabled', 'DESC'], // PPT devices first
+        ['ppt_enabled', 'DESC'],
         ['vendor_name', 'ASC'],
       ],
     });
@@ -335,7 +286,6 @@ export const getDeviceDetails = async (req, res) => {
   const hostname = os.hostname();
 
   try {
-    // Try to find by ID first, then by PCI address
     const device = await PCIDevices.findOne({
       where: {
         host: hostname,
@@ -546,11 +496,9 @@ export const triggerDeviceDiscovery = async (req, res) => {
   const hostname = os.hostname();
 
   try {
-    // Import here to avoid circular dependencies
     const { getHostMonitoringService } = await import('./HostMonitoringService.js');
     const hostMonitoringService = getHostMonitoringService();
 
-    // Trigger immediate device collection
     const result = await hostMonitoringService.triggerCollection('devices');
 
     if (result.errors && result.errors.length > 0) {
@@ -561,12 +509,11 @@ export const triggerDeviceDiscovery = async (req, res) => {
       });
     }
 
-    // Count devices found in latest scan
     const devicesFound = await PCIDevices.count({
       where: {
         host: hostname,
         scan_timestamp: {
-          [Op.gte]: new Date(Date.now() - 5 * 60 * 1000), // Last 5 minutes
+          [Op.gte]: new Date(Date.now() - 5 * 60 * 1000),
         },
       },
     });

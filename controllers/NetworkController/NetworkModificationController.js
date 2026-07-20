@@ -79,7 +79,6 @@ export const setHostname = async (req, res) => {
       });
     }
 
-    // Validate hostname format (allows both simple hostnames and FQDNs)
     const hostnameRegex = /^[a-zA-Z0-9](?:[a-zA-Z0-9-.]{0,251}[a-zA-Z0-9])?$/;
     if (!hostnameRegex.test(hostname)) {
       return res.status(400).json({
@@ -88,7 +87,6 @@ export const setHostname = async (req, res) => {
       });
     }
 
-    // Additional validation: each label (part between dots) must be ≤63 characters
     const labels = hostname.split('.');
     for (const label of labels) {
       if (label.length === 0 || label.length > 63) {
@@ -104,7 +102,6 @@ export const setHostname = async (req, res) => {
       }
     }
 
-    // Create task for hostname change
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'set_hostname',
@@ -128,7 +125,6 @@ export const setHostname = async (req, res) => {
       }),
     });
 
-    // Set reboot required flag for hostname changes
     await setRebootRequired('hostname_change', 'NetworkController');
 
     return res.status(202).json({
@@ -250,14 +246,12 @@ export const createIPAddress = async (req, res) => {
   } = req.body;
 
   try {
-    // Validate required fields
     if (!iface || !type || !addrobj) {
       return res.status(400).json({
         error: 'interface, type, and addrobj are required',
       });
     }
 
-    // Validate type-specific requirements
     if (type === 'static' && !address) {
       return res.status(400).json({
         error: 'address is required for static type',
@@ -270,7 +264,6 @@ export const createIPAddress = async (req, res) => {
       });
     }
 
-    // Create task for IP address creation
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'create_ip_address',
@@ -370,14 +363,12 @@ export const createIPAddress = async (req, res) => {
  *         description: Failed to create IP address deletion task
  */
 export const deleteIPAddress = async (req, res) => {
-  // With wildcard route (*splat), the addrobj is in req.params.splat
   const addrobj = Array.isArray(req.params.splat)
     ? req.params.splat.join('/')
-    : req.params.splat || ''; // Express 5.x compatibility fix
+    : req.params.splat || '';
   const { release = false } = req.query;
 
   try {
-    // Check if address object exists in current system
     const result = await executeCommand(`pfexec ipadm show-addr ${addrobj}`);
 
     if (!result.success) {
@@ -387,7 +378,6 @@ export const deleteIPAddress = async (req, res) => {
       });
     }
 
-    // Create task for IP address deletion
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'delete_ip_address',
@@ -463,12 +453,10 @@ export const deleteIPAddress = async (req, res) => {
  *         description: Failed to create enable task
  */
 export const enableIPAddress = async (req, res) => {
-  // With wildcard route (*splat), the addrobj is in req.params.splat
   const addrobj = Array.isArray(req.params.splat)
     ? req.params.splat.join('/')
-    : req.params.splat || ''; // Express 5.x compatibility fix
+    : req.params.splat || '';
   try {
-    // Create task for enabling IP address
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'enable_ip_address',
@@ -533,12 +521,10 @@ export const enableIPAddress = async (req, res) => {
  *         description: Failed to create disable task
  */
 export const disableIPAddress = async (req, res) => {
-  // With wildcard route (*splat), the addrobj is in req.params.splat
   const addrobj = Array.isArray(req.params.splat)
     ? req.params.splat.join('/')
-    : req.params.splat || ''; // Express 5.x compatibility fix
+    : req.params.splat || '';
   try {
-    // Create task for disabling IP address
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'disable_ip_address',

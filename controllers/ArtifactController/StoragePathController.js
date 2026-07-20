@@ -80,7 +80,6 @@ export const listStoragePaths = async (req, res) => {
       ],
     });
 
-    // Concurrently fetch disk usage for all paths
     const pathsWithStats = await Promise.all(
       paths.map(async storagePath => {
         let diskUsage = null;
@@ -203,7 +202,6 @@ export const createStoragePath = async (req, res) => {
       });
     }
 
-    // Validate the storage path
     const validation = validatePath(storagePath);
     if (!validation.valid) {
       return res.status(400).json({
@@ -213,7 +211,6 @@ export const createStoragePath = async (req, res) => {
 
     const { normalizedPath } = validation;
 
-    // Check if path already exists
     const existingPath = await ArtifactStorageLocation.findOne({
       where: { path: normalizedPath },
     });
@@ -229,7 +226,6 @@ export const createStoragePath = async (req, res) => {
       });
     }
 
-    // Create directory if it doesn't exist
     try {
       await fs.promises.access(normalizedPath);
     } catch (error) {
@@ -257,7 +253,6 @@ export const createStoragePath = async (req, res) => {
       }
     }
 
-    // Create storage location record
     const configHash = crypto
       .createHash('md5')
       .update(JSON.stringify({ name, path: normalizedPath, type, enabled }))
@@ -273,7 +268,6 @@ export const createStoragePath = async (req, res) => {
       total_size: 0,
     });
 
-    // Update config.yaml with new path
     try {
       const { updateConfigWithNewPath } = await import('./utils/ConfigHelpers.js');
       await updateConfigWithNewPath({ name, path: normalizedPath, type, enabled });
@@ -299,7 +293,6 @@ export const createStoragePath = async (req, res) => {
       enabled,
     });
 
-    // Trigger initial scan
     if (enabled) {
       try {
         const scanTask = await Tasks.create({
@@ -435,7 +428,6 @@ export const updateStoragePath = async (req, res) => {
 
     await storageLocation.update(updateData);
 
-    // TODO: Update config.yaml with changes
     log.artifact.info('Storage path updated successfully', {
       id,
       name: storageLocation.name,
@@ -525,7 +517,6 @@ export const deleteStoragePath = async (req, res) => {
       });
     }
 
-    // Create deletion task
     const task = await Tasks.create({
       zone_name: 'artifact',
       operation: 'artifact_delete_folder',

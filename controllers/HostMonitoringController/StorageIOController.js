@@ -105,7 +105,6 @@ export const getDiskIOStats = async (req, res) => {
 
     if (per_device === 'true') {
       if (!since) {
-        // Latest per device using optimized sampling
         const whereClause = buildStorageWhereClause({ pool, device });
 
         const recentRecords = await DiskIOStats.findAll({
@@ -138,7 +137,6 @@ export const getDiskIOStats = async (req, res) => {
         );
       }
 
-      // Historical sampling with time distribution
       const whereClause = buildStorageWhereClause({ pool, device, since });
 
       const allData = await DiskIOStats.findAll({
@@ -178,7 +176,6 @@ export const getDiskIOStats = async (req, res) => {
       );
     }
 
-    // Simple query without per-device logic
     const whereClause = buildStorageWhereClause({ pool, device, since });
 
     const { count, rows } = await DiskIOStats.findAndCountAll({
@@ -295,7 +292,6 @@ export const getPoolIOStats = async (req, res) => {
 
     if (per_pool === 'true') {
       if (!since) {
-        // Latest per pool using optimized sampling
         const whereClause = buildStorageWhereClause({ pool, pool_type });
 
         const recentRecords = await PoolIOStats.findAll({
@@ -328,7 +324,6 @@ export const getPoolIOStats = async (req, res) => {
         );
       }
 
-      // Historical sampling with time distribution
       const whereClause = buildStorageWhereClause({ pool, pool_type, since });
 
       const allData = await PoolIOStats.findAll({
@@ -368,7 +363,6 @@ export const getPoolIOStats = async (req, res) => {
       );
     }
 
-    // Simple query without per-pool logic
     const whereClause = buildStorageWhereClause({ pool, pool_type, since });
 
     const { count, rows } = await PoolIOStats.findAndCountAll({
@@ -485,7 +479,6 @@ export const getARCStats = async (req, res) => {
     const requestedLimit = parseInt(limit);
 
     if (!since) {
-      // Latest system-wide ARC stats
       const latestRecord = await ARCStats.findOne({
         attributes: ARC_STATS_ATTRIBUTES,
         order: [['scan_timestamp', 'DESC']],
@@ -510,7 +503,6 @@ export const getARCStats = async (req, res) => {
       );
     }
 
-    // Historical sampling across time range
     const whereClause = buildStorageWhereClause({ since });
 
     const allData = await ARCStats.findAll({

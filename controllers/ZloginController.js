@@ -1,200 +1,15 @@
 import ZloginSessions from '../models/ZloginSessionModel.js';
 import Zones from '../models/ZoneModel.js';
-import fs from 'fs';
-import { spawn } from 'child_process';
 import { log } from '../lib/Logger.js';
 import { ptyManager } from '../lib/ZloginPtyManager.js';
 import { createSessionBufferWriter } from '../lib/SessionBuffer.js';
+import { sessionManager } from './ZloginSessionManager.js';
 
 /**
  * @fileoverview Zlogin Session Controller for Zoneweaver Agent
  * @description Manages the lifecycle of zlogin pseudo-terminal sessions for zones.
  *              Uses shared PTY manager for multiplexing between automation and WebSocket clients.
  */
-
-class ZloginSessionManager {
-  constructor() {
-    this.pidDir = './zlogin_sessions';
-    if (!fs.existsSync(this.pidDir)) {
-      fs.mkdirSync(this.pidDir, { recursive: true });
-    }
-  }
-
-  /**
-   * Check for running zlogin processes for a specific zone
-   * @param {string} zoneName - The zone name to check
-   * @returns {Promise<number|null>} The PID if found, null otherwise
-   */
-  findRunningZloginProcess(zoneName) {
-    try {
-      const psProcess = spawn('ps', ['auxww'], { stdio: ['ignore', 'pipe', 'pipe'] });
-
-      return new Promise(resolve => {
-        let output = '';
-
-        psProcess.stdout.on('data', data => {
-          output += data.toString();
-        });
-
-        psProcess.on('exit', () => {
-          const lines = output.split('\n');
-
-          for (const line of lines) {
-            // Look for "zlogin -C zoneName" processes
-            if (line.includes('zlogin -C') && line.includes(zoneName)) {
-              const parts = line.trim().split(/\s+/);
-              if (parts.length >= 2) {
-                const pid = parseInt(parts[1]);
-                if (!isNaN(pid)) {
-                  log.websocket.debug('Found running zlogin process', {
-                    zone_name: zoneName,
-                    pid,
-                  });
-                  resolve(pid);
-                  return;
-                }
-              }
-            }
-          }
-          resolve(null);
-        });
-
-        psProcess.on('error', () => {
-          resolve(null);
-        });
-      });
-    } catch (error) {
-      log.websocket.error('Error checking for running zlogin processes', {
-        error: error.message,
-      });
-      return null;
-    }
-  }
-
-  /**
-   * Kill a specific zlogin process by PID
-   * @param {number} pid - The process ID to kill
-   * @returns {Promise<boolean>} True if successfully killed
-   */
-  killZloginProcess(pid) {
-    try {
-      log.websocket.info('Killing zlogin process', { pid });
-      const killProcess = spawn('pfexec', ['kill', '-9', pid.toString()], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      return new Promise(resolve => {
-        killProcess.on('exit', code => {
-          if (code === 0) {
-            log.websocket.info('Successfully killed zlogin process', { pid });
-            resolve(true);
-          } else {
-            log.websocket.error('Failed to kill zlogin process', {
-              pid,
-              exit_code: code,
-            });
-            resolve(false);
-          }
-        });
-
-        killProcess.on('error', error => {
-          log.websocket.error('Error killing zlogin process', {
-            pid,
-            error: error.message,
-          });
-          resolve(false);
-        });
-      });
-    } catch (error) {
-      log.websocket.error('Error killing zlogin process', {
-        pid,
-        error: error.message,
-      });
-      return false;
-    }
-  }
-
-  /**
-   * Clean up stale zlogin processes for a specific zone
-   * @param {string} zoneName - The zone name to clean up
-   * @returns {Promise<boolean>} True if cleanup was successful
-   */
-  async cleanupStaleZloginProcesses(zoneName) {
-    try {
-      log.websocket.debug('Cleaning up stale zlogin processes', {
-        zone_name: zoneName,
-      });
-
-      // Find running processes
-      const runningPid = await this.findRunningZloginProcess(zoneName);
-
-      if (runningPid) {
-        // Kill the stale process
-        await this.killZloginProcess(runningPid);
-
-        // Clean up any database sessions for this zone that are stale
-        const staleSessions = await ZloginSessions.findAll({
-          where: {
-            zone_name: zoneName,
-          },
-        });
-
-        await Promise.all(
-          staleSessions.map(session => {
-            log.websocket.debug('Cleaning up stale database session', {
-              session_id: session.id,
-            });
-            return session.destroy();
-          })
-        );
-
-        log.websocket.info('Cleanup completed', {
-          zone_name: zoneName,
-        });
-        return true;
-      }
-      log.websocket.debug('No stale zlogin processes found', {
-        zone_name: zoneName,
-      });
-      return true;
-    } catch (error) {
-      log.websocket.error('Error during cleanup', {
-        zone_name: zoneName,
-        error: error.message,
-      });
-      return false;
-    }
-  }
-
-  async cleanupStaleSessions() {
-    const activeSessions = await ZloginSessions.findAll({
-      where: {
-        status: ['active', 'connecting'],
-      },
-    });
-
-    const results = await Promise.all(
-      activeSessions.map(async session => {
-        try {
-          // Skip PID check for sessions that don't have a PID yet (connecting state)
-          if (session.pid !== null) {
-            process.kill(session.pid, 0);
-          }
-          return 0;
-        } catch {
-          await session.update({ status: 'closed' });
-          return 1;
-        }
-      })
-    );
-    const cleanedCount = results.reduce((a, b) => a + b, 0);
-    log.websocket.info('Zlogin startup cleanup completed', {
-      cleaned_count: cleanedCount,
-    });
-  }
-}
-
-const sessionManager = new ZloginSessionManager();
 
 export const getZloginCleanupTask = () => ({
   name: 'zlogin_cleanup',
@@ -212,7 +27,7 @@ export const startZloginSessionCleanup = () => {
       sessionManager.cleanupStaleSessions();
     },
     30 * 60 * 1000
-  ); // Reduced from 5 minutes to 30 minutes - less aggressive cleanup
+  );
 };
 
 /**
@@ -221,7 +36,6 @@ export const startZloginSessionCleanup = () => {
  * @returns {Promise<import('../models/ZloginSessionModel.js').default>} Session record
  */
 const createOrReuseZloginSession = async zoneName => {
-  // Check for existing session by zone name (unique constraint)
   const existingSession = await ZloginSessions.findOne({
     where: { zone_name: zoneName, status: 'active' },
   });
@@ -235,10 +49,8 @@ const createOrReuseZloginSession = async zoneName => {
     return existingSession;
   }
 
-  // Get or create shared PTY
   const ptySession = ptyManager.getOrCreate(zoneName);
 
-  // Create DB session record
   const session = await ZloginSessions.create({
     zone_name: zoneName,
     pid: ptySession.pid,
@@ -304,10 +116,8 @@ export const startZloginSession = async (req, res) => {
       return res.status(400).json({ error: 'Zone is not running' });
     }
 
-    // Create or reuse session (ptyManager handles PTY lifecycle)
     const session = await createOrReuseZloginSession(zoneName);
 
-    // Get automation state from ptyManager
     const automationActive = ptyManager.isAutomationActive(zoneName);
 
     log.websocket.info('Session ready', {
@@ -407,11 +217,8 @@ export const stopZloginSession = async (req, res) => {
 
     const { zone_name } = session;
 
-    // User wants to stop - kill the PTY (gives user full control)
-    // This will also fail any active automation, but that's the user's choice
     await ptyManager.destroy(zone_name);
 
-    // Update DB session
     await session.update({ status: 'closed' });
 
     log.websocket.info('Zlogin session stopped', {
@@ -471,7 +278,6 @@ export const listZloginSessions = async (req, res) => {
  */
 export const handleZloginConnection = async (ws, sessionId) => {
   try {
-    // Get session and zone name
     const session = await ZloginSessions.findByPk(sessionId);
     if (!session) {
       ws.send('Zlogin session not found.\r\n');
@@ -481,7 +287,6 @@ export const handleZloginConnection = async (ws, sessionId) => {
 
     const { zone_name } = session;
 
-    // Check if PTY exists
     if (!ptyManager.isAlive(zone_name)) {
       ws.send('Zlogin PTY not available.\r\n');
       ws.close();
@@ -493,7 +298,6 @@ export const handleZloginConnection = async (ws, sessionId) => {
       zone_name,
     });
 
-    // Send reconnection context (last 50 lines from buffer)
     if (session.session_buffer) {
       const bufferLines = session.session_buffer.split('\n');
       const contextLines = bufferLines.slice(-50);
@@ -504,18 +308,15 @@ export const handleZloginConnection = async (ws, sessionId) => {
       }
     }
 
-    // Send automation state
     const automationActive = ptyManager.isAutomationActive(zone_name);
     if (automationActive) {
       ws.send('\r\n[⚠️  Automation is active on this console]\r\n\r\n');
     }
 
-    // Update session access time
     await session.update({ last_accessed: new Date(), last_activity: new Date() });
 
     const bufferWriter = createSessionBufferWriter(session);
 
-    // Subscribe to PTY output (buffered, debounced flush)
     const unsubscribe = ptyManager.subscribe(zone_name, data => {
       if (ws.readyState === ws.OPEN) {
         ws.send(data);
@@ -523,7 +324,6 @@ export const handleZloginConnection = async (ws, sessionId) => {
       }
     });
 
-    // Handle user input from WebSocket
     ws.on('message', command => {
       try {
         ptyManager.write(zone_name, command.toString());
@@ -537,7 +337,6 @@ export const handleZloginConnection = async (ws, sessionId) => {
       }
     });
 
-    // Handle WebSocket close
     ws.on('close', (code, reason) => {
       log.websocket.info('[ZLOGIN-WS] WebSocket closed', {
         session_id: sessionId,
@@ -567,8 +366,8 @@ export const handleZloginConnection = async (ws, sessionId) => {
     try {
       ws.send(`Error: ${error.message}\r\n`);
       ws.close();
-    } catch {
-      // Ignore WebSocket send/close errors
+    } catch (sendError) {
+      void sendError;
     }
   }
 };

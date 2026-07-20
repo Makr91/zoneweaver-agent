@@ -20,31 +20,7 @@ import {
   calculateTimeSpan,
 } from './utils/SamplingHelpers.js';
 import { log } from '../../lib/Logger.js';
-
-/**
- * Expand the compact stored per-core form — [[user_pct, system_pct, idle_pct,
- * utilization_pct], ...] indexed by core — into the full per_core_parsed
- * objects this API has always served. cpu_id derives from the index; iowait is
- * always 0 (os.cpus() exposes none). Full fidelity, ~4x smaller storage.
- * Plain JSON.parse, NOT yieldable-json: yj's incremental parser rejects
- * exponent-notation numbers and this payload is a few KB.
- * @param {string} raw - Stored per_core_data JSON
- * @returns {Array|null} Parsed per-core objects, or null on parse failure
- */
-const expandPerCoreData = raw => {
-  try {
-    return JSON.parse(raw).map((core, i) => ({
-      cpu_id: `cpu${i}`,
-      user_pct: core[0],
-      system_pct: core[1],
-      idle_pct: core[2],
-      iowait_pct: 0,
-      utilization_pct: core[3],
-    }));
-  } catch {
-    return null;
-  }
-};
+import { expandPerCoreData } from './utils/CpuCoreHelpers.js';
 
 /**
  * @swagger
@@ -133,25 +109,20 @@ export const getCPUStats = async (req, res) => {
 
     const selectedAttributes = [...CPU_STATS_ATTRIBUTES];
 
-    // Add per_core_data if requested
     if (include_cores === 'true' || include_cores === true) {
       selectedAttributes.push('per_core_data');
     }
 
     if (!since) {
-      // Latest system-wide CPU stats
       const latestRecord = await CPUStats.findOne({
         attributes: selectedAttributes,
         order: [['scan_timestamp', 'DESC']],
       });
 
-      // Respond with a PLAIN object: the row was fetched with an explicit
-      // attributes list, and Sequelize's toJSON honors that list — anything
-      // stuffed into dataValues (per_core_parsed) would be silently dropped.
       const latest = latestRecord ? latestRecord.get({ plain: true }) : null;
       if ((include_cores === 'true' || include_cores === true) && latestRecord?.per_core_data) {
         latest.per_core_parsed = expandPerCoreData(latestRecord.per_core_data);
-        delete latest.per_core_data; // compact storage form the UI never reads
+        delete latest.per_core_data;
       }
 
       const results = latest ? [latest] : [];
@@ -172,7 +143,6 @@ export const getCPUStats = async (req, res) => {
         )
       );
     }
-    // Historical sampling across time range
     const whereClause = buildSystemMetricsWhereClause({ since });
 
     const allData = await CPUStats.findAll({
@@ -187,15 +157,12 @@ export const getCPUStats = async (req, res) => {
 
     let sampledResults = sampleByTime(allData, requestedLimit);
 
-    // Expand per-core data if requested — attached to PLAIN objects (toJSON
-    // honors the explicit attributes list and would drop keys stuffed into
-    // dataValues).
     if (include_cores === 'true' || include_cores === true) {
       sampledResults = sampledResults.map(row => {
         const plain = row.get({ plain: true });
         if (row.per_core_data) {
           plain.per_core_parsed = expandPerCoreData(row.per_core_data);
-          delete plain.per_core_data; // compact storage form the UI never reads
+          delete plain.per_core_data;
         }
         return plain;
       });
@@ -317,7 +284,6 @@ export const getMemoryStats = async (req, res) => {
     const requestedLimit = parseInt(limit);
 
     if (!since) {
-      // Latest system-wide memory stats
       const latestRecord = await MemoryStats.findOne({
         attributes: MEMORY_STATS_ATTRIBUTES,
         order: [['scan_timestamp', 'DESC']],
@@ -342,7 +308,6 @@ export const getMemoryStats = async (req, res) => {
       );
     }
 
-    // Historical sampling across time range
     const whereClause = buildSystemMetricsWhereClause({ since });
 
     const allData = await MemoryStats.findAll({
@@ -510,7 +475,6 @@ export const getSystemLoadMetrics = async (req, res) => {
       ],
     });
 
-    // Transform data for load-specific charting
     const loadMetrics = rows.map(row => ({
       timestamp: row.scan_timestamp,
       load_averages: {
@@ -535,7 +499,6 @@ export const getSystemLoadMetrics = async (req, res) => {
       cpu_count: row.cpu_count,
     }));
 
-    // Get the latest load metrics for quick reference
     const latest = loadMetrics.length > 0 ? loadMetrics[0] : null;
 
     return res.json({

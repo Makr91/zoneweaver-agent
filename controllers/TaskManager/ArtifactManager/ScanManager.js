@@ -6,74 +6,12 @@ import ArtifactStorageLocation from '../../../models/ArtifactStorageLocationMode
 import Artifact from '../../../models/ArtifactModel.js';
 import { Op } from 'sequelize';
 import { listDirectory, getMimeType } from '../../../lib/FileSystemManager.js';
+import { processDownloadTask } from './ScanDownloadTask.js';
 
 /**
  * Scan Manager for Artifact Scanning
  * Handles storage location scanning and artifact discovery
  */
-
-/**
- * Process a single download task for race condition protection
- * @param {Object} downloadTask - Download task object
- * @param {Object} location - Storage location object
- * @returns {Promise<string|null>} Target path if task matches location, null otherwise
- */
-const processDownloadTask = async (downloadTask, location) => {
-  log.artifact.debug('Race condition protection: processing download task', {
-    task_id: downloadTask.id,
-    operation: downloadTask.operation,
-    metadata_length: downloadTask.metadata?.length,
-  });
-
-  try {
-    const downloadMetadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(downloadTask.metadata, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
-
-    const { storage_location_id, filename, url } = downloadMetadata;
-
-    log.artifact.debug('Race condition protection: parsed download metadata', {
-      task_id: downloadTask.id,
-      download_storage_location_id: storage_location_id,
-      scan_location_id: location.id,
-      storage_location_match: storage_location_id === location.id,
-      filename,
-      url: url?.substring(0, 100),
-    });
-
-    if (storage_location_id === location.id) {
-      let finalFilename = filename;
-      if (!finalFilename) {
-        const urlPath = new URL(url).pathname;
-        finalFilename = path.basename(urlPath) || `download_${Date.now()}`;
-      }
-      const targetPath = path.join(location.path, finalFilename);
-
-      log.artifact.debug('Race condition protection: added downloading path', {
-        task_id: downloadTask.id,
-        final_filename: finalFilename,
-        target_path: targetPath,
-      });
-
-      return targetPath;
-    }
-
-    return null;
-  } catch (parseError) {
-    log.artifact.error('Race condition protection: failed to parse download task metadata', {
-      task_id: downloadTask.id,
-      error: parseError.message,
-      metadata_preview: downloadTask.metadata?.substring(0, 200),
-    });
-    return null;
-  }
-};
 
 /**
  * Get downloading paths to avoid race conditions during scanning
@@ -92,7 +30,6 @@ export const getDownloadingPaths = async location => {
     running_task_ids: runningDownloadTasks.map(t => t.id),
   });
 
-  // Process all download tasks in parallel
   const pathPromises = runningDownloadTasks.map(downloadTask =>
     processDownloadTask(downloadTask, location)
   );
@@ -134,7 +71,6 @@ export const processArtifactFiles = async (
   const pathsToUpdate = [];
   let skipped = 0;
 
-  // First pass: categorize files (no await needed)
   for (const file of artifactFiles) {
     log.artifact.debug('Race condition protection: checking file against downloading paths', {
       file_path: file.path,
@@ -185,7 +121,6 @@ export const processArtifactFiles = async (
     }
   }
 
-  // Second pass: Execute database operations in parallel
   const operations = [];
 
   if (filesToCreate.length > 0) {
@@ -201,7 +136,6 @@ export const processArtifactFiles = async (
     );
   }
 
-  // Execute all database operations in parallel
   await Promise.all(operations);
 
   const scanned = artifactFiles.length - skipped;
@@ -224,7 +158,6 @@ export const processArtifactFiles = async (
  * @returns {Promise<number>} Number of removed artifacts
  */
 export const removeOrphanedArtifacts = async (existingArtifacts, currentPaths) => {
-  // Collect orphaned artifact IDs (no await needed)
   const orphanedIds = existingArtifacts
     .filter(artifact => !currentPaths.has(artifact.path))
     .map(artifact => {
@@ -235,7 +168,6 @@ export const removeOrphanedArtifacts = async (existingArtifacts, currentPaths) =
       return artifact.id;
     });
 
-  // Bulk delete all orphaned artifacts in single operation
   if (orphanedIds.length > 0) {
     await Artifact.destroy({
       where: { id: { [Op.in]: orphanedIds } },
@@ -309,7 +241,6 @@ export const scanStorageLocation = async (location, options = {}) => {
     });
 
     const existingPaths = new Set(existingArtifacts.map(a => a.path));
-    // Use ALL files for currentPaths to prevent deleting records for files that exist but don't match extension filter
     const currentPaths = new Set(files.map(f => f.path));
 
     const { scanned, added, skipped } = await processArtifactFiles(
@@ -373,7 +304,6 @@ export const executeArtifactScanAllTask = async metadataJson => {
       source,
     });
 
-    // Get all enabled storage locations
     const locations = await ArtifactStorageLocation.findAll({
       where: { enabled: true },
     });
@@ -383,7 +313,6 @@ export const executeArtifactScanAllTask = async metadataJson => {
     let totalRemoved = 0;
     const errors = [];
 
-    // Process all locations in parallel for better performance
     const scanPromises = locations.map(async location => {
       try {
         const scanResult = await scanStorageLocation(location, {
@@ -391,7 +320,6 @@ export const executeArtifactScanAllTask = async metadataJson => {
           remove_orphaned,
         });
 
-        // Update location stats
         await location.update({
           last_scan_at: new Date(),
           scan_errors: 0,
@@ -419,7 +347,6 @@ export const executeArtifactScanAllTask = async metadataJson => {
 
     const scanResults = await Promise.all(scanPromises);
 
-    // Aggregate results
     for (const result of scanResults) {
       if (result.success) {
         totalScanned += result.scanResult.scanned;
@@ -431,7 +358,6 @@ export const executeArtifactScanAllTask = async metadataJson => {
     }
 
     if (errors.length > 0 && errors.length === locations.length) {
-      // All locations failed
       return {
         success: false,
         error: `All ${locations.length} storage locations failed to scan`,
@@ -516,7 +442,6 @@ export const executeArtifactScanLocationTask = async metadataJson => {
       remove_orphaned,
     });
 
-    // Update location stats and status
     await location.update({
       last_scan_at: new Date(),
       scan_errors: 0,

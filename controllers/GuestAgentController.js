@@ -19,6 +19,7 @@ import {
   readExtraAttr,
 } from '../lib/QemuGuestAgent.js';
 import { getSystemZoneStatus } from './ZoneManagement/ZoneQueryController.js';
+import { decodeExecStatus, pollExecUntilExit } from './GuestAgentExec.js';
 
 const resolveGuestChannel = async (req, res) => {
   if (!isGuestAgentEnabled()) {
@@ -164,62 +165,6 @@ export const guestNetwork = async (req, res) => {
     machine_name: result.channel.zoneName,
     interfaces: result.outcome.reply || null,
   });
-};
-
-const decodeExecStatus = reply => {
-  const status = { exited: Boolean(reply?.exited) };
-  if (typeof reply?.exitcode === 'number') {
-    status.exitcode = reply.exitcode;
-  }
-  if (typeof reply?.signal === 'number') {
-    status.signal = reply.signal;
-  }
-  if (reply?.['out-data']) {
-    status.stdout = Buffer.from(reply['out-data'], 'base64').toString('utf8');
-  }
-  if (reply?.['err-data']) {
-    status.stderr = Buffer.from(reply['err-data'], 'base64').toString('utf8');
-  }
-  return status;
-};
-
-const pollExecUntilExit = (channel, pid, timeoutSeconds, res) => {
-  const deadline = Date.now() + timeoutSeconds * 1000;
-
-  const poll = async () => {
-    let outcome;
-    try {
-      outcome = await runGuestCommand(channel.socketPath, 'guest-exec-status', { pid }, 5000);
-    } catch (error) {
-      return res
-        .status(502)
-        .json({ error: `Guest agent stopped answering while waiting: ${error.message}` });
-    }
-    const status = decodeExecStatus(outcome.reply);
-    if (status.exited) {
-      return res.json({
-        success: true,
-        machine_name: channel.zoneName,
-        pid,
-        ...status,
-      });
-    }
-    if (Date.now() > deadline) {
-      return res.json({
-        success: true,
-        machine_name: channel.zoneName,
-        pid,
-        exited: false,
-        message: `Still running after ${timeoutSeconds}s — poll GET /machines/{name}/guest/exec/${pid}`,
-      });
-    }
-    await new Promise(resolve => {
-      setTimeout(resolve, 1000);
-    });
-    return poll();
-  };
-
-  return poll();
 };
 
 /**
@@ -506,8 +451,6 @@ export const applyGuestAgentToggle = async (zoneName, enabled) => {
   if (!hasChannel) {
     return { changed: false };
   }
-  // Strip only the qga token (slot number may differ on hand-tuned zones);
-  // every other extra flag survives.
   const stripped = existingExtra
     .replace(/-s\s+\d+,virtio-console\S*/g, '')
     .replace(/\s+/g, ' ')

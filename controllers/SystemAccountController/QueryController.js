@@ -94,10 +94,8 @@ import { log } from '../../lib/Logger.js';
 export const getCurrentUserInfo = async (req, res) => {
   void req;
   try {
-    // Get current user info
     const currentUser = os.userInfo();
 
-    // Get additional user details from system
     const passwdResult = await executeCommand(`getent passwd ${currentUser.username}`);
     let homeDirectory = currentUser.homedir;
     let shell = currentUser.shell || '/bin/bash';
@@ -110,12 +108,10 @@ export const getCurrentUserInfo = async (req, res) => {
       }
     }
 
-    // Get user groups
     const groupsResult = await executeCommand(`groups ${currentUser.username}`);
     let groups = [];
 
     if (groupsResult.success) {
-      // Parse groups output: "username : group1 group2 group3"
       const groupsLine = groupsResult.output;
       const colonIndex = groupsLine.indexOf(':');
       if (colonIndex !== -1) {
@@ -460,7 +456,6 @@ export const getRoles = async (req, res) => {
   try {
     const { limit = 50 } = req.query;
 
-    // Get users with type=role from user_attr
     const userAttrResult = await executeCommand('cat /etc/user_attr');
     if (!userAttrResult.success) {
       throw new Error(`Failed to read user_attr database: ${userAttrResult.error}`);
@@ -469,7 +464,6 @@ export const getRoles = async (req, res) => {
     const roles = [];
     const lines = userAttrResult.output.split('\n');
 
-    // First pass: collect role names
     const roleNames = [];
     for (const line of lines) {
       const attributes = parseUserAttrLine(line);
@@ -481,7 +475,6 @@ export const getRoles = async (req, res) => {
       }
     }
 
-    // Second pass: get passwd info for all roles in parallel
     const passwdPromises = roleNames.map(attributes =>
       executeCommand(`getent passwd ${attributes.username}`)
         .then(result => ({ attributes, passwdResult: result }))
@@ -490,7 +483,6 @@ export const getRoles = async (req, res) => {
 
     const passwdResults = await Promise.all(passwdPromises);
 
-    // Third pass: build final role objects
     for (const { attributes, passwdResult } of passwdResults) {
       let roleInfo = { uid: null, gid: null, comment: '', home: '', shell: '' };
 
@@ -516,7 +508,6 @@ export const getRoles = async (req, res) => {
       });
     }
 
-    // Sort by role name
     roles.sort((a, b) => a.rolename.localeCompare(b.rolename));
 
     return directSuccessResponse(res, 'System roles retrieved successfully', {
@@ -562,13 +553,11 @@ export const getUserAttributes = async (req, res) => {
   try {
     const { username } = req.params;
 
-    // Check if user exists first
     const userExists = await executeCommand(`getent passwd ${username}`);
     if (!userExists.success) {
       return errorResponse(res, 404, `User '${username}' not found`);
     }
 
-    // Get user attributes from user_attr
     const userAttrResult = await executeCommand(`grep "^${username}:" /etc/user_attr`);
 
     const attributes = {

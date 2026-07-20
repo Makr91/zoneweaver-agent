@@ -46,14 +46,11 @@ export class NetworkParsingController {
         continue;
       }
 
-      // Split by colon, but handle escaped colons in MAC addresses
       const parts = trimmed.split(':');
       if (parts.length >= 7) {
-        // Handle escaped MAC address format (f2\:2\:0\:1\:0\:1 becomes f2:2:0:1:0:1)
-        const macStart = 3; // MAC address starts at index 3
+        const macStart = 3;
         let macEnd = macStart;
 
-        // Find where the MAC address ends (look for 'fixed' or 'random')
         for (let i = macStart; i < parts.length; i++) {
           if (parts[i] === 'fixed' || parts[i] === 'random') {
             macEnd = i;
@@ -61,7 +58,6 @@ export class NetworkParsingController {
           }
         }
 
-        // Reconstruct MAC address
         const macAddress = parts.slice(macStart, macEnd).join(':').replace(/\\/g, '');
 
         interfaces.push({
@@ -71,7 +67,7 @@ export class NetworkParsingController {
           over: parts[1],
           speed: parseInt(parts[2]) || null,
           macaddress: macAddress,
-          macaddrtype: parts[macEnd], // 'fixed' or 'random'
+          macaddrtype: parts[macEnd],
           vid: parseInt(parts[macEnd + 1]) || null,
           zone: parts[macEnd + 2] !== '--' ? parts[macEnd + 2] : null,
           scan_timestamp: new Date(),
@@ -91,7 +87,6 @@ export class NetworkParsingController {
     const lines = output.trim().split('\n');
     const interfaces = [];
 
-    // Skip header line
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) {
@@ -127,7 +122,6 @@ export class NetworkParsingController {
     const lines = output.trim().split('\n');
     const interfaces = [];
 
-    // Skip header line
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) {
@@ -162,7 +156,6 @@ export class NetworkParsingController {
     const lines = output.trim().split('\n');
     const interfaces = [];
 
-    // Skip header line
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) {
@@ -203,7 +196,6 @@ export class NetworkParsingController {
         continue;
       }
 
-      // Skip header lines - check for common header keywords
       if (
         trimmed.includes('LINK') &&
         (trimmed.includes('CLASS') || trimmed.includes('MTU') || trimmed.includes('STATE'))
@@ -211,14 +203,12 @@ export class NetworkParsingController {
         continue;
       }
 
-      // Skip separator lines
       if (trimmed.includes('---') || trimmed.includes('===')) {
         continue;
       }
 
       const parts = trimmed.split(/\s+/);
       if (parts.length >= 5) {
-        // Additional validation - skip if first part looks like a header
         if (parts[0] === 'LINK' || parts[0].includes('LINK')) {
           continue;
         }
@@ -254,17 +244,14 @@ export class NetworkParsingController {
         continue;
       }
 
-      // Skip any line that looks like a header (contains non-numeric data in expected numeric fields)
       if (this.isHeaderLine(trimmed)) {
         continue;
       }
 
       const parts = trimmed.split(':');
       if (parts.length >= 7) {
-        // Validate that numeric fields are actually numeric
         const [link, ipackets, rbytes, ierrors, opackets, obytes, oerrors] = parts;
 
-        // Skip if any expected numeric field contains non-numeric data
         if (
           !this.isValidNumericField(ipackets) ||
           !this.isValidNumericField(rbytes) ||
@@ -276,7 +263,6 @@ export class NetworkParsingController {
           continue;
         }
 
-        // Skip if link name contains header keywords
         if (this.isHeaderKeyword(link)) {
           continue;
         }
@@ -315,7 +301,6 @@ export class NetworkParsingController {
         continue;
       }
 
-      // Skip header line - look for the line with column headers
       if (
         trimmed.includes('LINK') &&
         trimmed.includes('DURATION') &&
@@ -325,24 +310,19 @@ export class NetworkParsingController {
         continue;
       }
 
-      // Skip lines until we find the header
       if (!headerFound) {
         continue;
       }
 
-      // Skip separator lines
       if (trimmed.includes('---')) {
         continue;
       }
 
-      // Parse data lines - use more careful parsing to handle long interface names
       const parts = trimmed.split(/\s+/);
 
-      // Need at least 7 parts for valid data
       if (parts.length >= 7) {
         const [linkName, durationStr, ipackets, rbytes, opackets, obytes] = parts;
 
-        // Skip header data that might have been parsed as a row
         if (
           linkName === 'LINK' ||
           linkName.includes('DURATION') ||
@@ -351,7 +331,6 @@ export class NetworkParsingController {
           continue;
         }
 
-        // Extract bandwidth string and parse numeric value
         const bandwidthStr = parts.slice(6).join(' ');
         const bandwidthMatch = bandwidthStr.match(/(?<speed>[0-9.]+)\s*Mbps/);
         const bandwidthMbps = bandwidthMatch ? parseFloat(bandwidthMatch.groups.speed) : null;
@@ -383,7 +362,6 @@ export class NetworkParsingController {
     const lines = output.trim().split('\n');
     const addresses = [];
 
-    // Skip header line
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) {
@@ -396,7 +374,6 @@ export class NetworkParsingController {
         const [interfaceName] = addrobj.split('/');
         const ipVersion = addrobj.includes('/v6') ? 'v6' : 'v4';
 
-        // Parse IP and prefix
         let ipAddress = addr;
         let prefixLength = null;
 
@@ -439,7 +416,6 @@ export class NetworkParsingController {
     for (const line of lines) {
       const trimmed = line.trim();
 
-      // Detect IP version sections
       if (trimmed.includes('Routing Table: IPv4')) {
         currentIPVersion = 'v4';
         inDataSection = false;
@@ -450,7 +426,6 @@ export class NetworkParsingController {
         continue;
       }
 
-      // Skip header lines
       if (trimmed.includes('Destination') || trimmed.includes('---') || !trimmed) {
         if (trimmed.includes('Destination')) {
           inDataSection = true;
@@ -512,7 +487,6 @@ export class NetworkParsingController {
     const lines = output.trim().split('\n');
     const aggregates = [];
 
-    // Skip header line
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) {
@@ -566,7 +540,6 @@ export class NetworkParsingController {
     if (!field || field === '') {
       return false;
     }
-    // Check if it's a number (including 0)
     return /^\d+$/.test(field);
   }
 

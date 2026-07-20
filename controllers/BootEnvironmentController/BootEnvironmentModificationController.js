@@ -85,14 +85,12 @@ export const createBootEnvironment = async (req, res) => {
       });
     }
 
-    // Validate name (basic validation)
     if (!/^[a-zA-Z0-9\-_.]+$/.test(name)) {
       return res.status(400).json({
         error: 'Boot environment name contains invalid characters',
       });
     }
 
-    // Create task for boot environment creation
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'beadm_create',
@@ -202,7 +200,6 @@ export const deleteBootEnvironment = async (req, res) => {
       });
     }
 
-    // Create task for boot environment deletion
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'beadm_delete',
@@ -309,7 +306,6 @@ export const activateBootEnvironment = async (req, res) => {
       });
     }
 
-    // Create task for boot environment activation
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'beadm_activate',
@@ -411,7 +407,6 @@ export const mountBootEnvironment = async (req, res) => {
       });
     }
 
-    // Create task for boot environment mounting
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'beadm_mount',
@@ -504,7 +499,6 @@ export const unmountBootEnvironment = async (req, res) => {
       });
     }
 
-    // Create task for boot environment unmounting
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'beadm_unmount',

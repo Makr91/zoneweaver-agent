@@ -31,7 +31,6 @@ class ArtifactStorageService {
     this.isInitialized = false;
     this.isScanning = false;
 
-    // Performance tracking
     this.stats = {
       scanRuns: 0,
       lastScanSuccess: null,
@@ -72,12 +71,10 @@ class ArtifactStorageService {
         configured_paths: this.config.paths.length,
       });
 
-      // Process each path in config (parallelized for performance)
       await Promise.all(
         this.config.paths.map(async pathConfig => {
           const configHash = this.calculateConfigHash(pathConfig);
 
-          // Validate path exists and is accessible
           const validation = validatePath(pathConfig.path);
           if (!validation.valid) {
             log.artifact.warn('Invalid storage path in configuration', {
@@ -88,7 +85,6 @@ class ArtifactStorageService {
             return;
           }
 
-          // Ensure directory exists or try to create it
           let directoryEnabled = pathConfig.enabled !== false;
           try {
             await fs.access(validation.normalizedPath);
@@ -97,7 +93,6 @@ class ArtifactStorageService {
               path: validation.normalizedPath,
             });
           } catch (error) {
-            // Directory doesn't exist, try to create it safely
             try {
               log.artifact.info('Creating storage directory', {
                 name: pathConfig.name,
@@ -125,12 +120,10 @@ class ArtifactStorageService {
                 create_error_type: typeof createError,
               });
 
-              // Mark as disabled since we couldn't create the directory
               directoryEnabled = false;
             }
           }
 
-          // Upsert storage location (always create DB entry, but may be disabled)
           await ArtifactStorageLocation.upsert({
             name: pathConfig.name,
             path: validation.normalizedPath,
@@ -148,7 +141,6 @@ class ArtifactStorageService {
         })
       );
 
-      // Remove storage locations that are no longer in config
       const configPaths = this.config.paths
         .map(p => {
           const validation = validatePath(p.path);
@@ -206,7 +198,7 @@ class ArtifactStorageService {
         yj.stringifyAsync(
           {
             verify_checksums: false,
-            remove_orphaned: true, // Clean orphaned records during automatic scans
+            remove_orphaned: true,
             source,
           },
           (err, result) => {
@@ -267,7 +259,6 @@ class ArtifactStorageService {
    */
   registerCleanupTasks() {
     try {
-      // Register orphaned artifact cleanup
       CleanupService.registerTask({
         name: 'artifact_cleanup',
         description: 'Clean up orphaned artifact records and old files',
@@ -301,24 +292,20 @@ class ArtifactStorageService {
       const retentionDays = this.config.cleanup.orphaned_files_retention_days || 30;
       const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-      // Find artifacts that haven't been verified recently
       const staleArtifacts = await Artifact.findAll({
         where: {
           [Op.or]: [{ last_verified: null }, { last_verified: { [Op.lt]: cutoffDate } }],
         },
-        limit: 100, // Process in batches
+        limit: 100,
       });
 
-      // Process artifacts in parallel for better performance
       const results = await Promise.allSettled(
         staleArtifacts.map(async artifact => {
           try {
             await fs.access(artifact.path);
-            // File exists, update last_verified
             await artifact.update({ last_verified: new Date() });
             return { removed: false };
           } catch {
-            // File doesn't exist, remove record
             await artifact.destroy();
             log.artifact.debug('Removed orphaned artifact record', {
               filename: artifact.filename,
@@ -366,13 +353,10 @@ class ArtifactStorageService {
     try {
       log.artifact.info('Initializing artifact storage service');
 
-      // Sync config with database
       await this.syncConfigWithDatabase();
 
-      // Kick off the initial scan (runs in the background)
       this.performInitialScan();
 
-      // Register cleanup tasks
       this.registerCleanupTasks();
 
       this.isInitialized = true;
@@ -409,7 +393,6 @@ class ArtifactStorageService {
     try {
       const scanInterval = this.config.scanning?.periodic_scan_interval || 300;
 
-      // Start periodic scanning (direct, no task rows)
       this.intervals.periodicScan = setInterval(() => {
         void this.runScanAll('periodic_scan');
       }, scanInterval * 1000);
@@ -442,7 +425,6 @@ class ArtifactStorageService {
       }
     });
 
-    // Reset interval IDs
     Object.keys(this.intervals).forEach(key => {
       this.intervals[key] = null;
     });
@@ -521,7 +503,6 @@ class ArtifactStorageService {
         stats.totals.total_artifacts += location.file_count || 0;
         stats.totals.total_size += parseInt(location.total_size) || 0;
 
-        // Group by type
         if (!stats.by_type[location.type]) {
           stats.by_type[location.type] = {
             count: 0,
@@ -557,7 +538,6 @@ class ArtifactStorageService {
   }
 }
 
-// Create singleton instance
 const artifactStorageService = new ArtifactStorageService();
 
 /**

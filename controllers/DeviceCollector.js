@@ -69,7 +69,6 @@ class DeviceCollector {
     const timeSinceLastReset = now - this.lastErrorReset;
     const resetInterval = this.hostMonitoringConfig.error_handling.reset_error_count_after * 1000;
 
-    // Reset error count if enough time has passed
     if (timeSinceLastReset > resetInterval) {
       this.errorCount = 1;
       this.lastErrorReset = now;
@@ -98,10 +97,10 @@ class DeviceCollector {
         operation,
         hostname: this.hostname,
       });
-      return false; // Signal to disable collector
+      return false;
     }
 
-    return true; // Continue collecting
+    return true;
   }
 
   /**
@@ -132,8 +131,6 @@ class DeviceCollector {
         continue;
       }
 
-      // Look for PCI device lines with format:
-      // pci8086,34dc (pciex8086,10fb) [Intel Corporation 82599ES 10-Gigabit...], instance #0 (driver name: ixgbe)
       const pciMatch = trimmed.match(
         /^(?<vendor>\w+),(?<device>\w+)\s+\((?<pciAddress>pciex[\w,]+)\)\s+\[(?<description>[^\]]+)\](?:,\s*instance\s+#(?<instance>\d+))?\s*(?:\(driver name:\s*(?<driverName>\w+)\))?/
       );
@@ -142,35 +139,27 @@ class DeviceCollector {
         const { pciAddress, description, instance: instanceStr, driverName } = pciMatch.groups;
         const instance = instanceStr ? parseInt(instanceStr) : null;
 
-        // Extract vendor and device IDs from pciex format (e.g., pciex8086,10fb)
         const addressMatch = pciAddress.match(/pciex(?<vendorId>\w+),(?<deviceId>\w+)/);
         const vendorId = addressMatch ? addressMatch.groups.vendorId : null;
         const deviceId = addressMatch ? addressMatch.groups.deviceId : null;
 
-        // Parse description to extract vendor name and device name
         let vendorName = null;
         let deviceName = null;
 
         if (description) {
-          // Try to split on common patterns
           const descParts = description.split(/\s+/);
           if (descParts.length >= 2) {
-            // First part is usually vendor (Intel, Broadcom, etc.)
             vendorName = descParts[0] + (descParts[1] === 'Corporation' ? ' Corporation' : '');
-            // Rest is device name
             deviceName = descParts.slice(vendorName.split(' ').length).join(' ');
           } else {
             deviceName = description;
           }
         }
 
-        // Determine device category based on description and driver
         const deviceCategory = this.categorizeDevice(description, driverName);
 
-        // Check if driver is attached
         const driverAttached = !!driverName;
 
-        // Create device object for PPT capability check
         const deviceObj = {
           host: this.hostname,
           pci_address: pciAddress,
@@ -182,17 +171,16 @@ class DeviceCollector {
           driver_instance: instance,
           driver_attached: driverAttached,
           device_category: deviceCategory,
-          pci_path: null, // Will be populated if we can extract it
+          pci_path: null,
           ppt_device_path: null,
           ppt_enabled: false,
-          ppt_capable: false, // Will be calculated below
+          ppt_capable: false,
           assigned_to_zones: [],
           found_in_network_interfaces: false,
           found_in_disk_inventory: false,
           scan_timestamp: new Date(),
         };
 
-        // Calculate PPT capability
         deviceObj.ppt_capable = this.isPPTCapable(deviceObj);
 
         devices.push(deviceObj);
@@ -208,7 +196,6 @@ class DeviceCollector {
    * @returns {boolean} True if device is PPT-capable
    */
   isPPTCapable(device) {
-    // Exclude devices already assigned to zones
     if (
       device.assigned_to_zones &&
       Array.isArray(device.assigned_to_zones) &&
@@ -217,17 +204,11 @@ class DeviceCollector {
       return false;
     }
 
-    // Intel devices (vendor_id 8086) - allow ONLY network cards
-    // All other Intel devices are system-critical (chipset, I/O hub, etc.)
     if (device.vendor_id === '8086') {
       return device.device_category === 'network';
     }
 
-    // AMD devices (vendor_id 1022) - exclude system critical components
-    // TODO: Expand this list as we get more AMD system data
     if (device.vendor_id === '1022') {
-      // For now, be conservative and exclude AMD devices until we have test data
-      // Exception: allow discrete GPUs and add-in cards
       return (
         device.device_category === 'display' ||
         device.device_category === 'network' ||
@@ -235,13 +216,6 @@ class DeviceCollector {
       );
     }
 
-    // All other vendors (non-Intel, non-AMD) are generally PPT-capable
-    // This includes add-in cards from vendors like:
-    // - Broadcom/LSI storage controllers
-    // - NVIDIA GPUs
-    // - Renesas USB controllers
-    // - Matrox display controllers
-    // - Other specialty PCI cards
     return true;
   }
 
@@ -325,10 +299,8 @@ class DeviceCollector {
         error: error.message,
         hostname: this.hostname,
       });
-      // Try to parse text format as fallback
       const lines = output.trim().split('\n');
       for (let i = 1; i < lines.length; i++) {
-        // Skip header
         const line = lines[i].trim();
         if (!line) {
           continue;
@@ -358,13 +330,11 @@ class DeviceCollector {
     try {
       const timeout = this.hostMonitoringConfig.performance.command_timeout * 1000;
 
-      // Try JSON format first
       let pptDevices = [];
       try {
         const { stdout: pptOutput } = await execProm('pfexec pptadm list -j -a', { timeout });
         pptDevices = await this.parsePPTOutput(pptOutput);
       } catch (jsonError) {
-        // Fallback to text format
         try {
           const { stdout: pptOutput } = await execProm('pfexec pptadm list -a', { timeout });
           pptDevices = this.parsePPTOutput(pptOutput);
@@ -378,7 +348,6 @@ class DeviceCollector {
         }
       }
 
-      // Match PPT devices with PCI devices
       for (const pptDevice of pptDevices) {
         const matchingPciDevice = deviceData.find(
           device =>
@@ -403,14 +372,11 @@ class DeviceCollector {
    */
   async checkZoneAssignments() {
     try {
-      // Query existing zone data from database - NO zadm/zonecfg calls
       const zones = await Zones.findAll({
         where: { host: this.hostname },
-        attributes: ['name', 'brand', 'status'], // Basic zone info for now
+        attributes: ['name', 'brand', 'status'],
       });
 
-      // For now, just log that we found zones
-      // Zone configuration parsing will be enhanced when we have actual zone configs with device assignments
       for (const zone of zones) {
         if (zone.brand === 'bhyve') {
           log.monitoring.debug('Found bhyve zone for device assignment check', {
@@ -433,7 +399,6 @@ class DeviceCollector {
    */
   async crossReferenceWithCollectors(deviceData) {
     try {
-      // Query NetworkInterfaces table - NO dladm re-execution
       const networkInterfaces = await NetworkInterfaces.findAll({
         where: { host: this.hostname },
         attributes: ['link', 'over', 'device'],
@@ -441,7 +406,6 @@ class DeviceCollector {
         limit: 100,
       });
 
-      // Query Disks table - NO format re-execution
       const diskInventory = await Disks.findAll({
         where: { host: this.hostname },
         attributes: ['device_name', 'manufacturer', 'model', 'interface_type'],
@@ -449,15 +413,12 @@ class DeviceCollector {
         limit: 100,
       });
 
-      // Match PCI devices with network interfaces by device name
       for (const netInterface of networkInterfaces) {
         const matchingDevice = deviceData.find(
           device =>
-            // Match by driver name with device field (e.g., ixgbe0 -> ixgbe driver)
             (device.driver_name &&
               netInterface.device &&
               netInterface.device.startsWith(device.driver_name)) ||
-            // Match by device category and device field
             (device.device_category === 'network' &&
               netInterface.device &&
               device.driver_name &&
@@ -469,9 +430,7 @@ class DeviceCollector {
         }
       }
 
-      // Match PCI devices with storage controllers
       for (const disk of diskInventory) {
-        // Ensure disk is valid to satisfy linter usage requirement
         if (!disk) {
           continue;
         }
@@ -510,7 +469,6 @@ class DeviceCollector {
     try {
       const timeout = this.hostMonitoringConfig.performance.command_timeout * 1000;
 
-      // NEW COMMAND: Parse prtconf -dD output for PCI devices
       const { stdout: prtconfOutput } = await execProm('prtconf -dD', { timeout });
       const deviceData = this.parsePrtconfOutput(prtconfOutput);
 
@@ -518,16 +476,12 @@ class DeviceCollector {
         return true;
       }
 
-      // Check PPT status if available (NEW COMMAND)
       await this.checkPPTStatus(deviceData);
 
-      // Cross-reference with zone configurations (DATABASE QUERY ONLY)
       await this.checkZoneAssignments();
 
-      // Cross-reference with existing network/storage data (DATABASE QUERY ONLY)
       await this.crossReferenceWithCollectors(deviceData);
 
-      // Store in database with batching (STANDARD PATTERN)
       const batchSize = this.hostMonitoringConfig.performance.batch_size;
       const chunks = [];
       for (let i = 0; i < deviceData.length; i += batchSize) {
@@ -545,7 +499,6 @@ class DeviceCollector {
       await this.updateHostInfo({ last_device_scan: new Date() });
       await this.resetErrorCount();
 
-      // Log summary by category
       const categoryCount = {};
       deviceData.forEach(device => {
         categoryCount[device.device_category] = (categoryCount[device.device_category] || 0) + 1;
@@ -568,7 +521,6 @@ class DeviceCollector {
       const retentionConfig = this.hostMonitoringConfig.retention;
       const now = new Date();
 
-      // Clean device data (use same retention as storage data)
       const deviceRetentionDate = new Date(
         now.getTime() - retentionConfig.storage * 24 * 60 * 60 * 1000
       );

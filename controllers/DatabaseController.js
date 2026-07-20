@@ -6,8 +6,6 @@
  * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
-import { stat } from 'fs/promises';
-import { allDatabases } from '../config/Database.js';
 import config from '../config/ConfigLoader.js';
 import CleanupService from './CleanupService.js';
 import { log } from '../lib/Logger.js';
@@ -15,21 +13,20 @@ import {
   directSuccessResponse,
   errorResponse,
 } from './SystemHostController/utils/ResponseHelpers.js';
-
-/**
- * Get file size safely, returning 0 if file doesn't exist
- * @param {string} filePath - Path to file
- * @returns {Promise<number>} File size in bytes
- */
-const getFileSizeOrZero = async filePath => {
-  try {
-    const fileStat = await stat(filePath);
-    return fileStat.size;
-  } catch (error) {
-    void error;
-    return 0;
-  }
-};
+import {
+  collectAllDatabaseStats,
+  runAnalyze,
+  runVacuum,
+  summarizeDatabaseTotals,
+} from './Database/DatabaseStatsHelpers.js';
+import {
+  buildOrderClause,
+  buildTableSummaries,
+  fetchTableColumns,
+  findDatabase,
+  listTableNames,
+  unknownDatabaseMessage,
+} from './Database/DatabaseExplorerHelpers.js';
 
 /**
  * @swagger
@@ -136,68 +133,12 @@ export const getDatabaseStats = async (req, res) => {
       return errorResponse(res, 400, 'Database stats only available for SQLite');
     }
 
-    const databases = await Promise.all(
-      allDatabases.map(async ({ name, file, instance }) => {
-        const [dbSize, walSize, shmSize] = await Promise.all([
-          getFileSizeOrZero(file),
-          getFileSizeOrZero(`${file}-wal`),
-          getFileSizeOrZero(`${file}-shm`),
-        ]);
-
-        const [tables] = await instance.query(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        );
-
-        const tableStats = await Promise.all(
-          tables.map(async table => {
-            const [[countResult]] = await instance.query(
-              `SELECT COUNT(*) as count FROM "${table.name}"`
-            );
-            return {
-              name: table.name,
-              row_count: countResult.count,
-            };
-          })
-        );
-
-        const [indexes] = await instance.query(
-          "SELECT name, tbl_name as 'table' FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY tbl_name, name"
-        );
-
-        const [[pageCount]] = await instance.query('PRAGMA page_count');
-        const [[pageSize]] = await instance.query('PRAGMA page_size');
-        const [[freelistCount]] = await instance.query('PRAGMA freelist_count');
-
-        return {
-          name,
-          storage_path: file,
-          files: {
-            database: dbSize,
-            wal: walSize,
-            shm: shmSize,
-            total: dbSize + walSize + shmSize,
-          },
-          internal: {
-            page_size: pageSize.page_size,
-            page_count: pageCount.page_count,
-            freelist_count: freelistCount.freelist_count,
-            freelist_bytes: freelistCount.freelist_count * pageSize.page_size,
-          },
-          tables: tableStats,
-          total_tables: tableStats.length,
-          total_rows: tableStats.reduce((sum, t) => sum + t.row_count, 0),
-          indexes: indexes.map(idx => ({ name: idx.name, table: idx.table })),
-          total_indexes: indexes.length,
-        };
-      })
-    );
+    const databases = await collectAllDatabaseStats();
 
     return directSuccessResponse(res, 'Database statistics retrieved successfully', {
       dialect: dbConfig.dialect,
       databases,
-      total_size: databases.reduce((sum, d) => sum + d.files.total, 0),
-      total_tables: databases.reduce((sum, d) => sum + d.total_tables, 0),
-      total_rows: databases.reduce((sum, d) => sum + d.total_rows, 0),
+      ...summarizeDatabaseTotals(databases),
     });
   } catch (error) {
     log.database.error('Error getting database stats', {
@@ -254,31 +195,7 @@ export const vacuumDatabase = async (req, res) => {
       return errorResponse(res, 400, 'VACUUM only available for SQLite');
     }
 
-    log.database.info('Starting database VACUUM', {
-      triggered_by: req.entity.name,
-      databases: allDatabases.map(d => d.name),
-    });
-
-    const databases = await Promise.all(
-      allDatabases.map(async ({ name, file, instance }) => {
-        const sizeBefore = await getFileSizeOrZero(file);
-        await instance.query('VACUUM');
-        const sizeAfter = await getFileSizeOrZero(file);
-        return {
-          name,
-          size_before: sizeBefore,
-          size_after: sizeAfter,
-          space_reclaimed: sizeBefore - sizeAfter,
-        };
-      })
-    );
-
-    const totalReclaimed = databases.reduce((sum, d) => sum + d.space_reclaimed, 0);
-
-    log.database.info('Database VACUUM completed', {
-      triggered_by: req.entity.name,
-      total_reclaimed: totalReclaimed,
-    });
+    const { databases, totalReclaimed } = await runVacuum(req.entity.name);
 
     return directSuccessResponse(res, 'Database VACUUM completed successfully', {
       databases,
@@ -319,16 +236,7 @@ export const analyzeDatabase = async (req, res) => {
       return errorResponse(res, 400, 'ANALYZE only available for SQLite');
     }
 
-    log.database.info('Starting database ANALYZE', {
-      triggered_by: req.entity.name,
-      databases: allDatabases.map(d => d.name),
-    });
-
-    await Promise.all(allDatabases.map(({ instance }) => instance.query('ANALYZE')));
-
-    log.database.info('Database ANALYZE completed', {
-      triggered_by: req.entity.name,
-    });
+    await runAnalyze(req.entity.name);
 
     return directSuccessResponse(res, 'Database ANALYZE completed successfully');
   } catch (error) {
@@ -392,15 +300,6 @@ export const triggerCleanup = async (req, res) => {
   }
 };
 
-const findDatabase = name => allDatabases.find(database => database.name === name);
-
-const listTableNames = async instance => {
-  const [tables] = await instance.query(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-  );
-  return tables.map(table => table.name);
-};
-
 /**
  * @swagger
  * /database/{db}/tables:
@@ -453,28 +352,9 @@ export const listDatabaseTables = async (req, res) => {
     }
     const database = findDatabase(req.params.db);
     if (!database) {
-      return errorResponse(
-        res,
-        404,
-        `Unknown database — one of: ${allDatabases.map(d => d.name).join(', ')}`
-      );
+      return errorResponse(res, 404, unknownDatabaseMessage());
     }
-    const names = await listTableNames(database.instance);
-    const [indexes] = await database.instance.query(
-      "SELECT name, tbl_name as 'table' FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    );
-    const tables = await Promise.all(
-      names.map(async name => {
-        const [[countResult]] = await database.instance.query(
-          `SELECT COUNT(*) as count FROM "${name}"`
-        );
-        return {
-          name,
-          rows: countResult.count,
-          indexes: indexes.filter(index => index.table === name).map(index => index.name),
-        };
-      })
-    );
+    const tables = await buildTableSummaries(database.instance);
     return directSuccessResponse(res, 'Database tables retrieved successfully', {
       database: database.name,
       tables,
@@ -571,11 +451,7 @@ export const browseDatabaseTable = async (req, res) => {
     }
     const database = findDatabase(req.params.db);
     if (!database) {
-      return errorResponse(
-        res,
-        404,
-        `Unknown database — one of: ${allDatabases.map(d => d.name).join(', ')}`
-      );
+      return errorResponse(res, 404, unknownDatabaseMessage());
     }
     const names = await listTableNames(database.instance);
     const table = names.find(name => name === req.params.table);
@@ -583,20 +459,14 @@ export const browseDatabaseTable = async (req, res) => {
       return errorResponse(res, 404, `Unknown table in ${database.name}`);
     }
 
-    const [columnsInfo] = await database.instance.query(`PRAGMA table_info("${table}")`);
-    const columns = columnsInfo.map(column => column.name);
+    const columns = await fetchTableColumns(database.instance, table);
 
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
-    let orderClause = '';
-    if (req.query.order_by) {
-      const [orderColumn, direction = 'asc'] = String(req.query.order_by).split(':');
-      if (!columns.includes(orderColumn)) {
-        return errorResponse(res, 400, `order_by must name a column of ${table}`);
-      }
-      const orderDirection = direction.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-      orderClause = ` ORDER BY "${orderColumn}" ${orderDirection}`;
+    const orderClause = buildOrderClause(req.query.order_by, columns);
+    if (orderClause === null) {
+      return errorResponse(res, 400, `order_by must name a column of ${table}`);
     }
 
     const [[countResult]] = await database.instance.query(

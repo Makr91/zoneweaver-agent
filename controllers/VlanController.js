@@ -69,7 +69,6 @@ export const getVlans = async (req, res) => {
 
   try {
     if (live === 'true' || live === true) {
-      // Get live data directly from dladm
       const command = 'pfexec dladm show-vlan -p -o link,vid,over,flags';
 
       const result = await executeCommand(command);
@@ -115,7 +114,6 @@ export const getVlans = async (req, res) => {
       });
     }
 
-    // Get data from database (monitoring data)
     const hostname = os.hostname();
     const whereClause = {
       host: hostname,
@@ -198,7 +196,6 @@ export const getVlanDetails = async (req, res) => {
 
   try {
     if (live === 'true' || live === true) {
-      // Get VLAN details
       const vlanResult = await executeCommand(
         `pfexec dladm show-vlan ${vlan} -p -o link,vid,over,flags`
       );
@@ -221,7 +218,6 @@ export const getVlanDetails = async (req, res) => {
         source: 'live',
       };
 
-      // Get additional link information
       const linkResult = await executeCommand(
         `pfexec dladm show-link ${vlan} -p -o link,class,mtu,state`
       );
@@ -235,7 +231,6 @@ export const getVlanDetails = async (req, res) => {
       return res.json(vlanDetails);
     }
 
-    // Get data from database
     const hostname = os.hostname();
     const vlanData = await NetworkInterfaces.findOne({
       where: {
@@ -341,21 +336,18 @@ export const createVlan = async (req, res) => {
   const { vid, link, name, force = false, temporary = false } = req.body;
 
   try {
-    // Validate required fields
     if (!vid || !link) {
       return res.status(400).json({
         error: 'vid and link are required',
       });
     }
 
-    // Validate VLAN ID range
     if (vid < 1 || vid > 4094) {
       return res.status(400).json({
         error: 'VLAN ID must be between 1 and 4094',
       });
     }
 
-    // Validate that the underlying link exists
     const linkResult = await executeCommand(`pfexec dladm show-link ${link}`);
     if (!linkResult.success) {
       return res.status(400).json({
@@ -363,10 +355,8 @@ export const createVlan = async (req, res) => {
       });
     }
 
-    // Generate VLAN name if not provided
     let vlanName = name;
     if (!vlanName) {
-      // Auto-generate name based on dladm convention: <name><1000 * vid + PPA>
       const linkMatch = link.match(/^(?<baseName>[a-zA-Z]+)(?<ppa>\d+)$/);
       if (linkMatch) {
         const { baseName, ppa } = linkMatch.groups;
@@ -391,7 +381,6 @@ export const createVlan = async (req, res) => {
       }
     }
 
-    // Check if VLAN already exists
     const existsResult = await executeCommand(`pfexec dladm show-vlan ${vlanName}`);
     if (existsResult.success) {
       return res.status(400).json({
@@ -399,7 +388,6 @@ export const createVlan = async (req, res) => {
       });
     }
 
-    // Create task for VLAN creation
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'create_vlan',
@@ -501,7 +489,6 @@ export const deleteVlan = async (req, res) => {
   const { temporary = false } = req.query;
 
   try {
-    // Check if VLAN exists
     const existsResult = await executeCommand(`pfexec dladm show-vlan ${vlan}`);
 
     if (!existsResult.success) {
@@ -511,7 +498,6 @@ export const deleteVlan = async (req, res) => {
       });
     }
 
-    // Create task for VLAN deletion
     const task = await Tasks.create({
       zone_name: 'system',
       operation: 'delete_vlan',

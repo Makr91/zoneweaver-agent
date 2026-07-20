@@ -188,7 +188,7 @@ export const buildSamplingMetadata = (options = {}) => {
 export const createEmptyResponse = (startTime, strategy = 'no-data') => ({
   totalCount: 0,
   returnedCount: 0,
-  queryTime: `${Date.now() - startTime}ms`,
+  queryTime: Date.now() - startTime,
   sampling: {
     applied: true,
     strategy,
@@ -197,12 +197,13 @@ export const createEmptyResponse = (startTime, strategy = 'no-data') => ({
 });
 
 /**
- * Add query timing to response
+ * Add query timing to response — numeric MILLISECONDS (converged
+ * structured-JSON wire 2026-07-20; the UI formats).
  * @param {Object} response - Response object to modify
  * @param {number} startTime - Query start time
  * @returns {Object} Response with timing added
  */
 export const addQueryTiming = (response, startTime) => ({
   ...response,
-  queryTime: `${Date.now() - startTime}ms`,
+  queryTime: Date.now() - startTime,
 });

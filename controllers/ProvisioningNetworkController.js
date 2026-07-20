@@ -172,6 +172,13 @@ const detectActiveInterface = async () => {
  *                         type: string
  *                         enum: [phys, aggr, etherstub, simnet, overlay]
  *                       state: { type: string }
+ *                       status:
+ *                         type: string
+ *                         enum: [up, down]
+ *                         description: Normalized link status (absent = unknown) — the converged picker field; pickers hide down rows
+ *                       wireless:
+ *                         type: boolean
+ *                         description: Whether the link is a wireless medium (absent = unknown)
  *                       provisioning: { type: boolean }
  *                 excluded_aggr_members:
  *                   type: array
@@ -193,6 +200,18 @@ export const getBridgedInterfaces = async (req, res) => {
         error: 'Failed to enumerate links',
         details: linksResult.error,
       });
+    }
+
+    // Media per phys link feeds the converged `wireless` picker field.
+    const mediaByLink = new Map();
+    const physResult = await executeCommand('pfexec dladm show-phys -p -o link,media');
+    if (physResult.success && physResult.output) {
+      for (const line of physResult.output.split('\n')) {
+        const [link, media] = line.split(':');
+        if (link && media) {
+          mediaByLink.set(link, media);
+        }
+      }
     }
 
     // Aggregate MEMBER links carry the aggr's traffic — never valid parents.
@@ -217,6 +236,13 @@ export const getBridgedInterfaces = async (req, res) => {
         continue;
       }
       const entry = { name: link, class: linkClass, state };
+      if (state === 'up' || state === 'down') {
+        entry.status = state;
+      }
+      const media = mediaByLink.get(link);
+      if (media) {
+        entry.wireless = media === 'WiFi';
+      }
       if (link === netConfig.etherstub_name) {
         entry.provisioning = true;
       }

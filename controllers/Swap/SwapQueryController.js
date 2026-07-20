@@ -128,12 +128,12 @@ export const listSwapAreas = async (req, res) => {
  *               properties:
  *                 host:
  *                   type: string
- *                 totalSwapGB:
- *                   type: number
- *                 usedSwapGB:
- *                   type: number
- *                 freeSwapGB:
- *                   type: number
+ *                 totalSwapBytes:
+ *                   type: integer
+ *                 usedSwapBytes:
+ *                   type: integer
+ *                 freeSwapBytes:
+ *                   type: integer
  *                 overallUtilization:
  *                   type: number
  *                 swapAreas:
@@ -145,10 +145,10 @@ export const listSwapAreas = async (req, res) => {
  *                         type: string
  *                       pool:
  *                         type: string
- *                       sizeGB:
- *                         type: string
- *                       usedGB:
- *                         type: string
+ *                       sizeBytes:
+ *                         type: integer
+ *                       usedBytes:
+ *                         type: integer
  *                       utilization:
  *                         type: number
  *                 poolDistribution:
@@ -175,11 +175,11 @@ export const listSwapAreas = async (req, res) => {
  *                   nullable: true
  *                   description: Cross-reference to the latest MemoryStats swap figures
  *                   properties:
- *                     total_swap_gb:
- *                       type: string
+ *                     total_swap_bytes:
+ *                       type: integer
  *                       nullable: true
- *                     used_swap_gb:
- *                       type: string
+ *                     used_swap_bytes:
+ *                       type: integer
  *                       nullable: true
  *                     utilization_pct:
  *                       type: number
@@ -274,11 +274,13 @@ export const getSwapSummary = async (req, res) => {
       }
     });
 
+    // Converged structured-JSON wire (2026-07-20): numeric BYTES, never
+    // "%.2f" strings — the UI formats.
     return res.json({
       host: hostname,
-      totalSwapGB: (totalSwapBytes / 1024 ** 3).toFixed(2),
-      usedSwapGB: (usedSwapBytes / 1024 ** 3).toFixed(2),
-      freeSwapGB: (freeSwapBytes / 1024 ** 3).toFixed(2),
+      totalSwapBytes,
+      usedSwapBytes,
+      freeSwapBytes,
       overallUtilization: parseFloat(overallUtilization.toFixed(2)),
       swapAreaCount: swapAreas.length,
       // Response keys keep the external names (path/pool) — only the storage
@@ -286,8 +288,8 @@ export const getSwapSummary = async (req, res) => {
       swapAreas: swapAreas.map(area => ({
         path: area.swapfile,
         pool: poolFromSwapfile(area.swapfile),
-        sizeGB: (Number(area.size_bytes) / 1024 ** 3).toFixed(2),
-        usedGB: (Number(area.used_bytes) / 1024 ** 3).toFixed(2),
+        sizeBytes: Number(area.size_bytes),
+        usedBytes: Number(area.used_bytes),
         utilization: parseFloat(area.utilization_pct),
       })),
       poolDistribution,
@@ -295,11 +297,11 @@ export const getSwapSummary = async (req, res) => {
       lastScanned: swapAreas.length > 0 ? swapAreas[0].scan_timestamp : null,
       memoryStatsReference: latestMemoryStats
         ? {
-            total_swap_gb: latestMemoryStats.swap_total_bytes
-              ? (Number(latestMemoryStats.swap_total_bytes) / 1024 ** 3).toFixed(2)
+            total_swap_bytes: latestMemoryStats.swap_total_bytes
+              ? Number(latestMemoryStats.swap_total_bytes)
               : null,
-            used_swap_gb: latestMemoryStats.swap_used_bytes
-              ? (Number(latestMemoryStats.swap_used_bytes) / 1024 ** 3).toFixed(2)
+            used_swap_bytes: latestMemoryStats.swap_used_bytes
+              ? Number(latestMemoryStats.swap_used_bytes)
               : null,
             utilization_pct: latestMemoryStats.swap_utilization_pct,
           }
@@ -353,10 +355,10 @@ export const getSwapSummary = async (req, res) => {
  *                     properties:
  *                       host:
  *                         type: string
- *                       swap_total_gb:
- *                         type: string
- *                       swap_used_gb:
- *                         type: string
+ *                       swap_total_bytes:
+ *                         type: integer
+ *                       swap_used_bytes:
+ *                         type: integer
  *                       swap_utilization_pct:
  *                         type: number
  *                       last_checked:
@@ -408,12 +410,8 @@ export const getHostsWithLowSwap = async (req, res) => {
 
     const results = Array.from(hostMap.values()).map(record => ({
       host: record.host,
-      swap_total_gb: record.swap_total_bytes
-        ? (Number(record.swap_total_bytes) / 1024 ** 3).toFixed(2)
-        : '0.00',
-      swap_used_gb: record.swap_used_bytes
-        ? (Number(record.swap_used_bytes) / 1024 ** 3).toFixed(2)
-        : '0.00',
+      swap_total_bytes: record.swap_total_bytes ? Number(record.swap_total_bytes) : 0,
+      swap_used_bytes: record.swap_used_bytes ? Number(record.swap_used_bytes) : 0,
       swap_utilization_pct: parseFloat(record.swap_utilization_pct || 0),
       last_checked: record.scan_timestamp,
     }));

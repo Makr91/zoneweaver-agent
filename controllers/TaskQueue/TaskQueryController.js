@@ -10,6 +10,27 @@ import { runningTasks } from './TaskState.js';
  */
 
 /**
+ * The converged structured-JSON wire (2026-07-20): task rows serve
+ * `metadata` as a REAL JSON object (null when absent/unparseable) — storage
+ * stays TEXT, the parse happens at the wire.
+ * @param {*} value - Stored metadata column value
+ * @returns {Object|null}
+ */
+const parseMetadataColumn = value => {
+  if (value && typeof value === 'object') {
+    return value;
+  }
+  if (typeof value !== 'string' || value === '') {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+/**
  * @swagger
  * /tasks:
  *   get:
@@ -141,11 +162,16 @@ export const listTasks = async (req, res) => {
 
     // The LIST never carries the output column (joint contract with the Go
     // agent) — full task output rides GET /tasks/{taskId}/output only.
-    const tasks = await Tasks.findAll({
+    const rows = await Tasks.findAll({
       where: whereClause,
       attributes: { exclude: ['output'] },
       order: [[sortColumn, sortDirection]],
       limit: parseInt(limit),
+    });
+    const tasks = rows.map(row => {
+      const plain = row.get({ plain: true });
+      plain.metadata = parseMetadataColumn(plain.metadata);
+      return plain;
     });
 
     // Only run expensive count query if explicitly requested
@@ -206,7 +232,13 @@ export const getTaskDetails = async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    return res.json(task);
+    // Converged structured-JSON wire: metadata rides as a real object; the
+    // detail's output is NULL — GET /tasks/{taskId}/output is the one
+    // structured output channel.
+    const plain = task.get({ plain: true });
+    plain.metadata = parseMetadataColumn(plain.metadata);
+    plain.output = null;
+    return res.json(plain);
   } catch (error) {
     log.database.error('Database error getting task details', {
       error: error.message,

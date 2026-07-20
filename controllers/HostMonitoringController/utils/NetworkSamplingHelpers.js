@@ -369,6 +369,6 @@ export const createOptimizedResponse = (sampledData, metadata, samplesPerInterfa
           : 1,
       averageRecordsPerInterface: metadata.averageRecordsPerInterface,
     },
-    queryTime: `${queryTime}ms`,
+    queryTime,
   };
 };

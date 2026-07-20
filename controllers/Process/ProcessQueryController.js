@@ -169,8 +169,10 @@ export const listProcesses = async (req, res) => {
  *                   type: integer
  *                   description: Resident memory size
  *                 open_files_sample:
- *                   type: string
- *                   description: Sample of open files
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   description: Sample of open files, one pfiles line per entry (converged structured-JSON wire; [] when unavailable)
  *       404:
  *         description: Process not found
  *       500:
@@ -480,9 +482,17 @@ export const findProcessesController = async (req, res) => {
  *                   cpu_percent:
  *                     type: number
  *                   size:
- *                     type: string
+ *                     type: integer
+ *                     nullable: true
+ *                     description: Virtual size in BYTES (converged structured-JSON wire; null when unparseable)
  *                   rss:
- *                     type: string
+ *                     type: integer
+ *                     nullable: true
+ *                     description: Resident size in BYTES
+ *                   cpu_time:
+ *                     type: integer
+ *                     nullable: true
+ *                     description: Total CPU time in SECONDS
  *                   command:
  *                     type: string
  *       500:

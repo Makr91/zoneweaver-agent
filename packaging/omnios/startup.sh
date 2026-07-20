@@ -6,8 +6,6 @@
 set -e
 
 # Environment is set by SMF, but ensure we have the basics
-# node-22 MUST outrank /opt/ooce/bin — a co-installed node-24 owns the
-# generic symlink there and its ABI breaks the shipped native modules
 export PATH="/opt/ooce/node-22/bin:/opt/ooce/bin:/usr/gnu/bin:/usr/bin:/usr/sbin:/sbin"
 export NODE_ENV="${NODE_ENV:-production}"
 export CONFIG_PATH="${CONFIG_PATH:-/etc/zoneweaver-agent/config.yaml}"

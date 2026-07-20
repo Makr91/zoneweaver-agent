@@ -222,9 +222,6 @@ export const listImportablePools = async (req, res) => {
     const result = await executeCommand('pfexec zpool import');
     const output = result.output || '';
 
-    // Every `zpool import` block starts with a "pool: <name>" line, with its
-    // "id:" and "state:" on the following lines — walked line by line into
-    // structured entries (the raw output rides only as a supplement).
     const pools = [];
     for (const line of output.split('\n')) {
       const match = line.trim().match(/^(?<key>pool|id|state):\s*(?<value>\S+)$/u);

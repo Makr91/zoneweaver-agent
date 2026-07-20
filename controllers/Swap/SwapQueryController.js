@@ -274,8 +274,6 @@ export const getSwapSummary = async (req, res) => {
       }
     });
 
-    // Converged structured-JSON wire (2026-07-20): numeric BYTES, never
-    // "%.2f" strings — the UI formats.
     return res.json({
       host: hostname,
       totalSwapBytes,

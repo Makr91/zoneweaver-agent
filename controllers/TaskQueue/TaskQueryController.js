@@ -232,9 +232,6 @@ export const getTaskDetails = async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    // Converged structured-JSON wire: metadata rides as a real object; the
-    // detail's output is NULL — GET /tasks/{taskId}/output is the one
-    // structured output channel.
     const plain = task.get({ plain: true });
     plain.metadata = parseMetadataColumn(plain.metadata);
     plain.output = null;

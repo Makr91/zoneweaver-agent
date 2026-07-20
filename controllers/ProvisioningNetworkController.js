@@ -202,7 +202,6 @@ export const getBridgedInterfaces = async (req, res) => {
       });
     }
 
-    // Media per phys link feeds the converged `wireless` picker field.
     const mediaByLink = new Map();
     const physResult = await executeCommand('pfexec dladm show-phys -p -o link,media');
     if (physResult.success && physResult.output) {

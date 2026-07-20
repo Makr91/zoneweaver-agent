@@ -352,8 +352,6 @@ class SystemMetricsCollector {
     try {
       const timeout = this.hostMonitoringConfig.performance.command_timeout * 1000;
 
-      // vmstat (2 samples, 1s apart) and the io_delay iostat interval run
-      // CONCURRENTLY — the sample costs no extra wall clock.
       const [{ stdout: vmstatOutput }, ioDelayPct] = await Promise.all([
         execProm('vmstat 1 2', { timeout }),
         this.collectIoDelay(timeout),

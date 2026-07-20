@@ -14,13 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { executeCommand } from '../../lib/CommandManager.js';
-import {
-  executeSSHCommand,
-  uploadFile,
-  getSSHKeyPath,
-  resolveConnectKeyPath,
-  resolveRelativeKeyPath,
-} from '../../lib/SSHManager.js';
+import { executeSSHCommand, uploadFile, resolveRelativeKeyPath } from '../../lib/SSHManager.js';
 import { updateTaskProgress, parseTaskMetadata } from '../../lib/TaskProgressHelper.js';
 import {
   parseConfiguration,
@@ -32,6 +26,19 @@ import { extractControlIP } from '../../lib/ProvisionerConfigBuilder.js';
 import { log } from '../../lib/Logger.js';
 import Zones from '../../models/ZoneModel.js';
 import config from '../../config/ConfigLoader.js';
+import { shellQuote, POSIX_NAME, legalEnvEntries } from './ZoneEngine/ShellPrimitives.js';
+import {
+  ANSIBLE_MISSING_WINRM,
+  hostAnsibleAvailable,
+  buildTransportArgs,
+} from './ZoneEngine/AnsibleTransport.js';
+import {
+  buildRemoteEnvPrefix,
+  installHostCollections,
+  verboseFlag,
+  prepareRemoteRun,
+} from './ZoneEngine/RemoteRun.js';
+import { runHookOnTarget } from './ZoneEngine/HookRunner.js';
 
 /**
  * The zone's provisioning dataset path, read from its stored record — THE
@@ -61,14 +68,6 @@ export const readDocumentControlIP = async zoneName => {
  * none and no provisioning lease has been recorded). */
 export const NO_CONTROL_IP_ERROR =
   'No control address in the document — set is_control: true on a networks[] entry, or run the provision pipeline so zone_wait_ssh records the provisioning lease';
-
-const shellQuote = value => `'${String(value).replace(/'/gu, "'\\''")}'`;
-
-/** The one wording for a winrm/remote run on an ansible-less agent host. */
-const ANSIBLE_MISSING_WINRM =
-  'winrm transport needs ansible (+pywinrm) on the agent host — not installed';
-
-const POSIX_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 /**
  * vars→env (§5): the document's vars ride WHOLE — every key under its EXACT
@@ -117,17 +116,6 @@ export const recordProvisionState = async zoneName => {
   }
 };
 
-/**
- * The host-ansible gate (§5: ansible remote and the winrm mechanics are
- * gated on host ansible presence — /provisioning/status advertises it).
- * @param {string} [binary] - Binary to check (default ansible-playbook)
- * @returns {Promise<boolean>} Whether the binary resolves
- */
-const hostAnsibleAvailable = async (binary = 'ansible-playbook') => {
-  const result = await executeCommand(`which ${binary}`);
-  return result.success;
-};
-
 /** The ruled winrm defaults (Q2: vagrant's own) — the ONE place they live;
  * the chain builder's alias resolver imports this. */
 export const winrmDefaults = winrm => {
@@ -137,59 +125,6 @@ export const winrmDefaults = winrm => {
     port: winrm?.port ?? (transport === 'ssl' ? 5986 : 5985),
     ssl_peer_verification: winrm?.ssl_peer_verification ?? true,
   };
-};
-
-/**
- * Build the host-side ansible transport arguments for a guest. ssh rides the
- * provisioning key (relative paths resolve against the provisioning
- * dataset); winrm rides the RULED document keys (Q2) mapped onto ansible's
- * connection vars: transport negotiate→ntlm, ssl→ntlm over https;
- * ssl_peer_verification false → server-cert validation off.
- * @param {Object} target - {communicator, ip, port, credentials, provisioningBasePath, winrm}
- * @returns {{args: string, error?: string}}
- */
-const buildTransportArgs = target => {
-  const { communicator, port, credentials = {}, provisioningBasePath } = target;
-  const username = credentials.username || 'root';
-
-  if (communicator === 'winrm') {
-    const winrm = winrmDefaults(target.winrm);
-    const extra = [
-      `-e ansible_connection=winrm`,
-      `-e ansible_user=${shellQuote(username)}`,
-      `-e ansible_password=${shellQuote(credentials.password || '')}`,
-      `-e ansible_port=${winrm.port}`,
-      `-e ansible_winrm_transport=ntlm`,
-    ];
-    if (winrm.transport === 'ssl') {
-      extra.push('-e ansible_winrm_scheme=https');
-    }
-    if (winrm.ssl_peer_verification === false) {
-      extra.push('-e ansible_winrm_server_cert_validation=ignore');
-    }
-    return { args: extra.join(' ') };
-  }
-
-  // The three-tier connect ruling governs the host-ansible transport too.
-  let keyPath = resolveConnectKeyPath(credentials, provisioningBasePath);
-  if (!keyPath) {
-    if (credentials.password) {
-      return {
-        args: '',
-        error:
-          'ansible remote over ssh needs a key (credentials.ssh_key_path or the provisioning key) — password-only transport is not supported host-side',
-      };
-    }
-    // No key exists anywhere — the agent key path errors honestly downstream.
-    keyPath = getSSHKeyPath();
-  }
-  const args = [
-    `--user ${shellQuote(username)}`,
-    `--private-key ${shellQuote(keyPath)}`,
-    `--ssh-common-args ${shellQuote('-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null')}`,
-    `-e ansible_port=${port || 22}`,
-  ];
-  return { args: args.join(' ') };
 };
 
 /**
@@ -228,24 +163,6 @@ export const pollWinRMReady = async (target, timeoutMs, intervalMs, onData) => {
   };
   return check();
 };
-
-/**
- * Filter an env map to POSIX-legal names with loud narration for the rest.
- * @param {Object} env - Environment map
- * @param {Function|null} onData - Output sink
- * @returns {Array<[string, string]>} Legal entries
- */
-const legalEnvEntries = (env, onData) =>
-  Object.entries(env || {}).filter(([key]) => {
-    if (POSIX_NAME.test(key)) {
-      return true;
-    }
-    onData?.({
-      stream: 'stdout',
-      data: `var "${key}" cannot become an environment variable (non-POSIX name) — skipped\n`,
-    });
-    return false;
-  });
 
 /**
  * Run a HOST-LOCAL script upload+exec on a WINDOWS guest via host-ansible
@@ -294,111 +211,6 @@ export const runWinScriptViaAnsible = async (target, localScript, taskId, option
     return { success: false, error: `script failed over winrm: ${run.error}` };
   }
   return { success: true, message: 'script completed over winrm' };
-};
-
-/**
- * Host-side env prefix for the remote runner: the playbook's ANSIBLE_CONFIG
- * plus the package's vendored collections via ANSIBLE_COLLECTIONS_PATH.
- * @param {Object} playbook - Playbook entry
- * @param {string|null} provisioningBasePath - Staged package path
- * @returns {string} Env assignment prefix ('' when nothing applies)
- */
-const buildRemoteEnvPrefix = (playbook, provisioningBasePath) => {
-  const envParts = [];
-  if (playbook.config_file) {
-    envParts.push(
-      `ANSIBLE_CONFIG=${shellQuote(
-        playbook.config_file.startsWith('/')
-          ? playbook.config_file
-          : `${provisioningBasePath}/${playbook.config_file}`
-      )}`
-    );
-  }
-  const collectionsDir = provisioningBasePath
-    ? path.join(provisioningBasePath, 'provisioners', 'ansible_collections')
-    : null;
-  if (collectionsDir && fs.existsSync(collectionsDir)) {
-    envParts.push(`ANSIBLE_COLLECTIONS_PATH=${shellQuote(collectionsDir)}`);
-  }
-  return envParts.length > 0 ? `${envParts.join(' ')} ` : '';
-};
-
-/**
- * remote_collections host-side galaxy installs (concurrent, the local
- * installer's own pattern).
- * @param {string} envPrefix - Host env prefix
- * @param {Object} playbook - Playbook entry
- * @param {Function|null} onData - Output sink
- * @returns {Promise<string|null>} Error message or null
- */
-const installHostCollections = async (envPrefix, playbook, onData) => {
-  if (playbook.remote_collections !== true || !Array.isArray(playbook.collections)) {
-    return null;
-  }
-  const provConfig = config.get('provisioning') || {};
-  const installTimeout = (provConfig.ansible_install_timeout_seconds || 300) * 1000;
-  const results = await Promise.all(
-    playbook.collections.map(collection =>
-      executeCommand(
-        `${envPrefix}ansible-galaxy collection install ${shellQuote(collection)} --force`,
-        installTimeout,
-        onData
-      )
-    )
-  );
-  const failed = results.find(result => !result.success);
-  return failed ? `host-side galaxy install failed: ${failed.error}` : null;
-};
-
-/** Map the playbook's verbose knob onto ansible's -v flags. */
-const verboseFlag = playbook => {
-  if (playbook.verbose === true) {
-    return ' -v';
-  }
-  if (typeof playbook.verbose === 'string' && /^v+$/u.test(playbook.verbose)) {
-    return ` -${playbook.verbose}`;
-  }
-  return '';
-};
-
-/**
- * Resolve everything the remote runner needs: the zone, its staged package
- * path, the transport arguments, and the host-side playbook path.
- * @param {string} zoneName - Zone name
- * @param {Object} metadata - Task metadata
- * @returns {Promise<Object>} {error} or {zone, provisioningBasePath, transport, playbookPath}
- */
-const prepareRemoteRun = async (zoneName, metadata) => {
-  const { ip, port, credentials, playbook, communicator, winrm } = metadata;
-  if (!(await hostAnsibleAvailable())) {
-    return {
-      error:
-        'ansible remote needs ansible-playbook on the agent host (see /provisioning/status) — install ansible or move the playbook to the local: group',
-    };
-  }
-  const zone = await Zones.findOne({ where: { name: zoneName } });
-  if (!zone) {
-    return { error: `Zone '${zoneName}' not found` };
-  }
-  const provisioningBasePath = await getProvisioningBasePath(zoneName);
-  const transport = buildTransportArgs({
-    communicator,
-    ip,
-    port,
-    credentials,
-    provisioningBasePath,
-    winrm,
-  });
-  if (transport.error) {
-    return { error: transport.error };
-  }
-  const playbookPath = playbook.playbook.startsWith('/')
-    ? playbook.playbook
-    : `${provisioningBasePath}/${playbook.playbook}`;
-  if (!fs.existsSync(playbookPath)) {
-    return { error: `remote playbook not found on host: ${playbookPath}` };
-  }
-  return { zone, provisioningBasePath, transport, playbookPath };
 };
 
 /**
@@ -592,77 +404,6 @@ export const runScriptInGuest = async (target, resolvedScript, remotePath, optio
     };
   }
   return { success: true };
-};
-
-const runGuestHook = async (target, resolvedScript, taskId, options) => {
-  const { env, timeout, onData, communicator } = options;
-  if (communicator === 'winrm') {
-    return runWinScriptViaAnsible(target, resolvedScript, taskId, { env, timeout, onData });
-  }
-  const result = await runScriptInGuest(target, resolvedScript, `/tmp/zoneweaver-hook-${taskId}`, {
-    env,
-    timeout,
-    onData,
-  });
-  if (!result.success) {
-    return {
-      success: false,
-      error:
-        result.output !== undefined
-          ? `hook failed (exit ${result.exitCode}):\n${result.output}`
-          : `hook ${result.error}`,
-    };
-  }
-  return { success: true, message: 'hook completed in guest' };
-};
-
-/**
- * Run one hook on its target (host or guest). Host-target execution is
- * DOUBLE-gated: the pipeline pre-flight refuses unconfirmed/ungated runs,
- * and this re-checks the `provisioning.host_hooks` config (defense in
- * depth, zoneweaver default OFF).
- * @param {Object} params - {hook, ip, port, credentials, env, communicator,
- *   winrm, provisioningBasePath, resolvedScript, taskId, timeout, onData}
- * @returns {Promise<{success: boolean, message?: string, error?: string}>}
- */
-const runHookOnTarget = params => {
-  const { hook, resolvedScript, timeout, onData } = params;
-  if (hook.target === 'host') {
-    const provConfig = config.get('provisioning') || {};
-    if (provConfig.host_hooks !== true) {
-      return Promise.resolve({
-        success: false,
-        error:
-          'host-target hooks are disabled on this agent (provisioning.host_hooks, zoneweaver default OFF)',
-      });
-    }
-    const envArgs = shellEnvArgs(params.env, onData);
-    const command = envArgs
-      ? `chmod +x ${shellQuote(resolvedScript)} && env ${envArgs} ${shellQuote(resolvedScript)}`
-      : `chmod +x ${shellQuote(resolvedScript)} && ${shellQuote(resolvedScript)}`;
-    return executeCommand(command, timeout, onData).then(hostRun =>
-      hostRun.success
-        ? { success: true, message: 'hook completed on host' }
-        : { success: false, error: `host hook failed: ${hostRun.error}` }
-    );
-  }
-  if (!params.ip) {
-    return Promise.resolve({ success: false, error: 'ip is required for guest-target hooks' });
-  }
-  const target = {
-    ip: params.ip,
-    port: params.port,
-    credentials: params.credentials,
-    username: params.credentials.username || 'root',
-    provisioningBasePath: params.provisioningBasePath,
-    winrm: params.winrm,
-  };
-  return runGuestHook(target, resolvedScript, params.taskId, {
-    env: params.env,
-    timeout,
-    onData,
-    communicator: params.communicator,
-  });
 };
 
 /**

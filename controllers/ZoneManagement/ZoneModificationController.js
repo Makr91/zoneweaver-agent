@@ -1,408 +1,34 @@
 import Zones from '../../models/ZoneModel.js';
-import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
-import {
-  validateZoneName,
-  consoleportRangeError,
-  vcpusCountError,
-} from '../../lib/ZoneValidation.js';
+import { validateZoneName, vcpusCountError } from '../../lib/ZoneValidation.js';
 import { validateZoneModificationResources } from '../../lib/ResourceValidation.js';
-import {
-  mergePendingChanges,
-  clearPendingChanges,
-  mergeSettingsKeys,
-  setSnapshotPolicy,
-  readZonecfgAttr,
-  getZoneConfig,
-  parseConfiguration,
-  setDocumentNetworkKey,
-} from '../../lib/ZoneConfigUtils.js';
-import { resizeMachineDisks } from '../../lib/MachineDiskResize.js';
-import { validateTypedDiskEntries, validateTypedImageEntries } from '../../lib/DiskSpec.js';
-import { executeCommand } from '../../lib/CommandManager.js';
-import { isGuestAgentEnabled } from '../../lib/QemuGuestAgent.js';
-import { applyGuestAgentToggle } from '../GuestAgentController.js';
+import { clearPendingChanges } from '../../lib/ZoneConfigUtils.js';
 import { getSystemZoneStatus } from './ZoneQueryController.js';
+import {
+  CREDENTIAL_FIELDS,
+  ZONE_ATTR_FIELDS,
+  STOPPED_STATUSES,
+} from './ZoneModification/ZoneModifyConstants.js';
+import {
+  validateZoneAttrFields,
+  applyZoneAttrFields,
+  handleResizeDisks,
+  validateAddDisksWire,
+  applyImmediateFields,
+  applyProvisionerImmediate,
+  handleGuestAgentField,
+  handleTransportFlags,
+} from './ZoneModification/ZoneModifyImmediate.js';
+import {
+  parsePendingSet,
+  queueModifyTask,
+  buildImmediateResponse,
+  queueInfrastructureChanges,
+} from './ZoneModification/ZoneModifyQueue.js';
 
 /**
  * @fileoverview Zone modification controller
  */
-
-const CREDENTIAL_FIELDS = ['vagrant_user', 'vagrant_user_pass', 'vagrant_user_private_key_path'];
-
-// Agent-owned custom zonecfg attrs (the boot_priority pattern): the value
-// rides the zone config itself — it exports/migrates with the zone — and no
-// boot path consumes it, so writes apply SYNCHRONOUSLY through zonecfg's
-// offline store (never task/accrue). Readers look at the config fresh:
-// orchestration reads boot_priority at host power events, vnc/start reads
-// consoleport/consolehost when it spawns `zadm vnc`. null/'' removes the attr.
-const ZONE_ATTR_FIELDS = ['boot_priority', 'consoleport', 'consolehost'];
-
-/**
- * Validate the direct-attr fields; answers the 400 (and returns false) on the
- * first invalid value, so callers just bail. consoleport carries the agreed
- * cross-agent refusal string (consensus 2026-07-17); null/'' clears the attr.
- */
-const validateZoneAttrFields = (body, res) => {
-  const bootPriority = body.boot_priority;
-  if (bootPriority !== undefined && bootPriority !== null && bootPriority !== '') {
-    const num = Number(bootPriority);
-    if (!Number.isInteger(num) || num < 1 || num > 100) {
-      res
-        .status(400)
-        .json({ error: 'boot_priority must be an integer 1-100 (null clears; default 95)' });
-      return false;
-    }
-  }
-  const consoleportProblem = consoleportRangeError(body.consoleport);
-  if (consoleportProblem) {
-    res.status(400).json({ error: consoleportProblem });
-    return false;
-  }
-  return true;
-};
-
-/**
- * Apply the direct-attr fields present in the body via ONE batched zonecfg
- * transaction (select-or-add per attr, remove on null/''), through the
- * offline store. Returns the applied field names.
- * @throws {Error} When the zonecfg apply fails
- */
-const applyZoneAttrFields = async (zoneName, body) => {
-  const fields = ZONE_ATTR_FIELDS.filter(field => body[field] !== undefined);
-  if (fields.length === 0) {
-    return [];
-  }
-  const reads = await Promise.all(fields.map(field => readZonecfgAttr(zoneName, field)));
-  const commands = fields
-    .map((field, i) => {
-      const raw = body[field];
-      const value = raw === null || raw === '' ? null : String(raw);
-      const { exists } = reads[i];
-      if (value === null) {
-        return exists ? `remove attr name=${field};` : null;
-      }
-      return exists
-        ? `select attr name=${field}; set value=\\"${value}\\"; end;`
-        : `add attr; set name=${field}; set value=\\"${value}\\"; set type=string; end;`;
-    })
-    .filter(Boolean);
-  if (commands.length > 0) {
-    const result = await executeCommand(`pfexec zonecfg -z ${zoneName} "${commands.join(' ')}"`);
-    if (!result.success) {
-      throw new Error(`Failed to apply ${fields.join(', ')}: ${result.error}`);
-    }
-  }
-  return fields;
-};
-
-const STOPPED_STATUSES = ['configured', 'incomplete', 'installed', 'down', 'not_found'];
-
-/**
- * resize_disks applies IMMEDIATELY — it never accrues (Mark's ruling: gate the
- * truncate, ungate the grow). A grow lands live: virtio-blk and nvme register a
- * blockif resize callback and the guest sees the new capacity at once; ahci does
- * not, so the answer carries requires_restart for those. A shrink is refused
- * unless it is asked for explicitly AND the machine is powered off.
- * @param {import('express').Response} res - Response
- * @param {string} zoneName - Zone name
- * @param {Array} entries - resize_disks entries
- * @returns {Promise<{applied?: Object, response?: object}>}
- */
-const handleResizeDisks = async (res, zoneName, entries) => {
-  if (!Array.isArray(entries) || entries.length === 0) {
-    return { response: res.status(400).json({ error: 'resize_disks must be a non-empty array' }) };
-  }
-  const [zoneConfig, currentStatus] = await Promise.all([
-    getZoneConfig(zoneName),
-    getSystemZoneStatus(zoneName),
-  ]);
-  try {
-    const applied = await resizeMachineDisks({
-      zoneName,
-      zoneConfig,
-      entries,
-      poweredOff: STOPPED_STATUSES.includes(currentStatus),
-    });
-    return { applied };
-  } catch (error) {
-    // Every refusal here is a caller error with an actionable message
-    // (shrink without the flag, shrink while running, grow the pool can't back).
-    return { response: res.status(400).json({ error: error.message }) };
-  }
-};
-
-const parsePendingSet = zone => parseConfiguration(zone).pending_changes || {};
-
-const queueModifyTask = (zoneName, metadata, createdBy) =>
-  Tasks.create({
-    zone_name: zoneName,
-    operation: 'zone_modify',
-    priority: TaskPriority.MEDIUM,
-    created_by: createdBy,
-    metadata: JSON.stringify(metadata),
-    status: 'pending',
-  });
-
-const applyImmediateFields = async (zone, zoneName, body) => {
-  if (body.notes !== undefined) {
-    await zone.update({ notes: body.notes || null });
-  }
-  if (body.tags !== undefined) {
-    await zone.update({ tags: Array.isArray(body.tags) ? body.tags : null });
-  }
-  if (body.snapshots !== undefined) {
-    await setSnapshotPolicy(
-      zoneName,
-      body.snapshots && body.snapshots.type ? body.snapshots : null
-    );
-  }
-  const credentialUpdates = {};
-  for (const field of CREDENTIAL_FIELDS) {
-    if (body[field] !== undefined) {
-      credentialUpdates[field] = body[field];
-    }
-  }
-  if (Object.keys(credentialUpdates).length > 0) {
-    await mergeSettingsKeys(zoneName, credentialUpdates);
-  }
-};
-
-/**
- * Store the provisioner config immediately (DB only) so the provision endpoint
- * sees it without waiting for the task. Returns the completed response object
- * when provisioner is the ONLY change (caller answers it), or null to continue
- * the normal modify flow.
- * @param {import('../../models/ZoneModel.js').default} zone - Zone record
- * @param {string} zoneName - Zone name
- * @param {Object} body - Request body
- * @param {string[]} changeFields - The recognized change fields
- * @returns {Promise<Object|null>}
- */
-const applyProvisionerImmediate = async (zone, zoneName, body, changeFields) => {
-  if (!body.provisioner) {
-    return null;
-  }
-  const currentConfig = parseConfiguration(zone);
-  await zone.update({ configuration: { ...currentConfig, provisioner: body.provisioner } });
-
-  const otherChanges = changeFields
-    .filter(f => f !== 'provisioner')
-    .some(field => body[field] !== undefined);
-  if (otherChanges) {
-    return null;
-  }
-  return {
-    success: true,
-    machine_name: zoneName,
-    operation: 'zone_modify',
-    status: 'completed',
-    message: 'Provisioner configuration updated successfully.',
-    requires_restart: false,
-  };
-};
-
-/**
- * Build the `status: completed` answer for a PUT that changed ONLY
- * immediately-applied fields (nothing queued, nothing accrued). Folds in
- * whatever the guest-agent toggle, resize, and attr writes actually did.
- * @param {string} zoneName - Zone name
- * @param {boolean} guestAgentApplied - Whether the guest-agent toggle changed state
- * @param {Object|null} resized - resize_disks result, or null
- * @param {string[]} appliedAttrs - Direct-attr fields written
- * @returns {Object} The response body
- */
-const buildImmediateResponse = (zoneName, guestAgentApplied, resized, appliedAttrs) => {
-  const messages = [];
-  if (guestAgentApplied) {
-    messages.push('The guest-agent channel change applies at the next machine boot.');
-  }
-  if (resized) {
-    messages.push(
-      resized.requires_restart
-        ? 'Disks resized — this machine runs an ahci/ide backend, which reads its capacity only at attach, so the guest sees the new size after a power cycle.'
-        : 'Disks resized — the guest sees the new size immediately.'
-    );
-  }
-  const response = {
-    success: true,
-    machine_name: zoneName,
-    operation: 'zone_modify',
-    status: 'completed',
-    message: messages.length > 0 ? messages.join(' ') : 'Zone metadata updated successfully.',
-    requires_restart: guestAgentApplied || Boolean(resized?.requires_restart),
-  };
-  if (appliedAttrs.length > 0) {
-    response.applied_attrs = appliedAttrs;
-  }
-  if (resized) {
-    response.resized_disks = resized.results;
-  }
-  return response;
-};
-
-/**
- * Fold the immediately-applied results (guest-agent toggle, resize, direct
- * attrs) into a response that is really ABOUT the accrued/queued
- * infrastructure changes. Without this, a PUT that both resizes a disk AND
- * changes ram answers the pending/queued body and never mentions that the disk
- * was resized — the resize happened, the caller was not told.
- * @param {Object} response - The accrue or queue response (mutated + returned)
- * @param {boolean} guestAgentApplied - Whether the guest-agent toggle changed state
- * @param {Object|null} resized - resize_disks result, or null
- * @param {string[]} appliedAttrs - Direct-attr fields written
- * @returns {Object} The same response, with the immediate side-effects folded in
- */
-const decorateWithImmediate = (response, guestAgentApplied, resized, appliedAttrs) => {
-  if (appliedAttrs.length > 0) {
-    response.applied_attrs = appliedAttrs;
-  }
-  if (resized) {
-    response.resized_disks = resized.results;
-    response.message = `${response.message} Disks were also resized immediately${
-      resized.requires_restart ? ' (guest sees new size after a power cycle on ahci/ide)' : ''
-    }.`;
-  }
-  if (guestAgentApplied) {
-    response.message = `${response.message} The guest-agent channel change applies at the next boot.`;
-  }
-  return response;
-};
-
-const extractInfrastructureBody = (body, changeFields) => {
-  const infrastructure = {};
-  const excluded = [
-    'provisioner',
-    'notes',
-    'tags',
-    'snapshots',
-    'guest_agent',
-    // Applied immediately in the controller — never accrued, never queued.
-    'resize_disks',
-    ...CREDENTIAL_FIELDS,
-    ...ZONE_ATTR_FIELDS,
-  ];
-  for (const [key, value] of Object.entries(body)) {
-    if (excluded.includes(key) || !changeFields.includes(key)) {
-      continue;
-    }
-    infrastructure[key] = value;
-  }
-  return infrastructure;
-};
-
-/**
- * Apply remove_on_completion flips riding update_nics entries (the converged
- * post-create toggle wire, 2026-07-18): a DOCUMENT-side edit, applied
- * immediately — the agent maps the NIC's physical to the paired networks[]
- * entry (live net index ↔ document index, the declared pairing rule) and
- * records the flag. The key is STRIPPED from the entries afterwards so the
- * zonecfg path never sees it; entries reduced to bare selectors drop.
- * @param {string} zoneName - Zone name
- * @param {Object} body - Request body (update_nics mutated)
- * @returns {Promise<string[]>} The physicals whose flag was recorded
- * @throws {Error} Unknown physical / no paired document entry
- */
-const applyTransportFlagFlips = async (zoneName, body) => {
-  if (!Array.isArray(body.update_nics)) {
-    return [];
-  }
-  const flips = body.update_nics.filter(entry => entry && entry.remove_on_completion !== undefined);
-  if (flips.length === 0) {
-    return [];
-  }
-  const liveConfig = await getZoneConfig(zoneName);
-  const nets = Array.isArray(liveConfig?.net) ? liveConfig.net : [];
-  const applied = await Promise.all(
-    flips.map(async entry => {
-      const index = nets.findIndex(net => net?.physical === entry.physical);
-      if (index === -1) {
-        throw new Error(`update_nics: no net resource with physical ${entry.physical}`);
-      }
-      const recorded = await setDocumentNetworkKey(
-        zoneName,
-        index,
-        'remove_on_completion',
-        entry.remove_on_completion === true
-      );
-      if (!recorded) {
-        throw new Error(
-          `update_nics: ${entry.physical} has no paired document networks[${index}] entry`
-        );
-      }
-      delete entry.remove_on_completion;
-      return entry.physical;
-    })
-  );
-  body.update_nics = body.update_nics.filter(
-    entry => entry && Object.keys(entry).some(key => key !== 'physical')
-  );
-  if (body.update_nics.length === 0) {
-    delete body.update_nics;
-  }
-  return applied;
-};
-
-/**
- * Handle the guest_agent toggle field (shared contract with the Go agent):
- * applied SYNCHRONOUSLY through zonecfg's offline store regardless of power
- * state — never accrues, never queues; the caller's answer carries
- * requires_restart. Gate/validation problems answer the request here.
- * @param {import('express').Request} req - Request
- * @param {import('express').Response} res - Response
- * @param {string} zoneName - Zone name
- * @returns {Promise<{applied: boolean, response?: object}>}
- */
-const handleGuestAgentField = async (req, res, zoneName) => {
-  if (req.body.guest_agent === undefined) {
-    return { applied: false };
-  }
-  if (!isGuestAgentEnabled()) {
-    return {
-      applied: false,
-      response: res.status(503).json({ error: 'Guest agent channel is disabled' }),
-    };
-  }
-  if (typeof req.body.guest_agent !== 'boolean') {
-    return {
-      applied: false,
-      response: res.status(400).json({ error: 'guest_agent must be a boolean' }),
-    };
-  }
-  await applyGuestAgentToggle(zoneName, req.body.guest_agent);
-  return { applied: true };
-};
-
-/**
- * The accrue-changes contract (shared with the Go agent): against a zone that
- * is not powered off, infrastructure changes ACCRUE into
- * configuration.pending_changes and apply at the next agent-driven power
- * cycle. Answers the pending_power_cycle payload, or null to queue normally.
- */
-const maybeAccrueChanges = async (zoneName, infrastructureBody, warnings) => {
-  if (Object.keys(infrastructureBody).length === 0) {
-    return null;
-  }
-  const currentStatus = await getSystemZoneStatus(zoneName);
-  if (STOPPED_STATUSES.includes(currentStatus)) {
-    return null;
-  }
-  const merged = await mergePendingChanges(zoneName, infrastructureBody);
-  const response = {
-    success: true,
-    machine_name: zoneName,
-    operation: 'zone_modify',
-    status: 'pending_power_cycle',
-    requires_restart: true,
-    pending_changes: merged,
-    message:
-      'Machine is not powered off — changes stored and will apply at the next agent-driven power cycle (stop, start, or restart). DELETE /machines/{name}/pending-changes cancels them.',
-  };
-  if (warnings.length > 0) {
-    response.resource_warnings = warnings;
-  }
-  return response;
-};
 
 /**
  * Queue a zone_modify task carrying the accrued pending set (the accrue
@@ -423,111 +49,6 @@ export const queuePendingApply = async (zone, createdBy) => {
     });
     return null;
   }
-};
-
-/**
- * Validate the add_disks wire at the PUT (frozen TYPED entries, converged
- * 2026-07-18) — shape + image host-truth refused up front on both the queue
- * and accrue paths; the executor re-enforces. Returns the entries' warnings;
- * a refusal answers the request and returns null.
- * @param {import('express').Request} req - Request
- * @param {import('express').Response} res - Response
- * @returns {Promise<Array|null>} Warnings, or null when the request was answered
- */
-const validateAddDisksWire = async (req, res) => {
-  if (req.body.add_disks === undefined) {
-    return [];
-  }
-  if (!Array.isArray(req.body.add_disks) || req.body.add_disks.length === 0) {
-    res.status(400).json({ error: 'add_disks must be a non-empty array' });
-    return null;
-  }
-  const typed = validateTypedDiskEntries(req.body.add_disks, 'add_disks');
-  if (typed.errors.length > 0) {
-    res.status(400).json({ error: typed.errors[0] });
-    return null;
-  }
-  const imageErrors = await validateTypedImageEntries(req.body.add_disks, 'add_disks');
-  if (imageErrors.length > 0) {
-    res.status(400).json({ error: imageErrors[0] });
-    return null;
-  }
-  return typed.warnings;
-};
-
-/**
- * Apply update_nics remove_on_completion flips and answer the flag-only PUT
- * (status completed + transport_flags_applied). Returns the applied list; a
- * refusal or flag-only completion answers the request and returns null.
- * @param {import('express').Request} req - Request
- * @param {import('express').Response} res - Response
- * @param {string} zoneName - Zone name
- * @param {string[]} changeFields - The recognized change fields
- * @returns {Promise<string[]|null>} Applied physicals, or null when answered
- */
-const handleTransportFlags = async (req, res, zoneName, changeFields) => {
-  let transportFlags = [];
-  try {
-    transportFlags = await applyTransportFlagFlips(zoneName, req.body);
-  } catch (flipError) {
-    res.status(400).json({ error: flipError.message });
-    return null;
-  }
-  if (transportFlags.length > 0 && !changeFields.some(field => req.body[field] !== undefined)) {
-    res.json({
-      success: true,
-      machine_name: zoneName,
-      operation: 'zone_modify',
-      status: 'completed',
-      message: 'Transport removal flag updated.',
-      requires_restart: false,
-      transport_flags_applied: transportFlags,
-    });
-    return null;
-  }
-  return transportFlags;
-};
-
-/**
- * The infrastructure tail of the PUT: accrue against a non-powered-off zone
- * (pending_power_cycle) or queue the zone_modify task, folding the
- * immediately-applied results and transport flags into whichever answer.
- * @param {import('express').Request} req - Request
- * @param {import('express').Response} res - Response
- * @param {string} zoneName - Zone name
- * @param {Object} ctx - {changeFields, warnings, transportFlags, guestAgentApplied, resized, appliedAttrs}
- * @returns {Promise<Object>} The answered response
- */
-const queueInfrastructureChanges = async (req, res, zoneName, ctx) => {
-  const { changeFields, warnings, transportFlags, guestAgentApplied, resized, appliedAttrs } = ctx;
-  const infrastructureBody = extractInfrastructureBody(req.body, changeFields);
-  const pendingResponse = await maybeAccrueChanges(zoneName, infrastructureBody, warnings);
-  if (pendingResponse) {
-    if (transportFlags.length > 0) {
-      pendingResponse.transport_flags_applied = transportFlags;
-    }
-    return res.json(
-      decorateWithImmediate(pendingResponse, guestAgentApplied, resized, appliedAttrs)
-    );
-  }
-
-  const modifyTask = await queueModifyTask(zoneName, infrastructureBody, req.entity.name);
-  const modifyResponse = {
-    success: true,
-    task_id: modifyTask.id,
-    machine_name: zoneName,
-    operation: 'zone_modify',
-    status: 'pending',
-    message: 'Modification queued. Changes will take effect on next zone boot.',
-    requires_restart: true,
-  };
-  if (warnings.length > 0) {
-    modifyResponse.resource_warnings = warnings;
-  }
-  if (transportFlags.length > 0) {
-    modifyResponse.transport_flags_applied = transportFlags;
-  }
-  return res.json(decorateWithImmediate(modifyResponse, guestAgentApplied, resized, appliedAttrs));
 };
 
 /**
@@ -1119,13 +640,11 @@ export const modifyZone = async (req, res) => {
       return res.status(400).json({ error: 'Invalid zone name' });
     }
 
-    // Check zone exists in DB
     const zone = await Zones.findOne({ where: { name: zoneName } });
     if (!zone) {
       return res.status(404).json({ error: 'Zone not found' });
     }
 
-    // Validate that at least one change field is present
     const changeFields = [
       'ram',
       'vcpus',
@@ -1184,8 +703,6 @@ export const modifyZone = async (req, res) => {
       return undefined;
     }
 
-    // vcpus pre-flight (agreed cross-agent string) — refused up front instead
-    // of failing (or landing garbage) in the queued zonecfg apply.
     const vcpusProblem = vcpusCountError(req.body.vcpus);
     if (vcpusProblem) {
       return res.status(400).json({ error: vcpusProblem });
@@ -1219,7 +736,6 @@ export const modifyZone = async (req, res) => {
       return undefined;
     }
 
-    // Immediately-applied fields: nothing queues, nothing accrues.
     const dbOnlyFields = [
       'notes',
       'tags',
@@ -1237,15 +753,11 @@ export const modifyZone = async (req, res) => {
       return res.json(buildImmediateResponse(zoneName, guestAgentApplied, resized, appliedAttrs));
     }
 
-    // Provisioner config stores immediately (DB only) so the provision
-    // endpoint sees it without waiting for the task. Answers the completed
-    // response when provisioner is the ONLY change, else null to continue.
     const provisionerOnly = await applyProvisionerImmediate(zone, zoneName, req.body, changeFields);
     if (provisionerOnly) {
       return res.json(provisionerOnly);
     }
 
-    // Validate resource availability for modifications (e.g., add_disks)
     const resourceValidation = await validateZoneModificationResources(req.body, zoneName);
     if (!resourceValidation.valid) {
       return res.status(400).json({

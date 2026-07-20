@@ -1,345 +1,27 @@
 import Zones from '../../models/ZoneModel.js';
-import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import config from '../../config/ConfigLoader.js';
 import { log } from '../../lib/Logger.js';
-import {
-  validateZoneName,
-  consoleportRangeError,
-  vcpusCountError,
-} from '../../lib/ZoneValidation.js';
-import {
-  normalizeDisks,
-  validateDisksWire,
-  validateDiskImages,
-  cloneStrategyError,
-  getRootPool,
-  templateLandingPool,
-} from '../../lib/DiskSpec.js';
 import { validateZoneCreationResources } from '../../lib/ResourceValidation.js';
-import { getPackageVersion } from '../../lib/ProvisionerRegistry.js';
-import { validateAnswers } from '../../lib/FieldDsl.js';
-import {
-  renderHostsTemplate,
-  parseHostsDocuments,
-  splitHostsDocument,
-  findLegacyMarkers,
-  buildShowIfRoleFlags,
-  versionConfiguration,
-} from '../../lib/HostsTemplateRenderer.js';
 import { ensureProvisioningNetwork } from '../ProvisioningNetworkController.js';
 import { getSystemZoneStatus } from './ZoneQueryController.js';
 import {
   resolveBoxToTemplate,
   resolveZoneName,
-  createZoneCreationSubTasks,
   handleAutoDownload,
-  prepareNetworkSections,
 } from './ZoneCreationHelpers.js';
+import { preparePackageDocument } from './ZoneCreationDocument.js';
+import {
+  validateCreateBody,
+  enrichBootTemplate,
+  firmwareConflictWarning,
+  bootStrategyProblem,
+  prepareAndValidateDisks,
+} from './ZoneCreationValidation.js';
+import { queueCreateOrchestration } from './ZoneCreationOrchestration.js';
+import { createMultiHostMachines } from './ZoneCreationMultiHost.js';
 
 /**
- * Stamp one rendered host entry's provisioner sections and split infra —
- * shared by the single- and multi-host paths.
- * @param {Object} host - One rendered hosts[] entry
- * @param {Object} ref - The request's provisioner reference
- * @param {Object} pkg - Registry version entry
- * @returns {{infra: Object, provisioner: Object}}
+ * @fileoverview Zone creation controller
  */
-const splitAndStampHost = (host, ref, pkg) => {
-  const { infra, provisioner } = splitHostsDocument(host);
-  if (!provisioner.provisioner_name) {
-    provisioner.provisioner_name = ref.name;
-  }
-  if (!provisioner.provisioner_version) {
-    provisioner.provisioner_version = pkg.version;
-  }
-  return { infra, provisioner };
-};
-
-/**
- * Build a standalone create body for one host of a MULTI-HOST render (§5
- * hosts[]): each machine gets its own document; each machine's zonecfg nic
- * half derives from its OWN rendered networks[].
- * @param {Object} host - One rendered hosts[] entry
- * @param {Object} body - The original request body
- * @param {Object} ref - Provisioner reference
- * @param {Object} pkg - Registry version entry
- * @returns {Object} Per-machine create body
- */
-const buildMultiHostBody = (host, body, ref, pkg) => {
-  const { infra, provisioner } = splitAndStampHost(host, ref, pkg);
-  const sub = {
-    settings: infra.settings || {},
-    networks: infra.networks || [],
-    provisioner,
-    provisioner_ref: { name: ref.name, version: pkg.version },
-    force: body.force,
-    start_after_create: body.start_after_create,
-  };
-  if (infra.disks) {
-    sub.disks = infra.disks;
-  }
-  if (infra.zones) {
-    sub.zones = { ...infra.zones, ...(body.zones || {}) };
-  }
-  if (infra.vbox) {
-    sub.vbox = infra.vbox;
-  }
-  if (infra.utm) {
-    sub.utm = infra.utm;
-  }
-  if (infra.cloud_init) {
-    sub.cloud_init = infra.cloud_init;
-  }
-  return sub;
-};
-
-/**
- * Fold ONE rendered host's infra sections back into the request body — the
- * single-host path's document-wins merge (the rendered document REPLACES the
- * request where it speaks) with ONE exception: zones merges REQUEST-wins —
- * the wizard sends only user-touched keys, and an explicit user choice
- * always overrides the template's hardcoded default.
- * @param {Object} body - Request body (mutated in place)
- * @param {Object} host - The rendered hosts[0] entry
- * @param {Object} ref - Provisioner reference
- * @param {Object} pkg - Registry version entry
- * @param {Object} settings - The render-input settings (fallback)
- */
-const applySingleHostDocument = (body, host, ref, pkg, settings) => {
-  const { infra, provisioner } = splitAndStampHost(host, ref, pkg);
-  body.settings = infra.settings || settings;
-  if (infra.networks) {
-    body.networks = infra.networks;
-  }
-  if (infra.disks) {
-    body.disks = infra.disks;
-  }
-  if (infra.zones) {
-    body.zones = { ...infra.zones, ...(body.zones || {}) };
-  }
-  if (infra.vbox) {
-    body.vbox = infra.vbox;
-  }
-  if (infra.utm) {
-    body.utm = infra.utm;
-  }
-  if (infra.cloud_init) {
-    body.cloud_init = infra.cloud_init;
-  }
-  body.provisioner = provisioner;
-  body.provisioner_ref = { name: ref.name, version: pkg.version };
-};
-
-const renderPackageDocument = body => {
-  const ref = body.provisioner;
-  if (!ref) {
-    return {};
-  }
-  if (
-    !ref.name ||
-    !ref.version ||
-    typeof ref.name !== 'string' ||
-    typeof ref.version !== 'string'
-  ) {
-    return {
-      error: 'provisioner needs both name and version — or neither: provisioning is optional',
-    };
-  }
-  if (body.advanced_properties !== undefined) {
-    return {
-      error:
-        'advanced_properties is removed — the field DSL takes ONE flat answers map in properties',
-    };
-  }
-  const pkg = getPackageVersion(ref.name, ref.version);
-  if (!pkg) {
-    return { error: `provisioner ${ref.name}/${ref.version} is not in the registry` };
-  }
-
-  // AUTHORITATIVE pre-render answer validation (§3.1) — the 422
-  // {FIELD: message} wire. Defaults merge before conditionals; hidden
-  // fields' answers are never collected. show_if role operands ride the
-  // ruled <role name>_enabled spelling.
-  const { errors } = validateAnswers(
-    versionConfiguration(pkg.metadata),
-    body.properties || {},
-    buildShowIfRoleFlags(body.roles || [])
-  );
-  if (Object.keys(errors).length > 0) {
-    return { field_errors: errors };
-  }
-
-  const settings = { ...(body.settings || {}) };
-  if (!settings.sync_method) {
-    settings.sync_method = 'rsync';
-  }
-  // The TWO ruled render-context injections (Mark, 2026-07-17 — both
-  // agents): sync_method above, default_network_interface here (config
-  // knob provisioning.default_network_interface; '' when unset — an
-  // absent key renders empty either way).
-  if (!settings.default_network_interface) {
-    settings.default_network_interface = config.get('provisioning.default_network_interface') || '';
-  }
-  const rendered = renderHostsTemplate({
-    version: pkg,
-    settings,
-    networks: body.networks || [],
-    roles: body.roles || [],
-    properties: body.properties || {},
-    // The request's disks ride the render context (defaults-never-locks,
-    // disks half) — a converted template echoes them with defaults; until
-    // then the key is inert.
-    disks: body.disks || {},
-  });
-  const markers = findLegacyMarkers(rendered);
-  const hosts = parseHostsDocuments(rendered);
-
-  if (hosts.length > 1) {
-    return {
-      markers,
-      multi_hosts: hosts.map(host => buildMultiHostBody(host, body, ref, pkg)),
-    };
-  }
-
-  applySingleHostDocument(body, hosts[0], ref, pkg, settings);
-  return { markers };
-};
-
-/**
- * Render the package document (when a provisioner reference rides the body).
- * @param {Object} body - Request body (mutated in place for single-host)
- * @returns {{problem?: {status: number, payload: Object}, multiHosts?: Array}}
- */
-const preparePackageDocument = body => {
-  if (!body.provisioner) {
-    return {};
-  }
-  try {
-    const result = renderPackageDocument(body);
-    if (result.error) {
-      return { problem: { status: 400, payload: { error: result.error } } };
-    }
-    if (result.field_errors) {
-      // The ruled 422 wire (shared with the Go agent): the body IS the
-      // {FIELD: message} map — no envelope.
-      return { problem: { status: 422, payload: result.field_errors } };
-    }
-    if (result.markers?.length > 0) {
-      log.api.warn('Rendered document still contains ::TOKEN:: markers', {
-        markers: result.markers,
-      });
-    }
-    return { multiHosts: result.multi_hosts || null };
-  } catch (renderError) {
-    return {
-      problem: {
-        status: 400,
-        payload: { error: `Template render failed: ${renderError.message}` },
-      },
-    };
-  }
-};
-
-/**
- * Required-params + pre-flight checks for the single-host create body —
- * runs POST-render, so template-defaulted consoleport/vcpus values refuse
- * honestly instead of poisoning the zone.
- * @param {Object} body - Request body (post-render)
- * @returns {{status: number, payload: Object}|null} Refusal or null
- */
-const validateCreateBody = body => {
-  const { settings, zones } = body;
-  if (!settings?.hostname || !settings?.domain || !zones?.brand) {
-    return {
-      status: 400,
-      payload: {
-        error:
-          'Missing required parameters: settings.hostname, settings.domain, and zones.brand are required',
-      },
-    };
-  }
-  const preflightProblem =
-    consoleportRangeError(settings.consoleport) || vcpusCountError(settings.vcpus);
-  if (preflightProblem) {
-    return { status: 400, payload: { error: preflightProblem } };
-  }
-  if (!validateZoneName(`${settings.hostname}.${settings.domain}`)) {
-    return { status: 400, payload: { error: 'Invalid zone name' } };
-  }
-  return null;
-};
-
-/**
- * Enrich the typed boot entry with the resolved template dataset (the wire's
- * type stays the declaration, template_dataset the resolution).
- * @param {Object} body - Create body (mutated)
- * @param {Object} boxResolution - resolveBoxToTemplate result
- */
-const enrichBootTemplate = (body, boxResolution) => {
-  if (boxResolution.success && boxResolution.template_dataset) {
-    body.disks.boot.template_dataset = boxResolution.template_dataset;
-  }
-};
-
-/**
- * The one impossible firmware pairing: settings.firmware_type BIOS with a
- * pure-UEFI boot ROM (no _CSM) cannot legacy boot — warned, never refused
- * (the explicit bootrom is honored).
- * @param {Object} body - Create body
- * @returns {{resource: string, message: string}|null} Warning entry or null
- */
-const firmwareConflictWarning = body => {
-  const bootrom = body.zones?.bootrom;
-  const firmware = String(body.settings?.firmware_type || '').toUpperCase();
-  if (!bootrom || firmware !== 'BIOS' || bootrom.includes('CSM')) {
-    return null;
-  }
-  return {
-    resource: 'firmware',
-    message: `settings.firmware_type BIOS but zones.bootrom ${bootrom} cannot legacy boot — CSM-capable ROMs carry the _CSM suffix`,
-  };
-};
-
-/**
- * The boot entry's clone-strategy refusal — template pool from the resolved
- * dataset when local, the deterministic landing pool when the box still
- * downloads.
- * @param {Object} body - Create body (post box-resolution)
- * @returns {Promise<string|null>} Refusal string or null
- */
-const bootStrategyProblem = async body => {
-  const boot = body.disks?.boot;
-  if (boot?.type !== 'template') {
-    return null;
-  }
-  const targetPool = boot.pool || (await getRootPool());
-  const templatePool = boot.template_dataset
-    ? boot.template_dataset.split('/')[0]
-    : templateLandingPool();
-  return cloneStrategyError(boot, templatePool, targetPool);
-};
-
-/**
- * The create wire's disk preparation, shared by the single- and multi-host
- * paths: the network sections (packaged transport + dns declare + nic
- * derivation), the typed-disk normalize, the frozen wire refusals, and the
- * host-truth image checks. First error answers; warnings ride through.
- * @param {Object} body - Create body (mutated)
- * @returns {Promise<{error?: string, warnings: Array}>}
- */
-const prepareAndValidateDisks = async body => {
-  prepareNetworkSections(body);
-  normalizeDisks(body);
-  const diskValidation = validateDisksWire(body);
-  if (diskValidation.errors.length > 0) {
-    return { error: diskValidation.errors[0], warnings: [] };
-  }
-  const imageErrors = await validateDiskImages(body.disks);
-  if (imageErrors.length > 0) {
-    return { error: imageErrors[0], warnings: [] };
-  }
-  return { warnings: diskValidation.warnings };
-};
 
 export const findExistingZoneConflict = async finalZoneName => {
   const existingZone = await Zones.findOne({ where: { name: finalZoneName } });
@@ -355,71 +37,6 @@ export const findExistingZoneConflict = async finalZoneName => {
   }
   return null;
 };
-
-/**
- * Queue the single-host create orchestration — the parent anchor + sub-task
- * chain — and shape the wire response. The orchestration parent is a pure
- * anchor: born running, never dispatched (the queue picks only pending
- * rows); the child rollup drives its state (the Go queue's model).
- * @param {string} finalZoneName - Resolved zone name
- * @param {Object} body - Post-render create body
- * @param {Object|null} networkSetup - The ensure hook's queued chain (null when ready)
- * @param {boolean} startAfterCreate - Whether to chain a start task
- * @param {string} createdBy - Task creator
- * @param {Array} allWarnings - Resource + disk warnings
- * @returns {Promise<Object>} The create response body
- */
-const queueCreateOrchestration = async (
-  finalZoneName,
-  body,
-  networkSetup,
-  startAfterCreate,
-  createdBy,
-  allWarnings
-) => {
-  const parentTask = await Tasks.create({
-    zone_name: finalZoneName,
-    operation: 'zone_create_orchestration',
-    priority: TaskPriority.MEDIUM,
-    created_by: createdBy,
-    metadata: JSON.stringify(body),
-    status: 'running',
-    started_at: new Date(),
-  });
-
-  const { subTasks } = await createZoneCreationSubTasks(
-    finalZoneName,
-    body,
-    parentTask.id,
-    networkSetup?.lastTaskId ?? null,
-    startAfterCreate,
-    createdBy
-  );
-  if (networkSetup) {
-    subTasks.network_setup = networkSetup.parentTaskId;
-  }
-
-  // Wire status describes the QUEUED WORK (the children) — Go answers the
-  // same way; the parent row itself is a running anchor from birth.
-  const createResponse = {
-    success: true,
-    parent_task_id: parentTask.id,
-    machine_name: finalZoneName,
-    operation: 'zone_create_orchestration',
-    status: 'pending',
-    message: 'Zone creation queued',
-    requires_download: false,
-    sub_tasks: subTasks,
-  };
-  if (allWarnings.length > 0) {
-    createResponse.resource_warnings = allWarnings;
-  }
-  return createResponse;
-};
-
-/**
- * @fileoverview Zone creation controller
- */
 
 /**
  * @swagger
@@ -1151,220 +768,6 @@ const queueCreateOrchestration = async (
  *       500:
  *         description: Failed to queue creation task
  */
-/**
- * Validate + name-resolve ONE host of a multi-host create. Refusals return
- * {problem}; success returns the prepared entry.
- * @param {Object} hostBody - Per-machine create body
- * @param {number} index - Position in hosts[] (for error naming)
- * @returns {Promise<Object>} {problem} | {finalZoneName, hostBody, warnings}
- */
-const prepareMultiHostEntry = async (hostBody, index) => {
-  const label = `multi-host entry ${index + 1}`;
-  const { settings, zones } = hostBody;
-  if (!settings?.hostname || !settings?.domain || !zones?.brand) {
-    return {
-      problem: {
-        status: 400,
-        payload: {
-          error: `${label}: settings.hostname, settings.domain, and zones.brand are required`,
-        },
-      },
-    };
-  }
-  const baseName = `${settings.hostname}.${settings.domain}`;
-  if (!validateZoneName(baseName)) {
-    return {
-      problem: { status: 400, payload: { error: `${label}: invalid zone name ${baseName}` } },
-    };
-  }
-  // Consoleport + vcpus pre-flight (agreed cross-agent strings) — catches
-  // the rendered document's values too, since multi-host bodies arrive
-  // post-render.
-  const preflightProblem =
-    consoleportRangeError(settings.consoleport) || vcpusCountError(settings.vcpus);
-  if (preflightProblem) {
-    return {
-      problem: { status: 400, payload: { error: `${label}: ${preflightProblem}` } },
-    };
-  }
-  const diskPrep = await prepareAndValidateDisks(hostBody);
-  if (diskPrep.error) {
-    return {
-      problem: { status: 400, payload: { error: `${label}: ${diskPrep.error}` } },
-    };
-  }
-  const nameResult = await resolveZoneName(baseName, settings);
-  if (!nameResult.success) {
-    return { problem: { status: nameResult.error.status, payload: nameResult.error } };
-  }
-  const conflict = await findExistingZoneConflict(nameResult.finalZoneName);
-  if (conflict) {
-    return { problem: { status: 409, payload: conflict } };
-  }
-  const boxResolution = await resolveBoxToTemplate(settings, hostBody.disks);
-  if (!boxResolution.success) {
-    return {
-      problem: {
-        status: boxResolution.error.status || 400,
-        payload: {
-          error: `${label}: every template must be local — auto-download is single-host only`,
-          details: boxResolution.error,
-        },
-      },
-    };
-  }
-  hostBody.name = baseName;
-  enrichBootTemplate(hostBody, boxResolution);
-  const strategyProblem = await bootStrategyProblem(hostBody);
-  if (strategyProblem) {
-    return {
-      problem: { status: 400, payload: { error: `${label}: ${strategyProblem}` } },
-    };
-  }
-  const resourceValidation = await validateZoneCreationResources(hostBody);
-  if (!resourceValidation.valid) {
-    // The CONVERGED shape (Go parity): the single-host wording, each detail
-    // annotated with which host entry (1-based, matching the entry labels)
-    // and machine failed — richer than a prefixed message, and details[]
-    // has no single message to prefix.
-    return {
-      problem: {
-        status: 400,
-        payload: {
-          error: 'Insufficient resources',
-          details: resourceValidation.errors.map(detail => ({
-            ...detail,
-            entry: index + 1,
-            machine_name: nameResult.finalZoneName,
-          })),
-        },
-      },
-    };
-  }
-  const warnings = [...resourceValidation.warnings, ...diskPrep.warnings];
-  const firmwareWarning = firmwareConflictWarning(hostBody);
-  if (firmwareWarning) {
-    warnings.push(firmwareWarning);
-  }
-  return {
-    finalZoneName: nameResult.finalZoneName,
-    hostBody,
-    warnings,
-  };
-};
-
-/**
- * Multi-host create (§5 hosts[]): ONE rendered document → N coordinated
- * machines. Every host validates/conflict-checks BEFORE anything is created
- * (atomic refusal); creation chains in DECLARATION ORDER — machine k+1's
- * first task gates on machine k's last (finalize, or start when
- * start_after_create rides), so join vars written by earlier machines'
- * provisioning hold when later machines come up.
- * @param {Object} req - Request
- * @param {Object} res - Response
- * @param {Array<Object>} hostBodies - Per-machine create bodies
- * @returns {Promise<Object>} Response
- */
-const createMultiHostMachines = async (req, res, hostBodies) => {
-  try {
-    // Phase 1 — every host validates/conflict-checks sequentially BEFORE
-    // anything is created (atomic refusal). Sequential promise chain: the
-    // reduce pattern the creators use (validation queries must not race).
-    const phase1 = await hostBodies.reduce(
-      (promise, hostBody, index) =>
-        promise.then(async acc => {
-          if (acc.problem) {
-            return acc;
-          }
-          const entry = await prepareMultiHostEntry(hostBody, index);
-          if (entry.problem) {
-            return { ...acc, problem: entry.problem };
-          }
-          if (acc.seenNames.has(entry.finalZoneName)) {
-            return {
-              ...acc,
-              problem: {
-                status: 400,
-                payload: {
-                  error: `multi-host document names ${entry.finalZoneName} more than once`,
-                },
-              },
-            };
-          }
-          acc.seenNames.add(entry.finalZoneName);
-          acc.prepared.push(entry);
-          return acc;
-        }),
-      Promise.resolve({ prepared: [], seenNames: new Set(), problem: null })
-    );
-    if (phase1.problem) {
-      return res.status(phase1.problem.status).json(phase1.problem.payload);
-    }
-
-    // The packaged-provisioning ensure hook — multi-host bodies exist only
-    // via the package render, so every one is packaged: queue the setup
-    // chain once and the FIRST machine's chain gates on its last task.
-    const networkSetup = await ensureProvisioningNetwork(req.entity.name);
-
-    // Phase 2 — creation chains in DECLARATION ORDER: machine k+1's first
-    // task gates on machine k's last.
-    const machines = [];
-    const warnings = {};
-    await phase1.prepared.reduce(
-      (promise, { finalZoneName, hostBody, warnings: hostWarnings }) =>
-        promise.then(async previousLast => {
-          const parentTask = await Tasks.create({
-            zone_name: finalZoneName,
-            operation: 'zone_create_orchestration',
-            priority: TaskPriority.MEDIUM,
-            created_by: req.entity.name,
-            metadata: JSON.stringify(hostBody),
-            status: 'running',
-            started_at: new Date(),
-          });
-          const { subTasks } = await createZoneCreationSubTasks(
-            finalZoneName,
-            hostBody,
-            parentTask.id,
-            previousLast,
-            hostBody.start_after_create,
-            req.entity.name
-          );
-          machines.push({
-            machine_name: finalZoneName,
-            parent_task_id: parentTask.id,
-            sub_tasks: subTasks,
-          });
-          if (hostWarnings?.length > 0) {
-            warnings[finalZoneName] = hostWarnings;
-          }
-          return subTasks.start || subTasks.stage || subTasks.finalize;
-        }),
-      Promise.resolve(networkSetup?.lastTaskId ?? null)
-    );
-
-    const response = {
-      success: true,
-      multi_host: true,
-      count: machines.length,
-      message: `Multi-host creation queued — ${machines.length} machines in document order`,
-      machines,
-    };
-    if (networkSetup) {
-      response.network_setup = networkSetup.parentTaskId;
-    }
-    if (Object.keys(warnings).length > 0) {
-      response.resource_warnings = warnings;
-    }
-    return res.json(response);
-  } catch (error) {
-    log.api.error('Multi-host creation failed', { error: error.message });
-    return res
-      .status(500)
-      .json({ error: 'Failed to queue multi-host creation', details: error.message });
-  }
-};
-
 export const createZone = async (req, res) => {
   try {
     const { problem, multiHosts } = preparePackageDocument(req.body);
@@ -1375,7 +778,6 @@ export const createZone = async (req, res) => {
       return createMultiHostMachines(req, res, multiHosts);
     }
 
-    // NEW HOSTS.YML STRUCTURE ONLY
     const { settings, start_after_create } = req.body;
 
     const bodyProblem = validateCreateBody(req.body);
@@ -1388,10 +790,8 @@ export const createZone = async (req, res) => {
       return res.status(400).json({ error: diskPrep.error });
     }
 
-    // Build base FQDN: hostname.domain
     const baseName = `${settings.hostname}.${settings.domain}`;
 
-    // Resolve final zone name (applies server_id prefix if configured)
     const nameResult = await resolveZoneName(baseName, settings);
     if (!nameResult.success) {
       return res.status(nameResult.error.status).json(nameResult.error);
@@ -1403,10 +803,8 @@ export const createZone = async (req, res) => {
       return res.status(409).json(conflict);
     }
 
-    // Box resolution: convert settings.box reference to template_dataset path
     const boxResolution = await resolveBoxToTemplate(settings, req.body.disks);
 
-    // Ensure metadata.name is set for task executor (base name, not prefixed)
     req.body.name = baseName;
 
     enrichBootTemplate(req.body, boxResolution);
@@ -1416,7 +814,6 @@ export const createZone = async (req, res) => {
       return res.status(400).json({ error: strategyProblem });
     }
 
-    // Validate resource availability (storage space) before creating any tasks
     const resourceValidation = await validateZoneCreationResources(req.body);
     if (!resourceValidation.valid) {
       return res.status(400).json({
@@ -1430,17 +827,10 @@ export const createZone = async (req, res) => {
       allWarnings.push(firmwareWarning);
     }
 
-    // The packaged-provisioning ensure hook: a create that names a
-    // provisioner makes sure the provisioning network exists FIRST — the
-    // zone's chain gates on the setup chain's last task when anything was
-    // missing (fully-ready = null, zero extra tasks).
     const networkSetup = req.body.provisioner_ref
       ? await ensureProvisioningNetwork(req.entity.name)
       : null;
 
-    // Handle missing template with auto-download (typed gate: only a
-    // type: template boot entry ever resolves a box, so a 404 here IS the
-    // download case)
     if (!boxResolution.success && boxResolution.error.status === 404) {
       const response = await handleAutoDownload(
         finalZoneName,
@@ -1459,12 +849,10 @@ export const createZone = async (req, res) => {
       return res.json(response);
     }
 
-    // Template missing but cannot auto-download (no box reference)
     if (!boxResolution.success) {
       return res.status(boxResolution.error.status).json(boxResolution.error);
     }
 
-    // Template available - create orchestration with sub-tasks (no download).
     const createResponse = await queueCreateOrchestration(
       finalZoneName,
       req.body,

@@ -9,7 +9,7 @@ import config from '../../config/ConfigLoader.js';
 import ArtifactStorageLocation from '../../models/ArtifactStorageLocationModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log, createTimer, createRequestLogger } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 
 /**
  * @swagger
@@ -131,24 +131,14 @@ export const prepareArtifactUpload = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'prepared',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            original_name: filename,
-            size: parseInt(size),
-            storage_location_id: storage_path_id,
-            checksum,
-            checksum_algorithm,
-            overwrite_existing,
-            upload_prepared: true,
-          },
-          (err, result) => {
-            if (err) {
-              return reject(err);
-            }
-            return resolve(result);
-          }
-        );
+      metadata: await stringifyAsync({
+        original_name: filename,
+        size: parseInt(size),
+        storage_location_id: storage_path_id,
+        checksum,
+        checksum_algorithm,
+        overwrite_existing,
+        upload_prepared: true,
       }),
     });
 
@@ -286,14 +276,7 @@ export const uploadArtifactToTask = async (req, res) => {
       };
 
       await task.update({
-        metadata: await new Promise((resolve, reject) => {
-          yj.stringifyAsync(updatedMetadata, (err, result) => {
-            if (err) {
-              return reject(err);
-            }
-            return resolve(result);
-          });
-        }),
+        metadata: await stringifyAsync(updatedMetadata),
         status: 'pending',
       });
 

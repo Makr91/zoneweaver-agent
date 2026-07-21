@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkUsage from '../../models/NetworkUsageModel.js';
 import os from 'os';
@@ -17,15 +17,7 @@ import os from 'os';
  */
 export const executeCreateAggregateTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, links, policy, lacp_mode, lacp_timer, unicast_address, temporary } = metadata;
 
     let command = `pfexec dladm create-aggr`;
@@ -81,15 +73,7 @@ export const executeDeleteAggregateTask = async metadataJson => {
   log.task.debug('Aggregate deletion task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { aggregate, temporary } = metadata;
 
     log.task.debug('Aggregate deletion task parameters', {
@@ -190,15 +174,7 @@ export const executeDeleteAggregateTask = async metadataJson => {
  */
 export const executeModifyAggregateLinksTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { aggregate, operation, links, temporary } = metadata;
 
     let command = `pfexec dladm ${operation}-aggr`;

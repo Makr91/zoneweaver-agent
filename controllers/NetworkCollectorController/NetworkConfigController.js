@@ -7,7 +7,7 @@
 
 import { exec } from 'child_process';
 import util from 'util';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkParsingController from './NetworkParsingController.js';
 import { log } from '../../lib/Logger.js';
@@ -84,15 +84,7 @@ export class NetworkConfigController {
 
       // Store port details as JSON
       if (ports.length > 0) {
-        aggr.ports_detail = await new Promise((resolve, reject) => {
-          yj.stringifyAsync(ports, (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          });
-        });
+        aggr.ports_detail = await stringifyAsync(ports);
       }
     } catch (detailError) {
       log.monitoring.warn('Failed to get detailed info for aggregate', {
@@ -136,15 +128,7 @@ export class NetworkConfigController {
 
       // Store detailed LACP info as JSON
       if (lacpInfo.length > 0) {
-        aggr.lacp_detail = await new Promise((resolve, reject) => {
-          yj.stringifyAsync(lacpInfo, (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          });
-        });
+        aggr.lacp_detail = await stringifyAsync(lacpInfo);
       }
     } catch (lacpError) {
       log.monitoring.warn('Failed to get LACP info for aggregate', {

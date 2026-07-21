@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
 import Template from '../../../models/TemplateModel.js';
@@ -247,15 +247,7 @@ export const executeTemplateMoveTask = async (metadataJson, task) => {
   log.task.debug('Template move task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { template_id, target_dataset_path, force_promote } = metadata;
 

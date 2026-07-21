@@ -15,7 +15,7 @@ import CleanupService from './CleanupService.js';
 import { log, createTimer } from '../lib/Logger.js';
 import { validatePath, executeCommand } from '../lib/FileSystemManager.js';
 import { Op } from 'sequelize';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../lib/AsyncJson.js';
 
 /**
  * Artifact Storage Service Class
@@ -194,21 +194,10 @@ class ArtifactStorageService {
     this.isScanning = true;
 
     try {
-      const metadataJson = await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            verify_checksums: false,
-            remove_orphaned: true,
-            source,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      const metadataJson = await stringifyAsync({
+        verify_checksums: false,
+        remove_orphaned: true,
+        source,
       });
 
       const result = await executeArtifactScanAllTask(metadataJson);

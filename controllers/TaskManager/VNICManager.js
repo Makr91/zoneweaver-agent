@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkUsage from '../../models/NetworkUsageModel.js';
 import os from 'os';
@@ -106,15 +106,7 @@ export const executeCreateVNICTask = async metadataJson => {
 
     let metadata;
     try {
-      metadata = await new Promise((resolve, reject) => {
-        yj.parseAsync(metadataJson, (err, result) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(result);
-          }
-        });
-      });
+      metadata = await parseAsync(metadataJson);
       log.task.debug('Successfully parsed metadata', { metadata });
     } catch (parseError) {
       log.task.error('Failed to parse metadata JSON', {
@@ -176,15 +168,7 @@ export const executeDeleteVNICTask = async metadataJson => {
   log.task.debug('VNIC deletion task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { vnic, temporary } = metadata;
 
     log.task.debug('VNIC deletion task parameters', {
@@ -286,15 +270,7 @@ export const executeDeleteVNICTask = async metadataJson => {
  */
 export const executeSetVNICPropertiesTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { vnic, properties, temporary } = metadata;
 
     let command = `pfexec dladm set-linkprop`;

@@ -8,6 +8,50 @@ import { getSystemZoneStatus } from './ZoneQueryController.js';
  * @fileoverview Zone deletion controller
  */
 
+/**
+ * @swagger
+ * /machines/{machineName}:
+ *   delete:
+ *     summary: Delete machine
+ *     description: Queues tasks to stop, uninstall, and delete the specified machine (zone)
+ *     tags: [Zone Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: machineName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the machine to delete
+ *       - in: query
+ *         name: force
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Force deletion even if zone is running
+ *       - in: query
+ *         name: cleanup_disks
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Also destroy the machine's ZFS datasets (boot volume, zone root dataset) after zone deletion — the converged cross-agent key. Only agent-stamped datasets die; external/user-attached datasets are always preserved.
+ *       - in: query
+ *         name: cleanup_networking
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Also tear down the machine's network resources after zone deletion — its IP address objects are deleted (DHCP leases released) and its VNICs destroyed; physical links are only dissociated. When false, interfaces are dissociated from the zone but left intact.
+ *     responses:
+ *       200:
+ *         description: Delete tasks queued successfully
+ *       400:
+ *         description: Invalid zone name or zone is running without force
+ *       404:
+ *         description: Zone not found
+ *       500:
+ *         description: Failed to queue delete tasks
+ */
 export const deleteZone = async (req, res) => {
   try {
     const { machineName: zoneName } = req.params;

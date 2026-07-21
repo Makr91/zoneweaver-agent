@@ -5,12 +5,12 @@
  * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
-import yj from 'yieldable-json';
 import config from '../../../config/ConfigLoader.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log, createTimer } from '../../../lib/Logger.js';
 import { clearRebootRequired } from '../../../lib/RebootManager.js';
 import { executeZoneShutdownOrchestration } from '../../../lib/ZoneOrchestrationManager.js';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 
 const COMMAND_TIMEOUT_MS = (config.get('system_host.command_timeout_seconds') || 300) * 1000;
 
@@ -23,15 +23,7 @@ export const executeSystemHostRestartTask = async metadataJson => {
   const taskTimer = createTimer('system_host_restart');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const {
       grace_period = 60,
@@ -157,15 +149,7 @@ export const executeSystemHostRebootTask = async metadataJson => {
   const taskTimer = createTimer('system_host_reboot');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { dump_core = false, method = 'direct_reboot' } = metadata;
 
@@ -239,15 +223,7 @@ export const executeSystemHostRebootFastTask = async metadataJson => {
   const taskTimer = createTimer('system_host_reboot_fast');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { boot_environment } = metadata;
 

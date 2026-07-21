@@ -5,7 +5,7 @@
 
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import NatRules from '../../models/NatRuleModel.js';
 
 /**
@@ -144,15 +144,7 @@ const syncDatabaseWithSystem = async () => {
  */
 export const executeCreateNatRuleTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const {
       bridge,
@@ -254,15 +246,7 @@ export const executeCreateNatRuleTask = async metadataJson => {
  */
 export const executeDeleteNatRuleTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { rule_id } = metadata; // This is now a UUID
 
@@ -323,15 +307,7 @@ export const executeDeleteNatRuleTask = async metadataJson => {
  */
 export const executeConfigureForwardingTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { enabled, interfaces, global: touchGlobal = true } = metadata;
     const errors = [];

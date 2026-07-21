@@ -3,7 +3,7 @@
  */
 
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -71,20 +71,9 @@ export const activateBootEnvironment = async (req, res) => {
       priority: TaskPriority.HIGH,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            temporary,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        temporary,
       }),
     });
 
@@ -172,21 +161,10 @@ export const mountBootEnvironment = async (req, res) => {
       priority: TaskPriority.LOW,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            mountpoint,
-            shared_mode,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        mountpoint,
+        shared_mode,
       }),
     });
 
@@ -264,20 +242,9 @@ export const unmountBootEnvironment = async (req, res) => {
       priority: TaskPriority.LOW,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            force,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        force,
       }),
     });
 

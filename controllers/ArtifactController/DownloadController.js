@@ -12,7 +12,7 @@ import ArtifactStorageLocation from '../../models/ArtifactStorageLocationModel.j
 import Artifact from '../../models/ArtifactModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 
 /**
  * @swagger
@@ -131,23 +131,13 @@ export const downloadFromUrl = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            url,
-            storage_location_id: storage_path_id,
-            filename,
-            checksum,
-            checksum_algorithm,
-            overwrite_existing,
-          },
-          (err, result) => {
-            if (err) {
-              return reject(err);
-            }
-            return resolve(result);
-          }
-        );
+      metadata: await stringifyAsync({
+        url,
+        storage_location_id: storage_path_id,
+        filename,
+        checksum,
+        checksum_algorithm,
+        overwrite_existing,
       }),
     });
 

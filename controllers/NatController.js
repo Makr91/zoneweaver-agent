@@ -8,7 +8,7 @@
 import { exec } from 'child_process';
 import util from 'util';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../lib/AsyncJson.js';
 import { log } from '../lib/Logger.js';
 import NatRules from '../models/NatRuleModel.js';
 
@@ -161,15 +161,7 @@ export const createNatRule = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(metadata, (err, result) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(result);
-          }
-        });
-      }),
+      metadata: await stringifyAsync(metadata),
     });
 
     return res.status(202).json({
@@ -224,15 +216,7 @@ export const deleteNatRule = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync({ rule_id: ruleId }, (err, result) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(result);
-          }
-        });
-      }),
+      metadata: await stringifyAsync({ rule_id: ruleId }),
     });
 
     return res.status(202).json({
@@ -467,15 +451,7 @@ export const configureForwarding = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(metadata, (err, result) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(result);
-          }
-        });
-      }),
+      metadata: await stringifyAsync(metadata),
     });
 
     return res.status(202).json({

@@ -3,7 +3,7 @@
  */
 
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -132,30 +132,19 @@ export const addRepository = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            origin,
-            mirrors,
-            ssl_cert,
-            ssl_key,
-            enabled,
-            sticky,
-            search_first,
-            search_before,
-            search_after,
-            properties,
-            proxy,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        origin,
+        mirrors,
+        ssl_cert,
+        ssl_key,
+        enabled,
+        sticky,
+        search_first,
+        search_before,
+        search_after,
+        properties,
+        proxy,
       }),
     });
 
@@ -234,19 +223,8 @@ export const removeRepository = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
       }),
     });
 
@@ -395,35 +373,24 @@ export const modifyRepository = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            origins_to_add,
-            origins_to_remove,
-            mirrors_to_add,
-            mirrors_to_remove,
-            ssl_cert,
-            ssl_key,
-            enabled,
-            sticky,
-            search_first,
-            search_before,
-            search_after,
-            properties_to_set,
-            properties_to_unset,
-            proxy,
-            reset_uuid,
-            refresh,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        origins_to_add,
+        origins_to_remove,
+        mirrors_to_add,
+        mirrors_to_remove,
+        ssl_cert,
+        ssl_key,
+        enabled,
+        sticky,
+        search_first,
+        search_before,
+        search_after,
+        properties_to_set,
+        properties_to_unset,
+        proxy,
+        reset_uuid,
+        refresh,
       }),
     });
 

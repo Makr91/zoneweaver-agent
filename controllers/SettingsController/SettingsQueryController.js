@@ -3,7 +3,7 @@
  */
 
 import config from '../../config/ConfigLoader.js';
-import yj from 'yieldable-json';
+import { stringifyAsync, parseAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 import { SETTINGS_SCHEMA, buildSchemaDefaults } from './utils/SettingsSchema.js';
 
@@ -156,21 +156,7 @@ export const getSettings = async (req, res) => {
     // Effective config: schema defaults filled in for keys the file omits
     const currentConfig = deepMerge(buildSchemaDefaults(), fileConfig);
 
-    const sanitizedConfig = await new Promise((resolve, reject) => {
-      yj.stringifyAsync(currentConfig, (err, jsonString) => {
-        if (err) {
-          reject(err);
-        } else {
-          yj.parseAsync(jsonString, (parseErr, result) => {
-            if (parseErr) {
-              reject(parseErr);
-            } else {
-              resolve(result);
-            }
-          });
-        }
-      });
-    });
+    const sanitizedConfig = await parseAsync(await stringifyAsync(currentConfig));
 
     // Remove sensitive fields that should not be exposed to the frontend
     if (sanitizedConfig.database) {

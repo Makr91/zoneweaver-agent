@@ -1,5 +1,5 @@
-import yj from 'yieldable-json';
 import { log } from '../../../lib/Logger.js';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import path from 'path';
 import config from '../../../config/ConfigLoader.js';
 import ArtifactStorageLocation from '../../../models/ArtifactStorageLocationModel.js';
@@ -286,15 +286,7 @@ export const executeArtifactScanAllTask = async metadataJson => {
   log.task.debug('Artifact scan all task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { verify_checksums = false, remove_orphaned = false, source = 'manual' } = metadata;
 
@@ -411,15 +403,7 @@ export const executeArtifactScanLocationTask = async metadataJson => {
   log.task.debug('Artifact scan location task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { storage_location_id, verify_checksums = false, remove_orphaned = false } = metadata;
 

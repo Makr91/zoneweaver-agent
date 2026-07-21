@@ -3,7 +3,7 @@
  */
 
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { setRebootRequired } from '../../lib/RebootManager.js';
 import { log } from '../../lib/Logger.js';
 
@@ -107,20 +107,9 @@ export const setHostname = async (req, res) => {
       priority: TaskPriority.HIGH,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            hostname,
-            apply_immediately,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        hostname,
+        apply_immediately,
       }),
     });
 

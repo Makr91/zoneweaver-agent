@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 
 /**
@@ -13,15 +13,7 @@ import { executeCommand } from '../../lib/CommandManager.js';
  */
 export const executeBeadmCreateTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, description, source_be, snapshot, activate, zpool, properties } = metadata;
 
     let command = `pfexec beadm create`;
@@ -78,15 +70,7 @@ export const executeBeadmCreateTask = async metadataJson => {
  */
 export const executeBeadmDeleteTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, force, snapshots } = metadata;
 
     let command = `pfexec beadm destroy`;
@@ -126,15 +110,7 @@ export const executeBeadmDeleteTask = async metadataJson => {
  */
 export const executeBeadmActivateTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, temporary } = metadata;
 
     let command = `pfexec beadm activate`;
@@ -170,15 +146,7 @@ export const executeBeadmActivateTask = async metadataJson => {
  */
 export const executeBeadmMountTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, mountpoint, shared_mode } = metadata;
 
     let command = `pfexec beadm mount`;
@@ -214,15 +182,7 @@ export const executeBeadmMountTask = async metadataJson => {
  */
 export const executeBeadmUnmountTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, force } = metadata;
 
     let command = `pfexec beadm unmount`;

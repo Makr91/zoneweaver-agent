@@ -1,5 +1,5 @@
-import yj from 'yieldable-json';
 import { log } from '../../../lib/Logger.js';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -22,15 +22,7 @@ export const executeArtifactUploadProcessTask = async (metadataJson, taskToUpdat
   log.task.debug('Artifact upload process task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const {
       final_path,

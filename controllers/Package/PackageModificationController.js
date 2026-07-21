@@ -6,7 +6,7 @@
  */
 
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -83,22 +83,11 @@ export const installPackages = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            packages,
-            accept_licenses,
-            dry_run,
-            be_name,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        packages,
+        accept_licenses,
+        dry_run,
+        be_name,
       }),
     });
 
@@ -178,21 +167,10 @@ export const uninstallPackages = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            packages,
-            dry_run,
-            be_name,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        packages,
+        dry_run,
+        be_name,
       }),
     });
 

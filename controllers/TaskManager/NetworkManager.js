@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import IPAddresses from '../../models/IPAddressModel.js';
 import os from 'os';
 
@@ -16,15 +16,7 @@ import os from 'os';
  */
 export const executeCreateIPAddressTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { type, addrobj, address, primary, wait, temporary, down } = metadata;
 
     let command = `pfexec ipadm create-addr`;
@@ -86,15 +78,7 @@ export const executeDeleteIPAddressTask = async metadataJson => {
   log.task.debug('IP address deletion task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { addrobj, release } = metadata;
 
     log.task.debug('IP address deletion task parameters', {
@@ -253,15 +237,7 @@ export const executeDeleteIPAddressTask = async metadataJson => {
  */
 export const executeEnableIPAddressTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { addrobj } = metadata;
 
     const result = await executeCommand(`pfexec ipadm enable-addr ${addrobj}`);
@@ -288,15 +264,7 @@ export const executeEnableIPAddressTask = async metadataJson => {
  */
 export const executeDisableIPAddressTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { addrobj } = metadata;
 
     const result = await executeCommand(`pfexec ipadm disable-addr ${addrobj}`);

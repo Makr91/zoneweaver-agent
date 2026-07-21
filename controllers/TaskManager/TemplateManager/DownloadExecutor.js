@@ -1,4 +1,3 @@
-import yj from 'yieldable-json';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -16,6 +15,7 @@ import {
 import { updateTaskProgress } from './utils/ProgressHelper.js';
 import { downloadTemplateFile } from './utils/DownloadHelper.js';
 import { extractAndImport } from './utils/ExtractionHelper.js';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 
 /**
  * @fileoverview Template download task executor
@@ -56,15 +56,7 @@ export const executeTemplateDownloadTask = async (metadataJson, task) => {
   let tempExtractDir = null;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { source_name, organization, box_name, version, provider, architecture } = metadata;
 

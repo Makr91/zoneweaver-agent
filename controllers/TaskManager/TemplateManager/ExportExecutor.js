@@ -1,8 +1,8 @@
-import yj from 'yieldable-json';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
 import { updateTaskProgress } from './utils/ProgressHelper.js';
@@ -24,15 +24,7 @@ export const executeTemplateExportTask = async (metadataJson, task) => {
   let tempDir = null;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { zone_name, snapshot_name, filename } = metadata;
 

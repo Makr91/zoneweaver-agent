@@ -5,7 +5,7 @@
 
 import Template from '../../models/TemplateModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 import { findSourceConfig, findDefaultSourceConfig } from '../../lib/TemplateRegistryUtils.js';
 
@@ -114,24 +114,13 @@ export const downloadTemplate = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            source_name: resolvedSourceName,
-            organization,
-            box_name,
-            version,
-            provider,
-            architecture,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        source_name: resolvedSourceName,
+        organization,
+        box_name,
+        version,
+        provider,
+        architecture,
       }),
     });
 
@@ -182,19 +171,8 @@ export const deleteLocalTemplate = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            template_id: templateId,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        template_id: templateId,
       }),
     });
 
@@ -283,20 +261,15 @@ export const publishTemplate = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            zone_name: machine_name,
-            box_path,
-            source_name,
-            organization,
-            box_name,
-            version,
-            description,
-            snapshot_name,
-          },
-          (err, jsonResult) => (err ? reject(err) : resolve(jsonResult))
-        );
+      metadata: await stringifyAsync({
+        zone_name: machine_name,
+        box_path,
+        source_name,
+        organization,
+        box_name,
+        version,
+        description,
+        snapshot_name,
       }),
     });
 
@@ -457,15 +430,10 @@ export const moveTemplate = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            template_id: templateId,
-            target_dataset_path: targetDatasetPath,
-            force_promote,
-          },
-          (err, jsonResult) => (err ? reject(err) : resolve(jsonResult))
-        );
+      metadata: await stringifyAsync({
+        template_id: templateId,
+        target_dataset_path: targetDatasetPath,
+        force_promote,
       }),
     });
 

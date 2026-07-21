@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 import { moveItem, copyItem, createArchive, extractArchive } from '../../lib/FileSystemManager.js';
 
@@ -16,15 +16,7 @@ export const executeFileMoveTask = async metadataJson => {
   log.filesystem.debug('File move task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { source, destination } = metadata;
 
     log.filesystem.debug('File move task parameters', {
@@ -61,15 +53,7 @@ export const executeFileCopyTask = async metadataJson => {
   log.filesystem.debug('File copy task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { source, destination } = metadata;
 
     log.filesystem.debug('File copy task parameters', {
@@ -106,15 +90,7 @@ export const executeFileArchiveCreateTask = async metadataJson => {
   log.filesystem.debug('File archive create task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { sources, archive_path, format } = metadata;
 
     log.filesystem.debug('Archive creation task parameters', {
@@ -153,15 +129,7 @@ export const executeFileArchiveExtractTask = async metadataJson => {
   log.filesystem.debug('File archive extract task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { archive_path, extract_path } = metadata;
 
     log.filesystem.debug('Archive extraction task parameters', {

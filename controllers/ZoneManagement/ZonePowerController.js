@@ -4,7 +4,7 @@ import { Op } from 'sequelize';
 import { log } from '../../lib/Logger.js';
 import { validateZoneName } from '../../lib/ZoneValidation.js';
 import { getSystemZoneStatus } from './ZoneQueryController.js';
-import { queuePendingApply } from './ZoneModificationController.js';
+import { queuePendingApply } from './ZonePendingChangesController.js';
 
 /**
  * @fileoverview Zone power controllers - start, stop, restart

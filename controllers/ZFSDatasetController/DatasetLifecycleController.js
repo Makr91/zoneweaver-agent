@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 import { parseSizeToBytes } from '../../lib/MachineDiskResize.js';
 
@@ -105,21 +105,10 @@ export const createDataset = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            type,
-            properties,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        type,
+        properties,
       }),
     });
 
@@ -202,21 +191,10 @@ export const destroyDataset = async (req, res) => {
       priority: TaskPriority.CRITICAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            recursive: recursive === 'true' || recursive === true,
-            force: force === 'true' || force === true,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        recursive: recursive === 'true' || recursive === true,
+        force: force === 'true' || force === true,
       }),
     });
 
@@ -319,20 +297,9 @@ export const setDatasetProperties = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            properties,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        properties,
       }),
     });
 

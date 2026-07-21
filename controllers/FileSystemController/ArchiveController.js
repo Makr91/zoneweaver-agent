@@ -1,7 +1,7 @@
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import config from '../../config/ConfigLoader.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import path from 'path';
 
 /**
@@ -82,21 +82,10 @@ export const createArchiveTask = async (req, res) => {
       priority: TaskPriority.LOW,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            sources,
-            archive_path,
-            format,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        sources,
+        archive_path,
+        format,
       }),
     });
 
@@ -189,20 +178,9 @@ export const extractArchiveTask = async (req, res) => {
       priority: TaskPriority.LOW,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            archive_path,
-            extract_path,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        archive_path,
+        extract_path,
       }),
     });
 

@@ -9,7 +9,7 @@
 import { log } from '../lib/Logger.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import NatRules from '../models/NatRuleModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../lib/AsyncJson.js';
 import {
   executeCommand,
   getProvNetConfig,
@@ -364,12 +364,7 @@ export const teardownProvisioningNetwork = async (req, res) => {
         status: 'pending',
         parent_task_id: parentTask.id,
         depends_on: lastTaskId,
-        metadata: await new Promise(resolve => {
-          yj.stringifyAsync(metadata, (err, result) => {
-            void err;
-            resolve(result);
-          });
-        }),
+        metadata: await stringifyAsync(metadata),
       });
       lastTaskId = task.id;
       taskIds.push(task.id);

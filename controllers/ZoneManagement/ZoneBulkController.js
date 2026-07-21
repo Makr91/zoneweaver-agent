@@ -2,7 +2,7 @@ import Zones from '../../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
 import { getSystemZoneStatus } from './ZoneQueryController.js';
-import { queuePendingApply } from './ZoneModificationController.js';
+import { queuePendingApply } from './ZonePendingChangesController.js';
 
 /**
  * @fileoverview Zone bulk operations - bulk start and stop

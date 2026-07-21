@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkUsage from '../../models/NetworkUsageModel.js';
 import os from 'os';
@@ -17,15 +17,7 @@ import os from 'os';
  */
 export const executeCreateEtherstubTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, temporary } = metadata;
 
     let command = `pfexec dladm create-etherstub`;
@@ -60,15 +52,7 @@ export const executeDeleteEtherstubTask = async metadataJson => {
   log.task.debug('Etherstub deletion task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { etherstub, temporary, force } = metadata;
 
     log.task.debug('Etherstub deletion task parameters', {

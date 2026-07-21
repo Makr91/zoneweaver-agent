@@ -3,7 +3,7 @@
  * @description Handles time sync configuration updates and forced time synchronization
  */
 
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
 
@@ -16,15 +16,7 @@ export const executeUpdateTimeSyncConfigTask = async metadataJson => {
   log.task.debug('Time sync config update task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { service, config_content, backup_existing, restart_service } = metadata;
 
     log.task.debug('Time sync config update parameters', {
@@ -112,15 +104,7 @@ export const executeForceTimeSyncTask = async metadataJson => {
   log.task.debug('Force time sync task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { service, server, timeout } = metadata;
 
     log.task.debug('Force time sync parameters', {

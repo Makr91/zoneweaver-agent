@@ -9,7 +9,7 @@ import config from '../../config/ConfigLoader.js';
 import Artifact from '../../models/ArtifactModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 
 /**
  * @swagger
@@ -64,20 +64,9 @@ export const moveArtifact = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            artifact_id: id,
-            destination_storage_location_id,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        artifact_id: id,
+        destination_storage_location_id,
       }),
     });
 
@@ -148,20 +137,9 @@ export const copyArtifact = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            artifact_id: id,
-            destination_storage_location_id,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        artifact_id: id,
+        destination_storage_location_id,
       }),
     });
 
@@ -266,21 +244,10 @@ export const deleteArtifacts = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            artifact_ids: artifacts.map(a => a.id),
-            delete_files,
-            force,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        artifact_ids: artifacts.map(a => a.id),
+        delete_files,
+        force,
       }),
     });
 

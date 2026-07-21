@@ -1,5 +1,5 @@
-import yj from 'yieldable-json';
 import path from 'path';
+import { stringifyAsync, parseAsync } from '../../../lib/AsyncJson.js';
 import { log, createTimer } from '../../../lib/Logger.js';
 import { moveItem, copyItem } from '../../../lib/FileSystemManager.js';
 import Artifact from '../../../models/ArtifactModel.js';
@@ -22,15 +22,7 @@ export const executeArtifactMoveTask = async (metadataJson, task) => {
   let transaction;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { artifact_id, destination_storage_location_id } = metadata;
 
     log.task.info('Artifact move task started', { artifact_id, destination_storage_location_id });
@@ -40,15 +32,7 @@ export const executeArtifactMoveTask = async (metadataJson, task) => {
         try {
           await task.update({
             progress_percent: percent,
-            progress_info: await new Promise((resolve, reject) => {
-              yj.stringifyAsync({ status, ...info }, (err, result) => {
-                if (err) {
-                  reject(err);
-                } else {
-                  resolve(result);
-                }
-              });
-            }),
+            progress_info: await stringifyAsync({ status, ...info }),
           });
           log.task.debug('Progress updated', { task_id: task.id, percent, status });
         } catch (error) {
@@ -140,15 +124,7 @@ export const executeArtifactCopyTask = async (metadataJson, task) => {
   let transaction;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { artifact_id, destination_storage_location_id } = metadata;
 
     log.task.info('Artifact copy task started', { artifact_id, destination_storage_location_id });
@@ -158,15 +134,7 @@ export const executeArtifactCopyTask = async (metadataJson, task) => {
         try {
           await task.update({
             progress_percent: percent,
-            progress_info: await new Promise((resolve, reject) => {
-              yj.stringifyAsync({ status, ...info }, (err, result) => {
-                if (err) {
-                  reject(err);
-                } else {
-                  resolve(result);
-                }
-              });
-            }),
+            progress_info: await stringifyAsync({ status, ...info }),
           });
           log.task.debug('Progress updated', { task_id: task.id, percent, status });
         } catch (error) {

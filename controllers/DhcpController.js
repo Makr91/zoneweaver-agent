@@ -6,7 +6,7 @@
  */
 
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../lib/AsyncJson.js';
 import { log } from '../lib/Logger.js';
 import DhcpHosts from '../models/DhcpHostModel.js';
 import { DHCPD_CONF_PATH, executeCommand, parseDhcpdConf } from './DhcpControllerUtils.js';
@@ -148,15 +148,7 @@ export const updateDhcpConfig = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(metadata, (err, result) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(result);
-          }
-        });
-      }),
+      metadata: await stringifyAsync(metadata),
     });
 
     return res.status(202).json({
@@ -266,15 +258,7 @@ export const addDhcpHost = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync({ hostname, mac, ip }, (err, result) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(result);
-          }
-        });
-      }),
+      metadata: await stringifyAsync({ hostname, mac, ip }),
     });
 
     return res.status(202).json({
@@ -331,15 +315,7 @@ export const removeDhcpHost = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync({ hostname }, (err, result) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(result);
-          }
-        });
-      }),
+      metadata: await stringifyAsync({ hostname }),
     });
 
     return res.status(202).json({
@@ -471,15 +447,7 @@ export const controlDhcpService = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync({ action }, (err, result) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(result);
-          }
-        });
-      }),
+      metadata: await stringifyAsync({ action }),
     });
 
     return res.status(202).json({

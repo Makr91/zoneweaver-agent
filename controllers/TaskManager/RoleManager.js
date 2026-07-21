@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 
@@ -84,15 +84,7 @@ export const executeRoleCreateTask = async metadataJson => {
   log.task.debug('Role creation task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const {
       rolename,
@@ -169,15 +161,7 @@ export const executeRoleModifyTask = async metadataJson => {
   log.task.debug('Role modification task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const {
       rolename,
@@ -290,15 +274,7 @@ export const executeRoleDeleteTask = async metadataJson => {
   log.task.debug('Role deletion task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { rolename, remove_home = false } = metadata;
 

@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -78,21 +78,10 @@ export const createSnapshot = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name: fullSnapshotName,
-            recursive: recursive === 'true' || recursive === true,
-            properties,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name: fullSnapshotName,
+        recursive: recursive === 'true' || recursive === true,
+        properties,
       }),
     });
 
@@ -181,21 +170,10 @@ export const destroySnapshot = async (req, res) => {
       priority: TaskPriority.HIGH,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            snapshot,
-            recursive: recursive === 'true' || recursive === true,
-            defer: defer === 'true' || defer === true,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        snapshot,
+        recursive: recursive === 'true' || recursive === true,
+        defer: defer === 'true' || defer === true,
       }),
     });
 
@@ -283,21 +261,10 @@ export const rollbackSnapshot = async (req, res) => {
       priority: TaskPriority.CRITICAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            snapshot,
-            recursive: recursive === 'true' || recursive === true,
-            force: force === 'true' || force === true,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        snapshot,
+        recursive: recursive === 'true' || recursive === true,
+        force: force === 'true' || force === true,
       }),
     });
 

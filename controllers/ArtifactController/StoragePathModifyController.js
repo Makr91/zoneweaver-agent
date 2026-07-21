@@ -9,7 +9,7 @@ import config from '../../config/ConfigLoader.js';
 import ArtifactStorageLocation from '../../models/ArtifactStorageLocationModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 
 /**
  * @swagger
@@ -174,21 +174,11 @@ export const deleteStoragePath = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            storage_location_id: id,
-            recursive,
-            remove_db_records,
-            force,
-          },
-          (err, result) => {
-            if (err) {
-              return reject(err);
-            }
-            return resolve(result);
-          }
-        );
+      metadata: await stringifyAsync({
+        storage_location_id: id,
+        recursive,
+        remove_db_records,
+        force,
       }),
     });
 

@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -77,22 +77,11 @@ export const renameDataset = async (req, res) => {
       priority: TaskPriority.HIGH,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            new_name,
-            recursive: recursive === 'true' || recursive === true,
-            force: force === 'true' || force === true,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        new_name,
+        recursive: recursive === 'true' || recursive === true,
+        force: force === 'true' || force === true,
       }),
     });
 

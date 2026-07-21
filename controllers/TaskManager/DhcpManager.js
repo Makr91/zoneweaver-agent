@@ -5,7 +5,7 @@
 
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import DhcpHosts from '../../models/DhcpHostModel.js';
 import { Op } from 'sequelize';
 
@@ -86,15 +86,7 @@ const syncDatabaseWithSystem = async () => {
  */
 export const executeDhcpUpdateConfigTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { subnet, netmask, router, range_start, range_end, dns, listen_interface } = metadata;
 
@@ -176,15 +168,7 @@ export const executeDhcpUpdateConfigTask = async metadataJson => {
  */
 export const executeDhcpAddHostTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { hostname, mac, ip } = metadata;
 
@@ -248,15 +232,7 @@ export const executeDhcpAddHostTask = async metadataJson => {
  */
 export const executeDhcpRemoveHostTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { hostname } = metadata;
 
@@ -311,15 +287,7 @@ export const executeDhcpRemoveHostTask = async metadataJson => {
  */
 export const executeDhcpServiceControlTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { action } = metadata;
     let result;

@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../../lib/CommandManager.js';
 import { log } from '../../../../lib/Logger.js';
 
@@ -21,15 +21,7 @@ export const checkZvolInUse = async (zvolPath, excludeZone = null) => {
 
   let allZones;
   try {
-    allZones = await new Promise((resolve, reject) => {
-      yj.parseAsync(result.output, (err, parsed) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(parsed);
-        }
-      });
-    });
+    allZones = await parseAsync(result.output);
   } catch {
     log.task.warn('Could not parse zone configs for zvol check');
     return { inUse: false, usedBy: null };

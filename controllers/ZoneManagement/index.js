@@ -12,11 +12,11 @@ export {
 export { startZone, stopZone, restartZone } from './ZonePowerController.js';
 export { resetZone, suspendZone, resumeZone, injectNmi } from './ZonePowerStateController.js';
 export { createZone } from './ZoneCreationController.js';
+export { modifyZone } from './ZoneModificationController.js';
 export {
-  modifyZone,
   clearZonePendingChanges,
   applyZonePendingChanges,
-} from './ZoneModificationController.js';
+} from './ZonePendingChangesController.js';
 export { deleteZone } from './ZoneDeletionController.js';
 export { getZoneHostsYaml, updateZoneHostsYaml } from './ZoneHostsYamlController.js';
 export {

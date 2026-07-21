@@ -3,7 +3,7 @@
  * @description Handles system timezone setting
  */
 
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { setRebootRequired } from '../../../lib/RebootManager.js';
 import { log } from '../../../lib/Logger.js';
@@ -17,15 +17,7 @@ export const executeSetTimezoneTask = async metadataJson => {
   log.task.debug('Set timezone task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { timezone, backup_existing } = metadata;
 
     log.task.debug('Set timezone parameters', {

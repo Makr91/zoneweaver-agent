@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { log } from '../../../lib/Logger.js';
 import path from 'path';
 
@@ -16,15 +16,7 @@ export const processDownloadTask = async (downloadTask, location) => {
   });
 
   try {
-    const downloadMetadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(downloadTask.metadata, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const downloadMetadata = await parseAsync(downloadTask.metadata);
 
     const { storage_location_id, filename, url } = downloadMetadata;
 

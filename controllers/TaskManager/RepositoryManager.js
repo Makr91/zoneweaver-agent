@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 
@@ -78,15 +78,7 @@ const buildRepositoryOptions = metadata => {
  */
 export const executeRepositoryAddTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, origin, enabled } = metadata;
 
     // Build command using helper function
@@ -127,15 +119,7 @@ export const executeRepositoryAddTask = async metadataJson => {
  */
 export const executeRepositoryRemoveTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name } = metadata;
 
     const command = `pfexec pkg unset-publisher ${name}`;
@@ -319,15 +303,7 @@ const buildModificationOptions = metadata =>
  */
 export const executeRepositoryModifyTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name } = metadata;
 
     const command = `pfexec pkg set-publisher${buildModificationOptions(metadata)} ${name}`;
@@ -356,15 +332,7 @@ export const executeRepositoryModifyTask = async metadataJson => {
  */
 export const executeRepositoryEnableTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name } = metadata;
 
     const command = `pfexec pkg set-publisher --enable ${name}`;
@@ -393,15 +361,7 @@ export const executeRepositoryEnableTask = async metadataJson => {
  */
 export const executeRepositoryDisableTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name } = metadata;
 
     const command = `pfexec pkg set-publisher --disable ${name}`;

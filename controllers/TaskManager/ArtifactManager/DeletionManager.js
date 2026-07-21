@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
 import fs from 'fs';
@@ -46,15 +46,7 @@ export const executeArtifactDeleteFileTask = async metadataJson => {
   log.task.debug('Artifact delete file task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { artifact_ids, delete_files = true, force = false } = metadata;
 
@@ -231,15 +223,7 @@ export const executeArtifactDeleteFolderTask = async metadataJson => {
   log.task.debug('Artifact delete folder task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const {
       storage_location_id,

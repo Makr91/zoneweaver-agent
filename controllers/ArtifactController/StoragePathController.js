@@ -12,7 +12,7 @@ import ArtifactStorageLocation from '../../models/ArtifactStorageLocationModel.j
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
 import { validatePath, executeCommand } from '../../lib/FileSystemManager.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 
 /**
  * @swagger
@@ -301,21 +301,10 @@ export const createStoragePath = async (req, res) => {
           priority: TaskPriority.BACKGROUND,
           created_by: req.entity.name,
           status: 'pending',
-          metadata: await new Promise((resolve, reject) => {
-            yj.stringifyAsync(
-              {
-                storage_location_id: storageLocation.id,
-                verify_checksums: false,
-                remove_orphaned: false,
-              },
-              (err, result) => {
-                if (err) {
-                  reject(err);
-                } else {
-                  resolve(result);
-                }
-              }
-            );
+          metadata: await stringifyAsync({
+            storage_location_id: storageLocation.id,
+            verify_checksums: false,
+            remove_orphaned: false,
           }),
         });
 

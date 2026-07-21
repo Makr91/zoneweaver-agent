@@ -1,4 +1,3 @@
-import yj from 'yieldable-json';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -14,6 +13,7 @@ import {
 import { updateTaskProgress } from './utils/ProgressHelper.js';
 import { createBoxArtifact } from './utils/BoxArtifactHelper.js';
 import { ensureRegistryStructure, uploadRegistryArtifact } from './utils/RegistryUploadHelper.js';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 
 /**
  * @fileoverview Template publish task executor
@@ -31,15 +31,7 @@ export const executeTemplatePublishTask = async (metadataJson, task) => {
   let tempDir = null;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const {
       zone_name,

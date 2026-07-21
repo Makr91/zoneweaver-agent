@@ -5,7 +5,7 @@
  * Changes are queued and take effect on next zone boot
  */
 
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { log } from '../../../lib/Logger.js';
 import { getZoneConfig, syncZoneToDatabase } from '../../../lib/ZoneConfigUtils.js';
 import { clearPendingChanges } from '../../../lib/ZoneConfigMutators.js';
@@ -27,9 +27,7 @@ import { applyResourceControlChanges } from './ZoneResourceControlModifier.js';
 const parseModificationMetadata = async task => {
   await updateTaskProgress(task, 5, { status: 'parsing_metadata' });
 
-  const metadata = await new Promise((resolve, reject) => {
-    yj.parseAsync(task.metadata, (err, parsed) => (err ? reject(err) : resolve(parsed)));
-  });
+  const metadata = await parseAsync(task.metadata);
 
   const zoneName = task.zone_name;
 

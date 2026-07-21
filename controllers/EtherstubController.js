@@ -7,8 +7,8 @@
 
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
-import yj from 'yieldable-json';
 import os from 'os';
+import { stringifyAsync } from '../lib/AsyncJson.js';
 import { log } from '../lib/Logger.js';
 import { executeCommand } from '../lib/CommandManager.js';
 
@@ -246,20 +246,9 @@ export const createEtherstub = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            temporary,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        temporary,
       }),
     });
 
@@ -376,21 +365,10 @@ export const deleteEtherstub = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            etherstub,
-            temporary: temporary === 'true' || temporary === true,
-            force: forceParam,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        etherstub,
+        temporary: temporary === 'true' || temporary === true,
+        force: forceParam,
       }),
     });
 

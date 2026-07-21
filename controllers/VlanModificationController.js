@@ -6,7 +6,7 @@
  */
 
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../lib/AsyncJson.js';
 import { log } from '../lib/Logger.js';
 import { executeCommand } from '../lib/CommandManager.js';
 
@@ -142,23 +142,12 @@ export const createVlan = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            vid,
-            link,
-            name: vlanName,
-            force,
-            temporary,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        vid,
+        link,
+        name: vlanName,
+        force,
+        temporary,
       }),
     });
 
@@ -252,20 +241,9 @@ export const deleteVlan = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            vlan,
-            temporary: temporary === 'true' || temporary === true,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        vlan,
+        temporary: temporary === 'true' || temporary === true,
       }),
     });
 

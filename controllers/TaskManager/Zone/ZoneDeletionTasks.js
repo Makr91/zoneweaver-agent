@@ -4,7 +4,7 @@
  */
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import Tasks from '../../../models/TaskModel.js';
 import Zones from '../../../models/ZoneModel.js';
 import NetworkInterfaces from '../../../models/NetworkInterfaceModel.js';
@@ -26,15 +26,7 @@ const parseDeleteMetadata = async metadataJson => {
   let cleanupNetworking = false;
   if (metadataJson) {
     try {
-      const metadata = await new Promise((resolve, reject) => {
-        yj.parseAsync(metadataJson, (err, parseResult) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(parseResult);
-          }
-        });
-      });
+      const metadata = await parseAsync(metadataJson);
       cleanupDatasets = metadata.cleanup_disks === true;
       cleanupNetworking = metadata.cleanup_networking === true;
     } catch {

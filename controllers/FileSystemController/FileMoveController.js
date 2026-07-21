@@ -2,7 +2,7 @@ import { moveItem, getItemInfo } from '../../lib/FileSystemManager.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import config from '../../config/ConfigLoader.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import path from 'path';
 
 /**
@@ -70,20 +70,9 @@ export const moveFileItem = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            source,
-            destination,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        source,
+        destination,
       }),
     });
 
@@ -174,20 +163,9 @@ export const copyFileItem = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            source,
-            destination,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        source,
+        destination,
       }),
     });
 

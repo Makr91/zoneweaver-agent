@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -78,21 +78,10 @@ export const cloneDataset = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            snapshot,
-            target,
-            properties,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        snapshot,
+        target,
+        properties,
       }),
     });
 
@@ -163,19 +152,8 @@ export const promoteDataset = async (req, res) => {
       priority: TaskPriority.HIGH,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
       }),
     });
 

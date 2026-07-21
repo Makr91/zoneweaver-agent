@@ -5,9 +5,9 @@
  * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
-import yj from 'yieldable-json';
 import config from '../../../config/ConfigLoader.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { log, createTimer } from '../../../lib/Logger.js';
 import { executeZoneShutdownOrchestration } from '../../../lib/ZoneOrchestrationManager.js';
 
@@ -22,15 +22,7 @@ export const executeSystemHostShutdownTask = async metadataJson => {
   const taskTimer = createTimer('system_host_shutdown');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const {
       grace_period = 60,
@@ -141,15 +133,7 @@ export const executeSystemHostPoweroffTask = async metadataJson => {
   const taskTimer = createTimer('system_host_poweroff');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { grace_period = 60, message = '', zone_orchestration = null } = metadata;
 
@@ -252,15 +236,7 @@ export const executeSystemHostHaltTask = async metadataJson => {
   const taskTimer = createTimer('system_host_halt');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { emergency = false } = metadata;
 

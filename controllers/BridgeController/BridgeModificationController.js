@@ -3,9 +3,9 @@
  */
 
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
 import { log } from '../../lib/Logger.js';
 import { executeCommand } from '../../lib/CommandManager.js';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { validateBridgeParams } from './utils/ValidationHelper.js';
 
 /**
@@ -137,26 +137,15 @@ export const createBridge = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            protection,
-            priority,
-            max_age,
-            hello_time,
-            forward_delay,
-            force_protocol,
-            links,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        protection,
+        priority,
+        max_age,
+        hello_time,
+        forward_delay,
+        force_protocol,
+        links,
       }),
     });
 
@@ -261,20 +250,9 @@ export const deleteBridge = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            bridge,
-            force: forceParam,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        bridge,
+        force: forceParam,
       }),
     });
 
@@ -399,21 +377,10 @@ export const modifyBridgeLinks = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            bridge,
-            operation,
-            links,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        bridge,
+        operation,
+        links,
       }),
     });
 

@@ -3,7 +3,7 @@
  * @description Handles user deletion, password setting, locking, and unlocking task executors
  */
 
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
 
@@ -16,15 +16,7 @@ export const executeUserDeleteTask = async metadataJson => {
   log.task.debug('User deletion task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { username, remove_home = false, delete_personal_group = false } = metadata;
 
@@ -107,15 +99,7 @@ export const executeUserSetPasswordTask = async metadataJson => {
   log.task.debug('User password setting task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { username, password, force_change = false, unlock_account = true } = metadata;
 
@@ -197,15 +181,7 @@ export const executeUserLockTask = async metadataJson => {
   log.task.debug('User account lock task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { username } = metadata;
 
@@ -256,15 +232,7 @@ export const executeUserUnlockTask = async metadataJson => {
   log.task.debug('User account unlock task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { username } = metadata;
 

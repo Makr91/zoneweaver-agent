@@ -5,7 +5,7 @@ import Zones from '../../../models/ZoneModel.js';
 import Template from '../../../models/TemplateModel.js';
 import Tasks from '../../../models/TaskModel.js';
 import { log } from '../../../lib/Logger.js';
-import { parseMetadata } from './utils/MetadataParser.js';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { buildDatasetPath } from './utils/ConfigBuilders.js';
 import { prepareStorage } from './StorageManager.js';
 import { applyAllZoneConfig } from './ConfigurationManager.js';
@@ -33,7 +33,7 @@ export const executeZoneCreateStorageTask = async task => {
 
   try {
     await updateTaskProgress(task, 5, { status: 'validating' });
-    const metadata = await parseMetadata(task.metadata);
+    const metadata = await parseAsync(task.metadata);
 
     // Ensure server_id is set if provided
     if (metadata.settings?.server_id) {
@@ -126,7 +126,7 @@ export const executeZoneCreateConfigTask = async task => {
   let zonecfgApplied = false;
 
   try {
-    const metadata = await parseMetadata(task.metadata);
+    const metadata = await parseAsync(task.metadata);
 
     // Query storage task to get its updated metadata
     const storageTask = await Tasks.findByPk(task.depends_on);
@@ -134,7 +134,7 @@ export const executeZoneCreateConfigTask = async task => {
       throw new Error('Storage task not found');
     }
 
-    const storageMetadata = await parseMetadata(storageTask.metadata);
+    const storageMetadata = await parseAsync(storageTask.metadata);
 
     // Merge storage task's execution output and server_id
     const bootdiskPath = storageMetadata._execution_output?.bootdiskPath;
@@ -190,7 +190,7 @@ export const executeZoneCreateInstallTask = async task => {
   const zoneName = task.zone_name;
 
   try {
-    const metadata = await parseMetadata(task.metadata);
+    const metadata = await parseAsync(task.metadata);
 
     // Ensure server_id is set from settings if not at top level
     if (!metadata.server_id && metadata.settings?.server_id) {
@@ -262,7 +262,7 @@ export const executeZoneCreateFinalizeTask = async task => {
   const zoneName = task.zone_name;
 
   try {
-    const metadata = await parseMetadata(task.metadata);
+    const metadata = await parseAsync(task.metadata);
 
     // Ensure server_id is set from settings if not at top level
     if (!metadata.server_id && metadata.settings?.server_id) {

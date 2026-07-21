@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 
 /**
@@ -8,15 +8,7 @@ import { executeCommand } from '../../lib/CommandManager.js';
  */
 export const executeSetHostnameTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { hostname, apply_immediately } = metadata;
 
     // Write to /etc/nodename

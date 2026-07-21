@@ -3,7 +3,7 @@
  */
 
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -97,25 +97,14 @@ export const createBootEnvironment = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            description,
-            source_be,
-            snapshot,
-            activate,
-            zpool,
-            properties,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        description,
+        source_be,
+        snapshot,
+        activate,
+        zpool,
+        properties,
       }),
     });
 
@@ -206,21 +195,10 @@ export const deleteBootEnvironment = async (req, res) => {
       priority: TaskPriority.HIGH,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            name,
-            force: force === 'true' || force === true,
-            snapshots: snapshots === 'true' || snapshots === true,
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        name,
+        force: force === 'true' || force === true,
+        snapshots: snapshots === 'true' || snapshots === true,
       }),
     });
 

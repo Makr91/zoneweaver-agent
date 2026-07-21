@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { isTaskCancelled } from '../../../lib/TaskContext.js';
 import { log } from '../../../lib/Logger.js';
@@ -281,15 +281,7 @@ export const executeArtifactDownloadTask = async (metadataJson, task = null) => 
   log.task.debug('Artifact download task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const {
       url,

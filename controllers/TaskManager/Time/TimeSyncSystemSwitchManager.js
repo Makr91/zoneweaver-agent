@@ -4,7 +4,7 @@
  * including config migration, package installation, and service verification
  */
 
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log } from '../../../lib/Logger.js';
 
@@ -361,15 +361,7 @@ export const executeSwitchTimeSyncSystemTask = async metadataJson => {
   log.task.debug('Time sync system switch task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { current_system, target_system, preserve_servers, install_if_needed, systems_info } =
       metadata;
 

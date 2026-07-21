@@ -1,5 +1,5 @@
 import { executeCommand } from '../../lib/CommandManager.js';
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkUsage from '../../models/NetworkUsageModel.js';
 
@@ -15,15 +15,7 @@ import NetworkUsage from '../../models/NetworkUsageModel.js';
  */
 export const executeCreateVlanTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { vid, link, name, force, temporary } = metadata;
 
     let command = `pfexec dladm create-vlan`;
@@ -62,15 +54,7 @@ export const executeCreateVlanTask = async metadataJson => {
  */
 export const executeDeleteVlanTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { vlan, temporary } = metadata;
 
     let command = `pfexec dladm delete-vlan`;

@@ -7,7 +7,7 @@
 
 import Tasks, { TaskPriority } from '../../../models/TaskModel.js';
 import { log } from '../../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../../lib/AsyncJson.js';
 
 /**
  * @swagger
@@ -88,15 +88,7 @@ export const createSystemTask = async (
       priority,
       created_by: createdBy,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(metadata, (err, result) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(result);
-          }
-        });
-      }),
+      metadata: await stringifyAsync(metadata),
     });
 
     log.monitoring.info('System management task created', {

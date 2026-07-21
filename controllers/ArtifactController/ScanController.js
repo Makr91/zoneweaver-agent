@@ -9,7 +9,7 @@ import config from '../../config/ConfigLoader.js';
 import ArtifactStorageLocation from '../../models/ArtifactStorageLocationModel.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 
 /**
  * @swagger
@@ -80,20 +80,10 @@ export const scanArtifacts = async (req, res) => {
         priority: TaskPriority.BACKGROUND,
         created_by: req.entity.name,
         status: 'pending',
-        metadata: await new Promise((resolve, reject) => {
-          yj.stringifyAsync(
-            {
-              storage_location_id: storage_path_id,
-              verify_checksums,
-              remove_orphaned,
-            },
-            (err, result) => {
-              if (err) {
-                return reject(err);
-              }
-              return resolve(result);
-            }
-          );
+        metadata: await stringifyAsync({
+          storage_location_id: storage_path_id,
+          verify_checksums,
+          remove_orphaned,
         }),
       });
 
@@ -126,21 +116,11 @@ export const scanArtifacts = async (req, res) => {
       priority: TaskPriority.BACKGROUND,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            verify_checksums,
-            remove_orphaned,
-            source: 'manual_scan',
-            filter_type: type || null,
-          },
-          (err, result) => {
-            if (err) {
-              return reject(err);
-            }
-            return resolve(result);
-          }
-        );
+      metadata: await stringifyAsync({
+        verify_checksums,
+        remove_orphaned,
+        source: 'manual_scan',
+        filter_type: type || null,
       }),
     });
 

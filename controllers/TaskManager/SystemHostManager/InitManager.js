@@ -5,7 +5,7 @@
  * @license: https://zoneweaver-agent.startcloud.com/license/
  */
 
-import yj from 'yieldable-json';
+import { parseAsync } from '../../../lib/AsyncJson.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log, createTimer } from '../../../lib/Logger.js';
 
@@ -18,15 +18,7 @@ export const executeSystemHostRunlevelChangeTask = async metadataJson => {
   const taskTimer = createTimer('system_host_runlevel_change');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
 
     const { target_runlevel, method = 'init_command' } = metadata;
 

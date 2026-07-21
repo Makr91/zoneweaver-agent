@@ -1,17 +1,9 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 
 export const executeCreateDatasetTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, type, properties } = metadata;
 
     let command = `pfexec zfs create`;
@@ -50,15 +42,7 @@ export const executeCreateDatasetTask = async metadataJson => {
 
 export const executeDestroyDatasetTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, recursive, force } = metadata;
 
     let command = `pfexec zfs destroy`;
@@ -92,15 +76,7 @@ export const executeDestroyDatasetTask = async metadataJson => {
 
 export const executeSetPropertiesTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, properties } = metadata;
 
     const results = await Promise.all(
@@ -142,15 +118,7 @@ export const executeSetPropertiesTask = async metadataJson => {
 
 export const executeCloneDatasetTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { snapshot, target, properties } = metadata;
 
     let command = `pfexec zfs clone`;
@@ -182,15 +150,7 @@ export const executeCloneDatasetTask = async metadataJson => {
 
 export const executePromoteDatasetTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name } = metadata;
 
     const command = `pfexec zfs promote ${name}`;
@@ -214,15 +174,7 @@ export const executePromoteDatasetTask = async metadataJson => {
 
 export const executeRenameDatasetTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, new_name, recursive, force } = metadata;
 
     let command = `pfexec zfs rename`;
@@ -256,15 +208,7 @@ export const executeRenameDatasetTask = async metadataJson => {
 
 export const executeCreateSnapshotTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { name, recursive, properties } = metadata;
 
     let command = `pfexec zfs snapshot`;
@@ -300,15 +244,7 @@ export const executeCreateSnapshotTask = async metadataJson => {
 
 export const executeDestroySnapshotTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { snapshot, recursive, defer } = metadata;
 
     let command = `pfexec zfs destroy`;
@@ -342,15 +278,7 @@ export const executeDestroySnapshotTask = async metadataJson => {
 
 export const executeRollbackSnapshotTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { snapshot, recursive, force } = metadata;
 
     let command = `pfexec zfs rollback`;
@@ -384,15 +312,7 @@ export const executeRollbackSnapshotTask = async metadataJson => {
 
 export const executeHoldSnapshotTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { snapshot, tag, recursive } = metadata;
 
     let command = `pfexec zfs hold`;
@@ -422,15 +342,7 @@ export const executeHoldSnapshotTask = async metadataJson => {
 
 export const executeReleaseSnapshotTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { snapshot, tag, recursive } = metadata;
 
     let command = `pfexec zfs release`;

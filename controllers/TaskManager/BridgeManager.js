@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
@@ -17,15 +17,7 @@ import os from 'os';
  */
 export const executeCreateBridgeTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const {
       name,
       protection,
@@ -101,15 +93,7 @@ export const executeDeleteBridgeTask = async metadataJson => {
   log.task.debug('Bridge deletion task starting');
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { bridge, force } = metadata;
 
     log.task.debug('Bridge deletion task parameters', {
@@ -231,15 +215,7 @@ export const executeDeleteBridgeTask = async metadataJson => {
  */
 export const executeModifyBridgeLinksTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { bridge, operation, links } = metadata;
 
     let command = `pfexec dladm ${operation}-bridge`;

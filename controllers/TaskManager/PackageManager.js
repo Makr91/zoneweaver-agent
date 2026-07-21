@@ -1,4 +1,4 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import config from '../../config/ConfigLoader.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 
@@ -17,15 +17,7 @@ const UPDATE_TIMEOUT_MS = (config.get('packages.update_timeout_seconds') || 1800
  */
 export const executePkgInstallTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { packages, accept_licenses, dry_run, be_name } = metadata;
 
     let command = `pfexec pkg install`;
@@ -69,15 +61,7 @@ export const executePkgInstallTask = async metadataJson => {
  */
 export const executePkgUninstallTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { packages, dry_run, be_name } = metadata;
 
     let command = `pfexec pkg uninstall`;
@@ -117,15 +101,7 @@ export const executePkgUninstallTask = async metadataJson => {
  */
 export const executePkgUpdateTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { packages, accept_licenses, be_name, backup_be, reject_packages } = metadata;
 
     let command = `pfexec pkg update`;
@@ -181,15 +157,7 @@ export const executePkgUpdateTask = async metadataJson => {
  */
 export const executePkgRefreshTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { full, publishers } = metadata;
 
     let command = `pfexec pkg refresh`;

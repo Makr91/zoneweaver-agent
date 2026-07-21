@@ -10,7 +10,7 @@ import Recipes from '../../models/RecipeModel.js';
 import Zones from '../../models/ZoneModel.js';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkCollector from '../../controllers/NetworkCollectorController/index.js';
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import { getZoneConfig } from '../../lib/ZoneConfigUtils.js';
 import {
   isGuestAgentEnabled,
@@ -327,15 +327,7 @@ export const executeZoneSetupTask = async task => {
   let automation = null;
 
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(task.metadata);
 
     const { recipe_id, variables = {} } = metadata;
 

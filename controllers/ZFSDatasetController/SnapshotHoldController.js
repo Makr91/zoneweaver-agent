@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import Tasks, { TaskPriority } from '../../models/TaskModel.js';
-import yj from 'yieldable-json';
+import { stringifyAsync } from '../../lib/AsyncJson.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -78,21 +78,10 @@ export const holdSnapshot = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            snapshot,
-            tag,
-            recursive: recursive === 'true' || recursive === true,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        snapshot,
+        tag,
+        recursive: recursive === 'true' || recursive === true,
       }),
     });
 
@@ -189,21 +178,10 @@ export const releaseSnapshot = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            snapshot,
-            tag,
-            recursive: recursive === 'true' || recursive === true,
-          },
-          (err, jsonResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(jsonResult);
-            }
-          }
-        );
+      metadata: await stringifyAsync({
+        snapshot,
+        tag,
+        recursive: recursive === 'true' || recursive === true,
       }),
     });
 

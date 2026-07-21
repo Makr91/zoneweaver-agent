@@ -1,18 +1,10 @@
-import yj from 'yieldable-json';
+import { parseAsync } from '../../lib/AsyncJson.js';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { buildVdevSpec, refreshStorageInventory } from './ZPoolHelpers.js';
 
 export const executeCreatePoolTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { pool_name, vdevs, properties, force, mount_point } = metadata;
 
     let command = 'pfexec zpool create';
@@ -54,15 +46,7 @@ export const executeCreatePoolTask = async metadataJson => {
 
 export const executeDestroyPoolTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { pool_name, force } = metadata;
 
     let command = 'pfexec zpool destroy';
@@ -93,15 +77,7 @@ export const executeDestroyPoolTask = async metadataJson => {
 
 export const executeSetPoolPropertiesTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { pool_name, properties } = metadata;
 
     const results = await Promise.all(
@@ -143,15 +119,7 @@ export const executeSetPoolPropertiesTask = async metadataJson => {
 
 export const executeExportPoolTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { pool_name, force } = metadata;
 
     let command = 'pfexec zpool export';
@@ -182,15 +150,7 @@ export const executeExportPoolTask = async metadataJson => {
 
 export const executeImportPoolTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { pool_name, pool_id, new_name, properties, force } = metadata;
 
     let command = 'pfexec zpool import';
@@ -236,15 +196,7 @@ export const executeImportPoolTask = async metadataJson => {
 
 export const executeUpgradePoolTask = async metadataJson => {
   try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const metadata = await parseAsync(metadataJson);
     const { pool_name } = metadata;
 
     const command = `pfexec zpool upgrade ${pool_name}`;

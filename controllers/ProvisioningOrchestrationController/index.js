@@ -10,14 +10,16 @@ export {
   listProvisioners,
   getProvisionerDetails,
   getProvisionerVersion,
-  importProvisioner,
-  importProvisionerUpload,
-  exportProvisioner,
   deleteProvisioner,
   deleteProvisionerVersion,
   refreshProvisionerSpecs,
-  refreshProvisionerFromSource,
   getCatalog,
   getCatalogSources,
   installFromCatalog,
 } from './ProvisioningRegistryController.js';
+export {
+  importProvisioner,
+  importProvisionerUpload,
+  refreshProvisionerFromSource,
+  exportProvisioner,
+} from './ProvisioningImportController.js';

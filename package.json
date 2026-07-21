@@ -12,7 +12,7 @@
     "generate-openapi": "node scripts/generate-openapi.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
+    "format": "prettier --write . --log-level warn",
     "format:check": "prettier --check .",
     "quality": "npm run lint && npm run format:check",
     "quality:fix": "npm run lint:fix && npm run format",

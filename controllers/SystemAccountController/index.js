@@ -22,15 +22,8 @@ import { createSystemGroup, deleteSystemGroup, modifySystemGroup } from './Group
 import { createSystemRole, deleteSystemRole, modifySystemRole } from './RoleController.js';
 
 // Import query functions
-import {
-  getCurrentUserInfo,
-  getUsers,
-  getGroups,
-  lookupUser,
-  lookupGroup,
-  getRoles,
-  getUserAttributes,
-} from './QueryController.js';
+import { getCurrentUserInfo, getUsers, getGroups, getRoles } from './QueryController.js';
+import { lookupUser, lookupGroup, getUserAttributes } from './LookupController.js';
 
 // Import RBAC discovery functions
 import {

@@ -7,11 +7,8 @@
 
 import yj from 'yieldable-json';
 import { log } from '../../../lib/Logger.js';
-import {
-  getZoneConfig,
-  syncZoneToDatabase,
-  clearPendingChanges,
-} from '../../../lib/ZoneConfigUtils.js';
+import { getZoneConfig, syncZoneToDatabase } from '../../../lib/ZoneConfigUtils.js';
+import { clearPendingChanges } from '../../../lib/ZoneConfigMutators.js';
 import { updateTaskProgress } from '../../../lib/TaskProgressHelper.js';
 import {
   applyAttributeChangesIfNeeded,

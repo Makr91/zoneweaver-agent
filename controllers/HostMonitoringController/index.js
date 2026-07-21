@@ -9,12 +9,8 @@
 import { getMonitoringStatus, getHealthCheck, triggerCollection } from './ServiceController.js';
 
 // Import network monitoring functions
-import {
-  getNetworkInterfaces,
-  getNetworkUsage,
-  getIPAddresses,
-  getRoutes,
-} from './NetworkMonitoringController.js';
+import { getNetworkInterfaces, getNetworkUsage } from './NetworkMonitoringController.js';
+import { getIPAddresses, getRoutes } from './NetworkAddressController.js';
 
 // Import storage monitoring functions
 import {
@@ -27,7 +23,8 @@ import {
 } from './StorageMonitoringController.js';
 
 // Import system metrics functions
-import { getCPUStats, getMemoryStats, getSystemLoadMetrics } from './SystemMetricsController.js';
+import { getCPUStats, getMemoryStats } from './SystemMetricsController.js';
+import { getSystemLoadMetrics } from './SystemLoadController.js';
 
 // Import zone metrics functions
 import { getZoneUsageMetrics, getZoneDiskIo } from './ZoneMetricsController.js';

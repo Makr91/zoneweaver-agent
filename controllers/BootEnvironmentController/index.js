@@ -6,10 +6,12 @@ import { listBootEnvironments } from './BootEnvironmentQueryController.js';
 import {
   createBootEnvironment,
   deleteBootEnvironment,
+} from './BootEnvironmentModificationController.js';
+import {
   activateBootEnvironment,
   mountBootEnvironment,
   unmountBootEnvironment,
-} from './BootEnvironmentModificationController.js';
+} from './BootEnvironmentStateController.js';
 
 export { listBootEnvironments };
 export {

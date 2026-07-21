@@ -30,18 +30,17 @@ import { executeZoneSetupTask } from '../TaskManager/ZoneSetupManager.js';
 import {
   executeZoneWaitSSHTask,
   executeZoneProvisioningExtractTask,
-  executeZoneSyncTask,
-  executeZoneSyncbackTask,
   executeZoneShellTask,
   executeZoneProvisionTask,
 } from '../TaskManager/ZoneProvisionManager.js';
+import { executeZoneSyncTask, executeZoneSyncbackTask } from '../TaskManager/ZoneSyncManager.js';
 import {
   executeZoneProvisionRemoteTask,
   executeZoneDockerComposeTask,
   executeZoneHookTask,
   executeZoneKeyRotateTask,
   executeZoneTransportRemoveTask,
-} from '../TaskManager/ZoneEngineManager.js';
+} from '../TaskManager/ZoneEngineTasks.js';
 import {
   executeProvisionerImportTask,
   executeProvisionerCatalogInstallTask,

@@ -31,7 +31,8 @@ import {
   createEtherstub,
   deleteEtherstub,
 } from '../controllers/EtherstubController.js';
-import { getVlans, getVlanDetails, createVlan, deleteVlan } from '../controllers/VlanController.js';
+import { getVlans, getVlanDetails } from '../controllers/VlanController.js';
+import { createVlan, deleteVlan } from '../controllers/VlanModificationController.js';
 import {
   getBridges,
   getBridgeDetails,

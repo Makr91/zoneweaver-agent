@@ -12,10 +12,12 @@ export {
   getProcessDetailsController,
   getProcessFilesController,
   getProcessStackController,
+} from './Process/ProcessQueryController.js';
+export {
   getProcessLimitsController,
   findProcessesController,
   getProcessStatsController,
-} from './Process/ProcessQueryController.js';
+} from './Process/ProcessStatsController.js';
 export {
   sendSignalToProcess,
   killProcessController,

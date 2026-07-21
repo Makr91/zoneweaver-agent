@@ -9,15 +9,8 @@ export {
   getZoneDetails,
   getZoneConfig,
 } from './ZoneQueryController.js';
-export {
-  startZone,
-  stopZone,
-  restartZone,
-  resetZone,
-  suspendZone,
-  resumeZone,
-  injectNmi,
-} from './ZonePowerController.js';
+export { startZone, stopZone, restartZone } from './ZonePowerController.js';
+export { resetZone, suspendZone, resumeZone, injectNmi } from './ZonePowerStateController.js';
 export { createZone } from './ZoneCreationController.js';
 export {
   modifyZone,

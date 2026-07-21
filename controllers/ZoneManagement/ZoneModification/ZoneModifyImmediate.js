@@ -2,11 +2,13 @@ import { consoleportRangeError } from '../../../lib/ZoneValidation.js';
 import {
   readZonecfgAttr,
   getZoneConfig,
+  parseConfiguration,
+} from '../../../lib/ZoneConfigUtils.js';
+import {
   setSnapshotPolicy,
   mergeSettingsKeys,
-  parseConfiguration,
   setDocumentNetworkKey,
-} from '../../../lib/ZoneConfigUtils.js';
+} from '../../../lib/ZoneConfigMutators.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { resizeMachineDisks } from '../../../lib/MachineDiskResize.js';
 import { validateTypedDiskEntries, validateTypedImageEntries } from '../../../lib/DiskSpec.js';

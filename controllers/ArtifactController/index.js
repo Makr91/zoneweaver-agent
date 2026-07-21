@@ -6,12 +6,8 @@
  */
 
 // Storage Path Management
-export {
-  listStoragePaths,
-  createStoragePath,
-  updateStoragePath,
-  deleteStoragePath,
-} from './StoragePathController.js';
+export { listStoragePaths, createStoragePath } from './StoragePathController.js';
+export { updateStoragePath, deleteStoragePath } from './StoragePathModifyController.js';
 
 // Artifact Listing and Details
 export {

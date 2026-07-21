@@ -4,11 +4,8 @@
  */
 import fs from 'fs';
 import { executeCommand } from '../../../lib/CommandManager.js';
-import {
-  getAllZoneConfigs,
-  preserveUserConfig,
-  setGuestInfo,
-} from '../../../lib/ZoneConfigUtils.js';
+import { getAllZoneConfigs, preserveUserConfig } from '../../../lib/ZoneConfigUtils.js';
+import { setGuestInfo } from '../../../lib/ZoneConfigMutators.js';
 import { hasSuspendCheckpoint } from '../../../lib/SuspendCheckpoint.js';
 import { isGuestAgentEnabled, guestSocketPath, guestIPv4s } from '../../../lib/QemuGuestAgent.js';
 import { log } from '../../../lib/Logger.js';

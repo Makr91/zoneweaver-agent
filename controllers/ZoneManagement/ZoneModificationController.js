@@ -2,7 +2,7 @@ import Zones from '../../models/ZoneModel.js';
 import { log } from '../../lib/Logger.js';
 import { validateZoneName, vcpusCountError } from '../../lib/ZoneValidation.js';
 import { validateZoneModificationResources } from '../../lib/ResourceValidation.js';
-import { clearPendingChanges } from '../../lib/ZoneConfigUtils.js';
+import { clearPendingChanges } from '../../lib/ZoneConfigMutators.js';
 import { getSystemZoneStatus } from './ZoneQueryController.js';
 import {
   CREDENTIAL_FIELDS,

@@ -1,5 +1,6 @@
 import Tasks, { TaskPriority } from '../../../models/TaskModel.js';
-import { parseConfiguration, mergePendingChanges } from '../../../lib/ZoneConfigUtils.js';
+import { parseConfiguration } from '../../../lib/ZoneConfigUtils.js';
+import { mergePendingChanges } from '../../../lib/ZoneConfigMutators.js';
 import { getSystemZoneStatus } from '../ZoneQueryController.js';
 import { CREDENTIAL_FIELDS, ZONE_ATTR_FIELDS, STOPPED_STATUSES } from './ZoneModifyConstants.js';
 

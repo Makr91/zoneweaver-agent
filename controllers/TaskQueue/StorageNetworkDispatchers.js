@@ -52,6 +52,11 @@ import {
   executeCreatePoolTask,
   executeDestroyPoolTask,
   executeSetPoolPropertiesTask,
+  executeExportPoolTask,
+  executeImportPoolTask,
+  executeUpgradePoolTask,
+} from '../TaskManager/ZPoolManager.js';
+import {
   executeAddVdevTask,
   executeRemoveVdevTask,
   executeReplaceDeviceTask,
@@ -59,10 +64,7 @@ import {
   executeOfflineDeviceTask,
   executeScrubPoolTask,
   executeStopScrubTask,
-  executeExportPoolTask,
-  executeImportPoolTask,
-  executeUpgradePoolTask,
-} from '../TaskManager/ZPoolManager.js';
+} from '../TaskManager/ZPoolDeviceManager.js';
 import {
   executeTemplateDownloadTask,
   executeTemplateDeleteTask,

@@ -3,13 +3,13 @@
  */
 
 import { getHostname, getIPAddresses } from './NetworkQueryController.js';
+import { setHostname } from './NetworkModificationController.js';
 import {
-  setHostname,
   createIPAddress,
   deleteIPAddress,
   enableIPAddress,
   disableIPAddress,
-} from './NetworkModificationController.js';
+} from './NetworkIPAddressController.js';
 
 export { getHostname, getIPAddresses };
 export { setHostname, createIPAddress, deleteIPAddress, enableIPAddress, disableIPAddress };

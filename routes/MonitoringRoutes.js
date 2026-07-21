@@ -32,10 +32,12 @@ import {
   listDevices,
   listAvailableDevices,
   getDeviceDetails,
+} from '../controllers/HostDevicesController.js';
+import {
   getDeviceCategories,
   getPPTStatus,
   triggerDeviceDiscovery,
-} from '../controllers/HostDevicesController.js';
+} from '../controllers/HostDevicesStatusController.js';
 
 /**
  * @fileoverview Monitoring routes — host telemetry (/monitoring/*), swap

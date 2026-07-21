@@ -10,11 +10,8 @@ import {
   resolveCdromPath,
   buildFilesystemCommand,
 } from '../ZoneCreationManager/ConfigurationManager.js';
-import {
-  syncZoneToDatabase,
-  appendDocumentDisks,
-  removeDocumentDisks,
-} from '../../../lib/ZoneConfigUtils.js';
+import { syncZoneToDatabase } from '../../../lib/ZoneConfigUtils.js';
+import { appendDocumentDisks, removeDocumentDisks } from '../../../lib/ZoneConfigMutators.js';
 import { stampDataset, getRootPool } from '../../../lib/DiskSpec.js';
 import { updateTaskProgress } from '../../../lib/TaskProgressHelper.js';
 

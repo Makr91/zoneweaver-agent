@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.3.10](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.9...v0.3.10) (2026-07-21)
+
+
+### Bug Fixes
+
+* answer migrations ([ac2835e](https://github.com/Makr91/zoneweaver-agent/commit/ac2835e2f189b15541d046f2f8a24fc55a8cdba2))
+* answer-migrations transform helper (renames-only, Wave 1 format proposal) ([5660ff7](https://github.com/Makr91/zoneweaver-agent/commit/5660ff7445ba60fa21d42a484f1b768c1fb1e318))
+* Hosts.yml Editor ([5cf59bc](https://github.com/Makr91/zoneweaver-agent/commit/5cf59bca63e6a4fb2ab29af814a6a568af127105))
+* Hosts.yml editor, machine verbs (zoneadm/zonecfg/virtfs/ppt), io_delay_pct metric, recipe rework, ghost-link cleanup, node-22 pin ([010424a](https://github.com/Makr91/zoneweaver-agent/commit/010424abbee7f821a312835863d3011900365ff3))
+* machine-scoped WS tickets, AsyncJson DRY dedup, controller splits ([85d0d9d](https://github.com/Makr91/zoneweaver-agent/commit/85d0d9d792a1f7fdd7e3308102f54e2196cd82ad))
+* multi-host live-proof fixes, registry hand-drop scan, structured JSON importable-pools, io_delay_pct producer ([ea6f907](https://github.com/Makr91/zoneweaver-agent/commit/ea6f9077539f5d6c105b348503d8dc76dda9ea29))
+* prevent utm mangling ([fa4f796](https://github.com/Makr91/zoneweaver-agent/commit/fa4f796e4f8e61a695e9000f177cb369c6c317dd))
+* prevent utm mangling ([ac65096](https://github.com/Makr91/zoneweaver-agent/commit/ac650969da7ace8c710c86ce3e5aaa1a9af5c099))
+* prevent utm mangling ([ede5341](https://github.com/Makr91/zoneweaver-agent/commit/ede534129ea9ae5952e8f7817cbe5f3b301a8b3c))
+* RDP, API Shaping, General Improvments ([d8ee40f](https://github.com/Makr91/zoneweaver-agent/commit/d8ee40f4dead54a61964b597559ad64495602453))
+* RDP, API Shaping, General Improvments ([c352b2d](https://github.com/Makr91/zoneweaver-agent/commit/c352b2dc32d46ca2fd395899b6ffebd71f9606b6))
+* RDP, API Shaping, General Improvments ([cb83591](https://github.com/Makr91/zoneweaver-agent/commit/cb8359123f3206c7374f9c36b5f5713ebad10e6b))
+* RDP, API Shaping, General Improvments ([961b03d](https://github.com/Makr91/zoneweaver-agent/commit/961b03dbcdc4ce72d35ae14b92c40c595c1748fe))
+* RDP, API Shaping, General Improvments ([c5afeac](https://github.com/Makr91/zoneweaver-agent/commit/c5afeaca0176da0deeca06cb555fbe2a0f2c4b50))
+* RDP, API Shaping, General Improvments ([b891c87](https://github.com/Makr91/zoneweaver-agent/commit/b891c870210b3a22f38eca922345481562639c71))
+* RDP, API Shaping, General Improvments ([c060716](https://github.com/Makr91/zoneweaver-agent/commit/c0607165bbb8e2cdd4ba3482f81f2588ed39a1a6))
+* refactor large files ([f42c23d](https://github.com/Makr91/zoneweaver-agent/commit/f42c23d150463696eedb35e1a21f04aa4d041059))
+* removing old packages ([6ad5d3f](https://github.com/Makr91/zoneweaver-agent/commit/6ad5d3fe7dd8835906805d1d331fadeea0109fd4))
+* split files up ([982624a](https://github.com/Makr91/zoneweaver-agent/commit/982624a1e119eb1e2535254b3096d817949927e1))
+* splitting files to below 500 ([1fecf2c](https://github.com/Makr91/zoneweaver-agent/commit/1fecf2ce91a547743245414b7b4bb282bef1d7c9))
+* splitting files to below 500 ([6dde809](https://github.com/Makr91/zoneweaver-agent/commit/6dde809e0ef11f6a6a383acf97fddd1165119bbf))
+* structured-JSON wire (task metadata, process/swap/queryTime numerics), bridged-interfaces status+wireless ([d68b535](https://github.com/Makr91/zoneweaver-agent/commit/d68b535e85f1644cc72f02040c18f55a0a2f25b2))
+
 ## [0.3.9](https://github.com/Makr91/zoneweaver-agent/compare/v0.3.8...v0.3.9) (2026-07-17)
 
 

@@ -36,7 +36,7 @@
     "js-yaml": "^4.1.0",
     "mime-types": "^3.0.1",
     "morgan": "^1.10.0",
-    "multer": "^2.0.2",
+    "multer": "^2.3.0",
     "node-os-utils": "^2.0.3",
     "node-pty": "^0.10.1",
     "nunjucks": "^3.2.4",
